@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
 using EqLog.Core.Tracking;
+using System.Collections.ObjectModel;
 
 namespace EqLog.Overlay;
 
@@ -21,6 +22,8 @@ public sealed class OverlayPanel : ContentControl
     private readonly TextBlock _subtitle = new() { Foreground = Brushes.LightGray, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly StackPanel _rows = new();
     private readonly ScrollViewer _scroll;
+    private readonly ObservableCollection<OverlayRow> _virtualRows = [];
+    private readonly VirtualRowList? _virtualList;
     private readonly TextBlock _hint;
     private readonly TextBlock _dockDragHandle;
     private readonly Button _dockButton;
@@ -72,7 +75,7 @@ public sealed class OverlayPanel : ContentControl
         {
             Text = "\u2630", FontSize = 16, Margin = new Thickness(0, 0, 8, 0),
             Cursor = System.Windows.Input.Cursors.SizeAll,
-            ToolTip = "Drag to reorder this docked panel. Drop on the left or right half of another panel, or in empty dock space to move to the end.",
+            ToolTip = "Drag this panel anywhere on the dock canvas. Other panels stay put.",
             VerticalAlignment = VerticalAlignment.Center,
             Visibility = Visibility.Collapsed,
         };
@@ -98,7 +101,34 @@ public sealed class OverlayPanel : ContentControl
         layout.Children.Add(header);
         DockPanel.SetDock(_toolbar, Dock.Top);
         layout.Children.Add(_toolbar);
-        layout.Children.Add(_scroll);
+        if (key is "quests" or "sky")
+        {
+            _virtualList = new VirtualRowList(BuildRow)
+            {
+                ItemsSource = _virtualRows, Background = Brushes.Transparent, BorderThickness = new Thickness(0),
+                Padding = new Thickness(0), Margin = new Thickness(0, 3, 0, 0),
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            };
+            ScrollViewer.SetVerticalScrollBarVisibility(_virtualList, ScrollBarVisibility.Auto);
+            ScrollViewer.SetHorizontalScrollBarVisibility(_virtualList, ScrollBarVisibility.Disabled);
+            ScrollViewer.SetCanContentScroll(_virtualList, true);
+            VirtualizingPanel.SetIsVirtualizing(_virtualList, true);
+            VirtualizingPanel.SetVirtualizationMode(_virtualList, VirtualizationMode.Recycling);
+            VirtualizingPanel.SetScrollUnit(_virtualList, ScrollUnit.Pixel);
+            var itemsPanel = new FrameworkElementFactory(typeof(VirtualizingStackPanel));
+            _virtualList.ItemsPanel = new ItemsPanelTemplate(itemsPanel);
+            var presenter = new FrameworkElementFactory(typeof(ContentPresenter));
+            var itemStyle = new Style(typeof(ListBoxItem));
+            itemStyle.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0)));
+            itemStyle.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(0)));
+            itemStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
+            itemStyle.Setters.Add(new Setter(Control.FocusableProperty, false));
+            itemStyle.Setters.Add(new Setter(Control.TemplateProperty,
+                new ControlTemplate(typeof(ListBoxItem)) { VisualTree = presenter }));
+            _virtualList.ItemContainerStyle = itemStyle;
+            layout.Children.Add(_virtualList);
+        }
+        else layout.Children.Add(_scroll);
 
         _frame = new Border
         {
@@ -133,7 +163,8 @@ public sealed class OverlayPanel : ContentControl
         while (source is not null)
         {
             if (source is System.Windows.Controls.Primitives.ButtonBase or
-                System.Windows.Controls.Primitives.TextBoxBase or ComboBox) return true;
+                System.Windows.Controls.Primitives.TextBoxBase or
+                System.Windows.Controls.Primitives.ScrollBar or System.Windows.Controls.Primitives.Thumb or ComboBox) return true;
             source = source is Visual ? VisualTreeHelper.GetParent(source) : LogicalTreeHelper.GetParent(source);
         }
         return false;
@@ -151,7 +182,7 @@ public sealed class OverlayPanel : ContentControl
         Apply();
     }
 
-    /// <summary>Docked tiles are opaque, never click-through and show a subtle border.</summary>
+    /// <summary>Docked tiles remain interactive and show a subtle border.</summary>
     public void SetDocked(bool docked)
     {
         _docked = docked;
@@ -160,7 +191,7 @@ public sealed class OverlayPanel : ContentControl
 
     private void Apply()
     {
-        double opacity = _docked ? 1 : _opacity;
+        double opacity = _opacity;
         var color = ((SolidColorBrush)FindResource("NightBackground")).Color;
         var bg = new SolidColorBrush(Color.FromArgb((byte)(opacity * 255), color.R, color.G, color.B));
         bg.Freeze();
@@ -196,6 +227,23 @@ public sealed class OverlayPanel : ContentControl
 
         if (!_invalidateRows && rows.SequenceEqual(_current))
         {
+            return;
+        }
+
+        if (_virtualList is not null)
+        {
+            if (_invalidateRows)
+            {
+                _virtualRows.Clear();
+                _current = [];
+                _invalidateRows = false;
+            }
+            int shared = Math.Min(_virtualRows.Count, rows.Count);
+            for (int i = 0; i < shared; i++)
+                if (_virtualRows[i] != rows[i]) _virtualRows[i] = rows[i];
+            while (_virtualRows.Count > rows.Count) _virtualRows.RemoveAt(_virtualRows.Count - 1);
+            for (int i = shared; i < rows.Count; i++) _virtualRows.Add(rows[i]);
+            _current = rows;
             return;
         }
 
@@ -324,5 +372,21 @@ public sealed class OverlayPanel : ContentControl
         var b = new SolidColorBrush(c);
         b.Freeze();
         return b;
+    }
+
+    private sealed class VirtualRowList(Func<OverlayRow, FrameworkElement> build) : ListBox
+    {
+        protected override void PrepareContainerForItemOverride(DependencyObject element, object item)
+        {
+            base.PrepareContainerForItemOverride(element, item);
+            if (element is ListBoxItem container && item is OverlayRow row)
+                container.Content = build(row);
+        }
+
+        protected override void ClearContainerForItemOverride(DependencyObject element, object item)
+        {
+            if (element is ListBoxItem container) container.Content = null;
+            base.ClearContainerForItemOverride(element, item);
+        }
     }
 }

@@ -69,7 +69,7 @@ public partial class MainWindow
             ThemeManager.Apply(theme);
             RenderSkyQuests();
             foreach (var overlay in _overlays.Values)
-                overlay.Panel.SetBackgroundOpacity(_settings.BackgroundOpacity);
+                overlay.Panel.SetBackgroundOpacity(_settings.Overlays[overlay.Panel.Key].BackgroundOpacity ?? _settings.BackgroundOpacity);
             ThemeStatus.Text = $"{theme.Name} applied and saved for future starts.";
             _themeEditor?.LoadPalette(theme);
             return true;

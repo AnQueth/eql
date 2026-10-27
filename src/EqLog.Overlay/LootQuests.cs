@@ -13,7 +13,7 @@ public partial class MainWindow
 {
     private readonly HttpClient _wikiHttp = new() { Timeout = TimeSpan.FromSeconds(30) };
     private readonly Dictionary<string, QuestLookupResult> _questCache = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _questItems = new(ItemNames.Comparer);
+    private long _questSelectionVersion;
     private readonly CancellationTokenSource _wikiCts = new();
     private static string QuestCachePath => Path.Combine(AppSettings.Folder, "quest-lookups.json");
     private QuestInventory _questInventory = new();
@@ -291,62 +291,72 @@ public partial class MainWindow
         }
     }
 
-    private void RefreshQuestItems(EngineSnapshot snapshot)
+    private async void QuestItem_Selected(object sender, SelectionChangedEventArgs e)
     {
-        foreach (string item in snapshot.Loot.Recent.Where(r => r.Looter == Names.You).Select(r => r.Item))
+        if (QuestOwnedGrid.SelectedItem is QuestInventoryItem selected)
+            await LookupSelectedQuestItemAsync(selected);
+        else
         {
-            if (_questItems.Add(item))
-            {
-                QuestItemBox.Items.Add(item);
-            }
+            _questSelectionVersion++;
+            QuestResults.ItemsSource = null;
         }
     }
 
     private async void LookupQuest_Click(object sender, RoutedEventArgs e)
-        => await LookupLootItemAsync(QuestItemBox.Text.Trim());
+    {
+        if (QuestOwnedGrid.SelectedItem is QuestInventoryItem selected)
+            await LookupSelectedQuestItemAsync(selected);
+        else QuestLookupStatus.Text = "Select an inventory row first.";
+    }
 
     private async Task LookupLootItemAsync(string item)
     {
         _dock.SetSidePanelOpen(true);
         Tabs.SelectedItem = LootQuestsTab;
         ShowDock();
-        if (!LookupQuestButton.IsEnabled)
+        var selected = _questInventory.Items.FirstOrDefault(i =>
+            i.Character.Equals(_characterName, StringComparison.OrdinalIgnoreCase) && ItemNames.Comparer.Equals(i.Item, item));
+        if (selected is null)
         {
-            QuestLookupStatus.Text = "A wiki lookup is already running. Please wait for it to finish, then select another item.";
-            return;
+            // Other players' visible loot can be inspected without claiming ownership.
+            selected = new QuestInventoryItem { Character = _characterName ?? "", Item = item };
+            _questInventory.Items.Add(selected);
+            _questDirty = true;
         }
-
-        QuestItemBox.Text = item;
-        if (item.Length == 0)
+        if (!_ownedQuestItems.Contains(selected)) _ownedQuestItems.Add(selected);
+        if (ReferenceEquals(QuestOwnedGrid.SelectedItem, selected))
+            await LookupSelectedQuestItemAsync(selected);
+        else QuestOwnedGrid.SelectedItem = selected;
+        await Dispatcher.InvokeAsync(() =>
         {
-            QuestLookupStatus.Text = "Select a looted item or type its exact name first.";
-            return;
-        }
+            QuestOwnedGrid.UpdateLayout();
+            QuestOwnedGrid.ScrollIntoView(selected, QuestOwnedGrid.Columns[0]);
+        }, System.Windows.Threading.DispatcherPriority.Loaded);
+    }
 
-        LookupQuestButton.IsEnabled = false;
+    private async Task LookupSelectedQuestItemAsync(QuestInventoryItem selected)
+    {
+        long version = ++_questSelectionVersion;
+        string item = selected.Item;
         QuestResults.ItemsSource = null;
         QuestLookupStatus.Text = $"Looking up {item} on EQLWiki...";
         try
         {
             var result = await GetQuestResultAsync(item);
-
-            QuestResults.ItemsSource = result!.Quests;
+            if (version != _questSelectionVersion) return;
+            QuestResults.ItemsSource = result.Quests;
             QuestLookupStatus.Text = result.Quests.Count == 0
                 ? "No linked quest pages found. This does not prove the item has no quest use; wiki coverage may be incomplete."
                 : $"{result.Quests.Count} quest reference(s). Open a page to check requirements versus rewards.";
         }
         catch (OperationCanceledException) when (_wikiCts.IsCancellationRequested)
         {
-            QuestLookupStatus.Text = "Wiki lookup cancelled.";
+            if (version == _questSelectionVersion) QuestLookupStatus.Text = "Wiki lookup cancelled.";
         }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or IOException or
             UnauthorizedAccessException or JsonException or InvalidOperationException)
         {
-            QuestLookupStatus.Text = $"Wiki lookup failed: {ex.Message}";
-        }
-        finally
-        {
-            LookupQuestButton.IsEnabled = true;
+            if (version == _questSelectionVersion) QuestLookupStatus.Text = $"Wiki lookup failed: {ex.Message}";
         }
     }
 
@@ -364,10 +374,9 @@ public partial class MainWindow
 
     private void OpenItemWiki_Click(object sender, RoutedEventArgs e)
     {
-        if (!string.IsNullOrWhiteSpace(QuestItemBox.Text))
-        {
-            OpenWiki(QuestLookup.PageUrl(QuestLookup.ItemTitle(QuestItemBox.Text)));
-        }
+        if (QuestOwnedGrid.SelectedItem is QuestInventoryItem selected)
+            OpenWiki(QuestLookup.PageUrl(QuestLookup.ItemTitle(selected.Item)));
+        else QuestLookupStatus.Text = "Select an inventory row first.";
     }
 
     private void OpenWiki(string url)

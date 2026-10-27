@@ -13,6 +13,8 @@ public partial class MainWindow
 {
     private SkyQuestCatalog? _skyCatalog;
     private bool _skyLoading;
+    private bool _skyOverlayLoadAttempted;
+    private ComboBox? _skyOverlayClass;
     private string _skyInventorySignature = "";
     private static string SkyCachePath => Path.Combine(AppSettings.Folder, "sky-quests.json");
 
@@ -69,6 +71,11 @@ public partial class MainWindow
                 string selected = SkyClassBox.SelectedItem as string ?? _settings.SkyClass;
                 SkyClassBox.ItemsSource = new[] { "All classes" }.Concat(_skyCatalog.Quests.Select(q => q.Class).Distinct().Order());
                 SkyClassBox.SelectedItem = SkyClassBox.Items.Contains(selected) ? selected : "All classes";
+                if (_skyOverlayClass is not null)
+                {
+                    _skyOverlayClass.ItemsSource = SkyClassBox.ItemsSource;
+                    _skyOverlayClass.SelectedItem = SkyClassBox.SelectedItem;
+                }
                 RenderSkyQuests();
             }
             _skyLoading = false;
@@ -81,10 +88,71 @@ public partial class MainWindow
         if (SkyClassBox.SelectedItem is string selected)
         {
             _settings.SkyClass = selected;
+            if (_skyOverlayClass is not null && !Equals(_skyOverlayClass.SelectedItem, selected))
+                _skyOverlayClass.SelectedItem = selected;
             RenderSkyQuests();
         }
     }
 
+        private void ConfigureSkyToolbar(OverlayPanel panel)
+        {
+            var toolbar = new DockPanel { Margin = new Thickness(0, 5, 0, 5) };
+            var refresh = new Button { Content = "Refresh", Margin = new Thickness(6, 0, 0, 0) };
+            refresh.Click += async (_, _) => await LoadSkyQuestsAsync(true);
+            DockPanel.SetDock(refresh, Dock.Right);
+            toolbar.Children.Add(refresh);
+            _skyOverlayClass = new ComboBox
+            {
+                ItemsSource = new[] { "All classes", _settings.SkyClass }.Distinct().ToArray(),
+                SelectedItem = _settings.SkyClass,
+                ToolTip = "Class filter shared with the Plane of Sky tab. Only quests with an owned ingredient appear.",
+            };
+            _skyOverlayClass.SelectionChanged += (_, _) =>
+            {
+                if (_skyOverlayClass.SelectedItem is not string selected) return;
+                _settings.SkyClass = selected;
+                if (SkyClassBox.Items.Contains(selected)) SkyClassBox.SelectedItem = selected;
+            };
+            toolbar.Children.Add(_skyOverlayClass);
+            panel.SetToolbar(toolbar);
+        }
+
+        private OverlayContent SkyOverlayContent()
+        {
+            if (_skyCatalog is null && !_skyLoading && !_skyOverlayLoadAttempted)
+            {
+                _skyOverlayLoadAttempted = true;
+                _ = LoadSkyQuestsAsync(false);
+            }
+            var rows = new List<OverlayRow>();
+            if (_skyCatalog is null)
+            {
+                rows.Add(new(_skyLoading ? "Loading Plane of Sky quests..." : SkyStatus.Text, Wrap: true));
+            }
+            else
+            {
+                foreach (var entry in SkyQuests.OwnedQuests(_skyCatalog, _questInventory, _characterName ?? "", _settings.SkyClass))
+                {
+                    var quest = entry.Quest;
+                    rows.Add(new(quest.Name, Bold: true, QuestHeading: true, Wrap: true));
+                    rows.Add(new($"Give to: {quest.Giver}", Wrap: true));
+                    rows.Add(new($"Reward: {quest.Reward}", Wrap: true, Bold: true));
+                    if (_settings.SkyClass == "All classes") rows.Add(new($"Class: {quest.Class}"));
+                    foreach (var item in entry.Progress)
+                    {
+                        string note = item.Collection > 0 ? $" | Collection {item.Collection}: verify turn-in availability" : "";
+                        rows.Add(new(item.Item, $"{item.Owned} / {item.Required}", Wrap: true, LootItem: item.Item,
+                            Details: $"{(item.Satisfied ? "Have" : "Missing")} | Carried {item.Carried} | Bank {item.Bank}{note}"));
+                    }
+                }
+                if (rows.Count == 0)
+                    rows.Add(new("No quests with owned ingredients for this class. Import inventory or loot a required item.", Wrap: true));
+                if (_skyLoading) rows.Insert(0, new("Refreshing wiki data...", Wrap: true));
+                else if (SkyStatus.Text.StartsWith("Sky quest load failed:", StringComparison.Ordinal))
+                    rows.Insert(0, new(SkyStatus.Text, Wrap: true));
+            }
+            return new("Sky quest tracker", $"{_settings.SkyClass} | {_characterName} | owned ingredients only", rows);
+        }
     private void RenderSkyQuests()
     {
         if (_skyCatalog is null) return;

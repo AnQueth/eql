@@ -27,21 +27,13 @@
         <GroupBox Header="Overlays" DockPanel.Dock="Top">
             <StackPanel>
                 <WrapPanel x:Name="OverlayToggles" />
-                <CheckBox x:Name="LockBox" Content="Lock overlays (click-through)    hotkey Ctrl+Shift+L" Margin="0,6,0,0" FontWeight="Bold" Click="Lock_Click" />
+                <CheckBox x:Name="LockBox" Content="Lock all overlays (click-through)    Ctrl+Shift+L" Margin="0,6,0,0" FontWeight="Bold" Click="Lock_Click"
+                          ToolTip="Checked: all locked. Dash: mixed locks. Click or use the hotkey to lock all; when all are locked, unlock all." />
                 <CheckBox x:Name="GameVisibleBox" Content="Only show overlays while EverQuest (eqgame.exe) is visible on screen" Margin="0,6,0,0" Click="GameVisible_Click"
                           ToolTip="Floating overlays hide when EverQuest isn't running, is minimized or is covered by another window. Docked panels always show." />
-                <Grid Margin="0,6,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="Background" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{DynamicResource NightText}" />
-                    <Slider x:Name="OpacitySlider" Grid.Column="1" Minimum="0" Maximum="1" SmallChange="0.05" LargeChange="0.1" ValueChanged="Opacity_Changed" />
-                    <TextBlock Text="Font size" Grid.Column="2" VerticalAlignment="Center" Margin="14,0,6,0" Foreground="{DynamicResource NightText}" />
-                    <Slider x:Name="FontSlider" Grid.Column="3" Minimum="9" Maximum="22" SmallChange="1" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="Font_Changed" />
-                </Grid>
+                <Expander Header="Individual overlay appearance and locks" Margin="0,8,0,0">
+                    <StackPanel x:Name="OverlayAppearance" Margin="0,6,0,0" />
+                </Expander>
                 <WrapPanel Margin="0,8,0,0">
                     <Button Content="Reset session stats" Click="ResetSession_Click" />
                     <Button Content="Reset overlay positions" Click="ResetPositions_Click" />
@@ -72,16 +64,25 @@
                         </TextBlock>
                     </Border>
                     <TextBlock DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap"
-                               Text="Regex is matched (case-insensitive) against the text after the [timestamp]. {C} = your character name. In the alert text, $1 or ${name} insert captured groups. Only new lines fire alerts, not history. Add a row at the bottom; select a row and press Delete to remove it." />
+                               Text="Regex is matched (case-insensitive) against the text after the [timestamp]. {C} = your character name. In the alert text, $1 or ${name} insert captured groups. Only new lines fire alerts, not history. Add a row at the bottom. Select rows, then use Delete selected or the Delete key; confirmation is required." />
                     <DockPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
                         <Button Content="Test" DockPanel.Dock="Right" Margin="6,0,0,0" Click="TestTrigger_Click" />
                         <TextBlock Text="Test a line:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{DynamicResource NightText}" DockPanel.Dock="Left" />
                         <TextBox x:Name="TestLineBox" VerticalContentAlignment="Center" Text="Quethrosar has fallen to the ground." />
                     </DockPanel>
                     <TextBlock x:Name="TriggerStatusText" DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="#FF8080" TextWrapping="Wrap" />
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                        <Button x:Name="DeleteTriggersButton" Content="Delete selected" IsEnabled="False"
+                                Click="DeleteTriggers_Click"
+                                ToolTip="Delete the selected alert triggers after confirmation" />
+                    </StackPanel>
                     <DataGrid x:Name="TriggersGrid" AutoGenerateColumns="False" CanUserAddRows="True" CanUserDeleteRows="True"
                               HeadersVisibility="Column" GridLinesVisibility="Horizontal"
-                              RowEditEnding="Triggers_RowEditEnding">
+                              RowEditEnding="Triggers_RowEditEnding" SelectionChanged="Triggers_SelectionChanged">
+                        <DataGrid.CommandBindings>
+                            <CommandBinding Command="{x:Static DataGrid.DeleteCommand}"
+                                            CanExecute="DeleteTriggers_CanExecute" Executed="DeleteTriggers_Executed" />
+                        </DataGrid.CommandBindings>
                         <DataGrid.Columns>
                             <DataGridTemplateColumn Header="On" Width="36">
                                 <DataGridTemplateColumn.CellTemplate>
@@ -163,7 +164,6 @@
                         </Expander>
                         <TextBlock x:Name="InventoryStatus" Foreground="{DynamicResource NightText}" TextWrapping="Wrap" Margin="0,4"
                                    Text="Waiting for the log file to locate its character inventory export." />
-                        <ComboBox x:Name="QuestItemBox" IsEditable="True" Margin="0,0,0,6" />
                         <WrapPanel>
                             <Button x:Name="LookupQuestButton" Content="Look up quests" Click="LookupQuest_Click" />
                             <Button Content="Item wiki page" Click="OpenItemWiki_Click" />
@@ -184,6 +184,7 @@
                         </Grid.RowDefinitions>
                         <TextBlock Text="YOUR INVENTORY" Foreground="{DynamicResource NightMuted}" FontSize="11" FontWeight="SemiBold" Margin="0,6" />
                         <DataGrid x:Name="QuestOwnedGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                                  SelectionMode="Single" SelectionUnit="FullRow" SelectionChanged="QuestItem_Selected"
                                   Grid.Row="1" CellEditEnding="QuestOwned_Edit" MinColumnWidth="70">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Item" Binding="{Binding Item}" IsReadOnly="True" Width="*" MinWidth="190" />

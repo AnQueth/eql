@@ -21,10 +21,24 @@ public sealed class OverlayPlacement
     /// <summary>Shown as a tile in the docked-panels window instead of as a floating overlay.</summary>
     public bool Docked { get; set; }
 
+    /// <summary>Individual text size; null inherits the previous global setting when first loaded.</summary>
+    public double? FontSize { get; set; }
+
+    /// <summary>Individual background opacity; null inherits the previous global setting when first loaded.</summary>
+    public double? BackgroundOpacity { get; set; }
+
+    /// <summary>Individual floating-window click-through lock; null inherits the previous global lock.</summary>
+    public bool? Locked { get; set; }
+
     /// <summary>Tile size in the docked-panels window (0 = use the overlay size).</summary>
     public double DockWidth { get; set; }
 
     public double DockHeight { get; set; }
+
+    /// <summary>Freeform canvas position, separate from the floating-window position.</summary>
+    public double? DockLeft { get; set; }
+
+    public double? DockTop { get; set; }
 }
 
 public sealed class DockWindowSettings

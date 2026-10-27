@@ -6,6 +6,7 @@ using System.Media;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using EqLog.Core;
@@ -50,6 +51,7 @@ public sealed class SpawnRow
 public partial class MainWindow : Window
 {
     private const int LockHotkeyId = 0x4C31;
+    private DateTime _alertTestVisibleUntil;
 
     /// <summary>If the newest log line is older than this, we are viewing an old log and use log time as "now".</summary>
     private static readonly TimeSpan ReplayThreshold = TimeSpan.FromMinutes(30);
@@ -59,6 +61,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, OverlayWindow> _overlays = [];
     private readonly Dictionary<string, CheckBox> _overlayToggles = [];
     private readonly Dictionary<string, CheckBox> _dockToggles = [];
+    private readonly Dictionary<string, CheckBox> _lockToggles = [];
     private DockWindow _dock = null!;
     private readonly HashSet<ChatChannel> _chatChannels;
     private readonly ObservableCollection<DurationRow> _durationRows = [];
@@ -95,7 +98,6 @@ public partial class MainWindow : Window
     private TailProgress _progress;
     private string _durationsSignature = "";
     private int _houseTicks;
-    private bool _loading = true;
 
     public MainWindow()
     {
@@ -115,13 +117,11 @@ public partial class MainWindow : Window
         LockBox.IsChecked = _settings.Locked;
         GameVisibleBox.IsChecked = _settings.OnlyWhenGameVisible;
         _gameVisible = GameWindowWatcher.IsGameVisible();
-        OpacitySlider.Value = _settings.BackgroundOpacity;
-        FontSlider.Value = _settings.FontSize;
         ResetOnLoginBox.IsChecked = _settings.ResetOnLogin;
 
         CreateOverlays();
+        UpdateLockState();
         CreateChatToggles();
-        _loading = false;
 
         Application.Current.SessionEnding += (_, _) => SaveAll();
         _renderTimer.Tick += (_, _) => Render();
@@ -157,13 +157,21 @@ public partial class MainWindow : Window
     {
         var work = SystemParameters.WorkArea;
         _dock = new DockWindow(_settings.DockWindow);
-        _dock.OrderChanged += order => _settings.DockWindow.Order = [.. order];
         for (int i = 0; i < OverlayPresenters.All.Count; i++)
         {
             var def = OverlayPresenters.All[i];
-            var panel = new OverlayPanel(def.Key, def.Caption, def.AutoScroll) { FontSize = _settings.FontSize };
-            panel.SetBackgroundOpacity(_settings.BackgroundOpacity);
+            if (!_settings.Overlays.TryGetValue(def.Key, out var p))
+            {
+                p = DefaultPlacement(def, i, work);
+                _settings.Overlays[def.Key] = p;
+            }
+            p.FontSize ??= _settings.FontSize;
+            p.BackgroundOpacity ??= _settings.BackgroundOpacity;
+            p.Locked ??= _settings.Locked;
+            var panel = new OverlayPanel(def.Key, def.Caption, def.AutoScroll) { FontSize = p.FontSize.Value };
+            panel.SetBackgroundOpacity(p.BackgroundOpacity.Value);
             if (def.Key == "quests") ConfigureQuestToolbar(panel);
+            if (def.Key == "sky") ConfigureSkyToolbar(panel);
             if (def.Key == "loot")
             {
                 var grouping = new ComboBox
@@ -181,21 +189,15 @@ public partial class MainWindow : Window
             panel.DockToggleRequested += pnl =>
                 Dispatcher.BeginInvoke(() => SetDocked(pnl.Key, !_settings.Overlays[pnl.Key].Docked));
             var w = new OverlayWindow(panel);
-            if (!_settings.Overlays.TryGetValue(def.Key, out var p))
-            {
-                p = DefaultPlacement(def, i, work);
-                _settings.Overlays[def.Key] = p;
-            }
-
             w.Left = p.Left;
             w.Top = p.Top;
             w.Width = p.Width;
             w.Height = p.Height;
-            w.SetLocked(_settings.Locked);
+            w.SetLocked(p.Locked.Value);
             EnsureOnScreen(w);
             _overlays[def.Key] = w;
 
-            var toggle = new CheckBox { Content = def.Caption, IsChecked = p.Visible, Tag = def.Key, Margin = new Thickness(0, 2, 4, 2) };
+            var toggle = new CheckBox { Content = def.Caption, IsChecked = p.Visible, Tag = def.Key, Margin = new Thickness(0, 6, 8, 6) };
             toggle.Click += (_, _) => SetOverlayVisible(def.Key, toggle.IsChecked == true);
             _overlayToggles[def.Key] = toggle;
             var docked = new CheckBox
@@ -203,16 +205,85 @@ public partial class MainWindow : Window
                 Content = "docked",
                 IsChecked = p.Docked,
                 FontSize = 11,
-                Foreground = Brushes.Gray,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 2, 16, 2),
+                Margin = new Thickness(0, 6, 0, 6),
                 ToolTip = "Show this panel in the docked-panels window (e.g. on a second monitor) instead of as an overlay",
             };
+            docked.SetResourceReference(ForegroundProperty, "NightMuted");
             docked.Click += (_, _) => SetDocked(def.Key, docked.IsChecked == true);
             _dockToggles[def.Key] = docked;
-            OverlayToggles.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Children = { toggle, docked } });
+            var toggleRow = new Grid { Width = 250, Margin = new Thickness(0, 0, 12, 0) };
+            toggleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(176) });
+            toggleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Grid.SetColumn(docked, 1);
+            toggleRow.Children.Add(toggle);
+            toggleRow.Children.Add(docked);
+            OverlayToggles.Children.Add(toggleRow);
+            OverlayAppearance.Children.Add(CreateOverlayAppearance(w, p));
 
             ApplyMode(def.Key);
+        }
+    }
+
+    private Expander CreateOverlayAppearance(OverlayWindow window, OverlayPlacement placement)
+    {
+        var controls = new StackPanel { Margin = new Thickness(8, 4, 8, 8) };
+        var locked = new CheckBox
+        {
+            Content = "Locked (click-through)", IsChecked = placement.Locked,
+            Margin = new Thickness(0, 4, 0, 8),
+            ToolTip = "Locks this floating overlay only. Docked panels remain interactive. Unlock here to move or resize it.",
+        };
+        locked.Click += (_, _) =>
+        {
+            placement.Locked = locked.IsChecked == true;
+            window.SetLocked(placement.Locked.Value);
+            UpdateLockState();
+        };
+        _lockToggles[window.Panel.Key] = locked;
+        controls.Children.Add(locked);
+
+        AddSlider("Text size", 9, 22, placement.FontSize!.Value, 1, value =>
+        {
+            placement.FontSize = value;
+            window.Panel.FontSize = value;
+        }, value => $"{value:0} pt");
+        AddSlider("Background", 0, 1, placement.BackgroundOpacity!.Value, 0.05, value =>
+        {
+            placement.BackgroundOpacity = value;
+            window.Panel.SetBackgroundOpacity(value);
+        }, value => $"{value:P0}");
+        return new Expander { Header = window.Panel.Caption, Content = controls };
+
+        void AddSlider(string caption, double minimum, double maximum, double value, double tick,
+            Action<double> changed, Func<double, string> format)
+        {
+            var row = new Grid { Margin = new Thickness(0, 4, 0, 4) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(88) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(54) });
+            row.Children.Add(new TextBlock { Text = caption, VerticalAlignment = VerticalAlignment.Center });
+            var slider = new Slider
+            {
+                Minimum = minimum, Maximum = maximum, Value = value, TickFrequency = tick,
+                SmallChange = tick, LargeChange = tick * 2, IsSnapToTickEnabled = true,
+                ToolTip = $"{caption} for {window.Panel.Caption}",
+            };
+            var label = new TextBlock
+            {
+                Text = format(slider.Value), HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            slider.ValueChanged += (_, e) =>
+            {
+                changed(e.NewValue);
+                label.Text = format(e.NewValue);
+            };
+            Grid.SetColumn(slider, 1);
+            Grid.SetColumn(label, 2);
+            row.Children.Add(slider);
+            row.Children.Add(label);
+            controls.Children.Add(row);
         }
     }
 
@@ -227,7 +298,7 @@ public partial class MainWindow : Window
             w.DetachPanel();
             if (p.Visible)
             {
-                _dock.AddPanel(w.Panel, p, _settings.DockWindow.Order);
+                _dock.AddPanel(w.Panel, p);
             }
             else
             {
@@ -239,10 +310,10 @@ public partial class MainWindow : Window
 
         _dock.RemovePanel(key);
         w.AttachPanel();
-        if (p.Visible && FloatingAllowed)
+        if (p.Visible && (FloatingAllowed || (key == "alerts" && DateTime.Now < _alertTestVisibleUntil)))
         {
             w.Show();
-            w.SetLocked(_settings.Locked);
+            w.SetLocked(p.Locked == true);
         }
         else
         {
@@ -254,6 +325,11 @@ public partial class MainWindow : Window
 
     private void CheckGameVisible()
     {
+        if (_alertTestVisibleUntil != default && DateTime.Now >= _alertTestVisibleUntil)
+        {
+            _alertTestVisibleUntil = default;
+            ApplyMode("alerts");
+        }
         bool visible = GameWindowWatcher.IsGameVisible();
         if (visible != _gameVisible)
         {
@@ -367,7 +443,11 @@ public partial class MainWindow : Window
     {
         foreach (var channel in Enum.GetValues<ChatChannel>())
         {
-            var box = new CheckBox { Content = channel.ToString(), IsChecked = _chatChannels.Contains(channel) };
+            var box = new CheckBox
+            {
+                Content = channel.ToString(), IsChecked = _chatChannels.Contains(channel),
+                Width = 140, Margin = new Thickness(0, 6, 10, 6),
+            };
             box.Click += (_, _) =>
             {
                 if (box.IsChecked == true) _chatChannels.Add(channel);
@@ -508,7 +588,6 @@ public partial class MainWindow : Window
         bool replay = last is DateTime l && real - l > ReplayThreshold;
         var now = replay ? last!.Value : real;
         var snap = _engine.Snapshot(now);
-        RefreshQuestItems(snap);
         PumpQuestLoot();
         RefreshSkyInventory();
         var view = new OverlayView(_chatChannels, UpdateAlerts(real), _settings.LootGrouping);
@@ -524,7 +603,12 @@ public partial class MainWindow : Window
                 continue;
             }
 
-            var content = def.Key == "quests" ? QuestOpportunities() : def.Render(snap, _engine, view);
+            var content = def.Key switch
+            {
+                "quests" => QuestOpportunities(),
+                "sky" => SkyOverlayContent(),
+                _ => def.Render(snap, _engine, view),
+            };
             _overlays[def.Key].Panel.Update(content.Title, content.Subtitle, content.Rows);
         }
 
@@ -702,11 +786,21 @@ public partial class MainWindow : Window
     private void SetLocked(bool locked)
     {
         _settings.Locked = locked;
-        LockBox.IsChecked = locked;
-        foreach (var w in _overlays.Values)
+        foreach (var (key, w) in _overlays)
         {
+            _settings.Overlays[key].Locked = locked;
+            _lockToggles[key].IsChecked = locked;
             w.SetLocked(locked);
         }
+        UpdateLockState();
+    }
+
+    private void UpdateLockState()
+    {
+        bool allLocked = _settings.Overlays.Values.All(p => p.Locked == true);
+        bool anyLocked = _settings.Overlays.Values.Any(p => p.Locked == true);
+        _settings.Locked = allLocked;
+        LockBox.IsChecked = allLocked ? true : anyLocked ? null : false;
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -774,21 +868,7 @@ public partial class MainWindow : Window
         _followBaseline = DateTime.Now;
     }
 
-    private void Lock_Click(object sender, RoutedEventArgs e) => SetLocked(LockBox.IsChecked == true);
-
-    private void Opacity_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (_loading) return;
-        _settings.BackgroundOpacity = e.NewValue;
-        foreach (var w in _overlays.Values) w.Panel.SetBackgroundOpacity(e.NewValue);
-    }
-
-    private void Font_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (_loading) return;
-        _settings.FontSize = e.NewValue;
-        foreach (var w in _overlays.Values) w.Panel.FontSize = e.NewValue;
-    }
+    private void Lock_Click(object sender, RoutedEventArgs e) => SetLocked(!_settings.Locked);
 
     private void ResetSession_Click(object sender, RoutedEventArgs e) => _engine.ResetSession();
 
@@ -868,8 +948,9 @@ public partial class MainWindow : Window
         {
             _settings.Save();
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            TriggerStatusText.Text += $" Could not save alert triggers: {ex.Message}";
         }
     }
 
@@ -881,11 +962,68 @@ public partial class MainWindow : Window
 
     private void TriggerCheck_Click(object sender, RoutedEventArgs e) => Dispatcher.BeginInvoke(RebuildTriggers, DispatcherPriority.Background);
 
+    private void DeleteTriggers_CanExecute(object sender, CanExecuteRoutedEventArgs e)
+    {
+        e.CanExecute = TriggersGrid.SelectedItems.OfType<AlertTrigger>().Any();
+        e.Handled = true;
+    }
+
+    private void Triggers_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        DeleteTriggersButton.IsEnabled = TriggersGrid.SelectedItems.OfType<AlertTrigger>().Any();
+        CommandManager.InvalidateRequerySuggested();
+    }
+
+    private void DeleteTriggers_Click(object sender, RoutedEventArgs e) => DeleteSelectedTriggers();
+
+    private void DeleteTriggers_Executed(object sender, ExecutedRoutedEventArgs e)
+    {
+        e.Handled = true;
+        DeleteSelectedTriggers();
+    }
+
+    private void DeleteSelectedTriggers()
+    {
+        if (!TriggersGrid.CommitEdit(DataGridEditingUnit.Cell, true) ||
+            !TriggersGrid.CommitEdit(DataGridEditingUnit.Row, true))
+        {
+            TriggerStatusText.Text = "Finish or cancel the current edit before deleting triggers.";
+            return;
+        }
+
+        var selected = TriggersGrid.SelectedItems.OfType<AlertTrigger>().ToArray();
+        if (selected.Length == 0) return;
+        string names = string.Join("\n", selected.Take(10).Select(t =>
+            $"- {(string.IsNullOrWhiteSpace(t.Name) ? "(unnamed trigger)" : t.Name)}"));
+        if (selected.Length > 10) names += $"\n... and {selected.Length - 10} more";
+        string message = selected.Length == 1
+            ? $"Delete this alert trigger?\n\n{names}\n\nThis cannot be undone."
+            : $"Delete these {selected.Length} alert triggers?\n\n{names}\n\nThis cannot be undone.";
+        if (MessageBox.Show(_dock, message, "Delete alert triggers",
+            MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
+            return;
+
+        foreach (var trigger in selected) _triggers.Remove(trigger);
+        RebuildTriggers();
+    }
+
     private void TestTrigger_Click(object sender, RoutedEventArgs e)
     {
         TriggersGrid.CommitEdit(DataGridEditingUnit.Row, true);
         RebuildTriggers();
         var alerts = _matcher.Match([TestLineBox.Text]);
+        double previewSeconds = alerts.Count == 0 ? 8 :
+            alerts.Max(a => a.Trigger.Seconds > 0 ? a.Trigger.Seconds : 8);
+        _alertTestVisibleUntil = DateTime.Now.AddSeconds(previewSeconds + 1);
+        _overlayToggles["alerts"].IsChecked = true;
+        SetOverlayVisible("alerts", true);
+        if (_settings.Overlays["alerts"].Docked)
+            _dock.RevealPanel("alerts");
+        else
+        {
+            EnsureOnScreen(_overlays["alerts"]);
+            _overlays["alerts"].ReassertTopmost();
+        }
         foreach (var a in alerts)
         {
             _pendingAlerts.Enqueue(a);
@@ -895,13 +1033,10 @@ public partial class MainWindow : Window
         {
             TriggerStatusText.Text = "No enabled trigger matched that line." + (TriggerStatusText.Text.Length > 0 ? " " + TriggerStatusText.Text : "");
         }
-        else if (!IsShowing("alerts") && _settings.Overlays["alerts"].Visible && !FloatingAllowed)
+        else
         {
-            TriggerStatusText.Text = $"Matched: {string.Join(", ", alerts.Select(a => a.Trigger.Name))}. Overlays are hidden because EverQuest isn't visible.";
-        }
-        else if (!IsShowing("alerts"))
-        {
-            TriggerStatusText.Text = $"Matched: {string.Join(", ", alerts.Select(a => a.Trigger.Name))}. Turn on the Alerts overlay to see it.";
+            TriggerStatusText.Text = $"Matched: {string.Join(", ", alerts.Select(a => a.Trigger.Name))}. Showing in the Alerts overlay."
+                + (TriggerStatusText.Text.Length > 0 ? " " + TriggerStatusText.Text : "");
         }
     }
 

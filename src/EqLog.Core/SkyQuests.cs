@@ -14,6 +14,7 @@ public sealed record SkyRequirementProgress(string Item, int Required, int Owned
     public bool Satisfied => Owned >= Required;
 }
 public sealed record SkyQuestCatalog(DateTime CheckedUtc, IReadOnlyList<SkyQuest> Quests);
+public sealed record SkyOwnedQuest(SkyQuest Quest, IReadOnlyList<SkyRequirementProgress> Progress);
 
 public static partial class SkyQuests
 {
@@ -77,6 +78,14 @@ public static partial class SkyQuests
                 matches.Sum(i => i.Owned + i.Collection), matches.Sum(i => i.Carried), matches.Sum(i => i.Bank), matches.Sum(i => i.Historical),
                 matches.Sum(i => i.Collection), matches.Sum(i => i.Installed));
         }).ToArray();
+
+    public static IReadOnlyList<SkyOwnedQuest> OwnedQuests(SkyQuestCatalog catalog, QuestInventory inventory,
+        string character, string selectedClass) =>
+        catalog.Quests.Where(q => selectedClass == "All classes" || q.Class.Equals(selectedClass, StringComparison.OrdinalIgnoreCase))
+            .Select(q => new SkyOwnedQuest(q, Progress(q, inventory, character)))
+            .Where(q => q.Progress.Any(i => i.Owned > 0))
+            .OrderBy(q => q.Quest.Class, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(q => q.Quest.Name, StringComparer.OrdinalIgnoreCase).ToArray();
 
     private static IEnumerable<SkyRequirement> Requirements(string cell)
     {

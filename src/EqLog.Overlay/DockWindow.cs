@@ -10,8 +10,8 @@ namespace EqLog.Overlay;
 
 /// <summary>
 /// The app's main window (e.g. for a second monitor): settings in a collapsible side panel on the left and
-/// docked overlay panels as tiles that wrap to fit on the right.
-/// Drag a tile to reorder it; drag its bottom-right corner to resize it. Closing this window exits the app.
+/// docked overlay panels on a scrollable freeform canvas on the right.
+/// Drag a tile to move it; drag its bottom-right corner to resize it. Closing this window exits the app.
 /// </summary>
 public sealed class DockWindow : Window
 {
@@ -20,7 +20,8 @@ public sealed class DockWindow : Window
     private const double DefaultSideWidth = 560;
     private const double MinSideWidth = 380;
 
-    private readonly WrapPanel _tiles = new() { Margin = new Thickness(4) };
+    private readonly Canvas _tiles = new() { Background = Brushes.Transparent };
+    private readonly ScrollViewer _tilesArea;
     private readonly Dictionary<string, Grid> _byKey = [];
     private readonly TextBlock _empty;
     private readonly Border _side = new() { Padding = new Thickness(0) };
@@ -32,6 +33,7 @@ public sealed class DockWindow : Window
     private Border? _dropPreview;
     private string? _draggedKey;
     private bool _dropCommitted;
+    private Vector _dragOffset;
 
     public DockWindow(DockWindowSettings settings)
     {
@@ -91,7 +93,7 @@ public sealed class DockWindow : Window
         bar.Children.Add(topmost);
         var dragHint = new TextBlock
         {
-            Text = "Drag a panel to reorder it; drag its bottom-right corner to resize it.",
+            Text = "Drag panels anywhere; drag the bottom-right corner to resize. Other panels stay put.",
             VerticalAlignment = VerticalAlignment.Center,
         };
         dragHint.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
@@ -105,14 +107,19 @@ public sealed class DockWindow : Window
         };
         _empty.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
 
-        var tilesArea = new ScrollViewer
+        _tilesArea = new ScrollViewer
         {
             Background = Brushes.Transparent,
             AllowDrop = true,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Content = new StackPanel { Children = { _empty, _tiles } },
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = _tiles,
         };
+        var tilesArea = _tilesArea;
+        var canvasArea = new Grid { Children = { tilesArea, _empty } };
+        _empty.IsHitTestVisible = false;
+        _empty.VerticalAlignment = VerticalAlignment.Top;
+        tilesArea.SizeChanged += (_, _) => UpdateCanvasSize();
         tilesArea.DragOver += (_, e) =>
         {
             bool valid = e.Data.GetData(PanelDragFormat) is string key && key == _draggedKey;
@@ -124,6 +131,9 @@ public sealed class DockWindow : Window
                 double y = e.GetPosition(tilesArea).Y;
                 if (y < 35) tilesArea.ScrollToVerticalOffset(tilesArea.VerticalOffset - 12);
                 else if (y > tilesArea.ActualHeight - 35) tilesArea.ScrollToVerticalOffset(tilesArea.VerticalOffset + 12);
+                double x = e.GetPosition(tilesArea).X;
+                if (x < 35) tilesArea.ScrollToHorizontalOffset(tilesArea.HorizontalOffset - 12);
+                else if (x > tilesArea.ActualWidth - 35) tilesArea.ScrollToHorizontalOffset(tilesArea.HorizontalOffset + 12);
             }
             e.Handled = true;
         };
@@ -152,10 +162,10 @@ public sealed class DockWindow : Window
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 150 });
         Grid.SetColumn(_side, 0);
         Grid.SetColumn(_splitter, 1);
-        Grid.SetColumn(tilesArea, 2);
+        Grid.SetColumn(canvasArea, 2);
         body.Children.Add(_side);
         body.Children.Add(_splitter);
-        body.Children.Add(tilesArea);
+        body.Children.Add(canvasArea);
 
         var root = new DockPanel();
         DockPanel.SetDock(bar, Dock.Top);
@@ -196,12 +206,19 @@ public sealed class DockWindow : Window
             : new GridLength(0);
     }
 
-    /// <summary>Raised when the user reorders tiles; the argument is the new order of keys.</summary>
-    public event Action<IReadOnlyList<string>>? OrderChanged;
-
     public bool HasPanel(string key) => _byKey.ContainsKey(key);
 
-    public void AddPanel(OverlayPanel panel, OverlayPlacement placement, IReadOnlyList<string> order)
+    /// <summary>Brings a docked panel forward and scrolls it into view.</summary>
+    public void RevealPanel(string key)
+    {
+        if (!_byKey.TryGetValue(key, out var tile)) return;
+        BringToFront(tile);
+        _tiles.UpdateLayout();
+        _tilesArea.ScrollToHorizontalOffset(Canvas.GetLeft(tile));
+        _tilesArea.ScrollToVerticalOffset(Canvas.GetTop(tile));
+    }
+
+    public void AddPanel(OverlayPanel panel, OverlayPlacement placement)
     {
         if (_byKey.ContainsKey(panel.Key))
         {
@@ -213,11 +230,18 @@ public sealed class DockWindow : Window
         {
             Width = Math.Max(MinTileWidth, placement.DockWidth > 0 ? placement.DockWidth : placement.Width),
             Height = Math.Max(MinTileHeight, placement.DockHeight > 0 ? placement.DockHeight : placement.Height),
-            Margin = new Thickness(4),
             VerticalAlignment = VerticalAlignment.Top,
             Tag = panel.Key,
             AllowDrop = true,
         };
+        var position = placement.DockLeft is double left && double.IsFinite(left) &&
+            placement.DockTop is double top && double.IsFinite(top)
+            ? new Point(Math.Max(4, left), Math.Max(4, top))
+            : FindEmptyPosition(tile.Width, tile.Height);
+        Canvas.SetLeft(tile, position.X);
+        Canvas.SetTop(tile, position.Y);
+        placement.DockLeft = position.X;
+        placement.DockTop = position.Y;
         tile.Children.Add(panel);
 
         var grip = MakeGrip();
@@ -227,7 +251,9 @@ public sealed class DockWindow : Window
             tile.Height = Math.Max(MinTileHeight, tile.Height + e.VerticalChange);
             placement.DockWidth = tile.Width;
             placement.DockHeight = tile.Height;
+            UpdateCanvasSize();
         };
+        grip.DragCompleted += (_, _) => UpdateCanvasSize();
         tile.Children.Add(grip);
 
         tile.PreviewMouseLeftButtonDown += (_, e) =>
@@ -245,12 +271,12 @@ public sealed class DockWindow : Window
             if (Math.Abs(delta.X) > SystemParameters.MinimumHorizontalDragDistance || Math.Abs(delta.Y) > SystemParameters.MinimumVerticalDragDistance)
             {
                 _dragStart = null;
-                var original = _tiles.Children.OfType<Grid>().Select(t => (string)t.Tag).ToArray();
                 _draggedKey = panel.Key;
                 _dropCommitted = false;
+                _dragOffset = start - tile.TranslatePoint(new Point(), this);
                 _dropPreview = new Border
                 {
-                    Width = tile.Width, Height = tile.Height, Margin = tile.Margin,
+                    Width = tile.Width, Height = tile.Height,
                     BorderThickness = new Thickness(2), CornerRadius = new CornerRadius(6),
                     VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false,
                     Child = new TextBlock
@@ -263,27 +289,28 @@ public sealed class DockWindow : Window
                 _dropPreview.SetResourceReference(Border.BorderBrushProperty, "Pumpkin");
                 _dropPreview.SetResourceReference(Border.BackgroundProperty, "NightRaised");
                 _dropPreview.SetResourceReference(TextElement.ForegroundProperty, "Pumpkin");
-                int index = _tiles.Children.IndexOf(tile);
-                _tiles.Children.Remove(tile);
-                _tiles.Children.Insert(index, _dropPreview);
+                Canvas.SetLeft(_dropPreview, Canvas.GetLeft(tile));
+                Canvas.SetTop(_dropPreview, Canvas.GetTop(tile));
+                BringToFront(tile);
+                Panel.SetZIndex(_dropPreview, _byKey.Count + 1);
+                _tiles.Children.Add(_dropPreview);
+                tile.Opacity = 0.3;
                 try
                 {
                     DragDrop.DoDragDrop(tile, new DataObject(PanelDragFormat, panel.Key), DragDropEffects.Move);
                 }
                 finally
                 {
-                    var proposed = _tiles.Children.Cast<FrameworkElement>()
-                        .Select(t => t == _dropPreview ? panel.Key : (string)t.Tag).ToArray();
-                    _dropPreview = null;
-                    _draggedKey = null;
-                    Arrange(_dropCommitted ? proposed : original);
-                    if (_dropCommitted) OrderChanged?.Invoke(proposed);
+                    FinishPanelDrag(tile, placement);
                 }
             }
         };
 
         _byKey[panel.Key] = tile;
-        Arrange(order);
+        _tiles.Children.Add(tile);
+        BringToFront(tile);
+        UpdateEmpty();
+        UpdateCanvasSize();
     }
 
     public void RemovePanel(string key)
@@ -293,59 +320,71 @@ public sealed class DockWindow : Window
             tile.Children.Clear();
             _tiles.Children.Remove(tile);
             UpdateEmpty();
+            UpdateCanvasSize();
         }
     }
 
-    /// <summary>Lays tiles out in the given key order; keys not in the list go last.</summary>
-    public void Arrange(IReadOnlyList<string> order)
+    private void BringToFront(Grid tile)
     {
-        _tiles.Children.Clear();
-        foreach (var tile in _byKey.Values.OrderBy(t => Rank(order, (string)t.Tag)))
-        {
-            _tiles.Children.Add(tile);
-        }
-
-        UpdateEmpty();
+        int index = 0;
+        foreach (var other in _byKey.Values.Where(t => t != tile).OrderBy(Panel.GetZIndex))
+            Panel.SetZIndex(other, index++);
+        Panel.SetZIndex(tile, index);
     }
 
-    private static int Rank(IReadOnlyList<string> order, string key)
+    private Point FindEmptyPosition(double width, double height)
     {
-        for (int i = 0; i < order.Count; i++)
+        var bounds = _byKey.Values.Select(t =>
+            new Rect(Canvas.GetLeft(t), Canvas.GetTop(t), t.Width + 8, t.Height + 8)).ToArray();
+        double available = _tilesArea.ViewportWidth > 0 ? _tilesArea.ViewportWidth :
+            Math.Max(MinTileWidth, Width - (Settings.SidePanelOpen ? _sideColumn.Width.Value : 0) - 40);
+        var xs = bounds.Select(r => r.Right).Append(4).Distinct().Order().ToArray();
+        var ys = bounds.Select(r => r.Bottom).Append(4).Distinct().Order();
+        foreach (double y in ys)
         {
-            if (order[i] == key)
+            foreach (double x in xs)
             {
-                return i;
+                if (x > 4 && x + width + 4 > available) continue;
+                var candidate = new Rect(x, y, width + 8, height + 8);
+                if (!bounds.Any(r => r.Left < candidate.Right && r.Right > candidate.Left &&
+                    r.Top < candidate.Bottom && r.Bottom > candidate.Top)) return new Point(x, y);
             }
         }
-
-        return int.MaxValue;
+        return new Point(4, bounds.Length == 0 ? 4 : bounds.Max(r => r.Bottom) + 1);
     }
 
     private void UpdateDropPreview(Point pointer)
     {
         if (_dropPreview is null) return;
-        var placeholderBounds = new Rect(_dropPreview.TranslatePoint(new Point(), _tiles), _dropPreview.RenderSize);
-        if (placeholderBounds.Contains(pointer)) return;
-        var candidates = _tiles.Children.OfType<Grid>().ToArray();
-        int insertion = candidates.Length;
-        for (int i = 0; i < candidates.Length; i++)
+        Canvas.SetLeft(_dropPreview, Math.Max(4, pointer.X - _dragOffset.X));
+        Canvas.SetTop(_dropPreview, Math.Max(4, pointer.Y - _dragOffset.Y));
+        UpdateCanvasSize();
+    }
+
+    private void FinishPanelDrag(Grid tile, OverlayPlacement placement)
+    {
+        if (_dropPreview is null) return;
+        if (_dropCommitted)
         {
-            var tile = candidates[i];
-            var bounds = new Rect(tile.TranslatePoint(new Point(), _tiles), tile.RenderSize);
-            if (pointer.Y < bounds.Top || (pointer.Y <= bounds.Bottom && pointer.X < bounds.Left + bounds.Width / 2))
-            {
-                insertion = i;
-                break;
-            }
+            placement.DockLeft = Canvas.GetLeft(_dropPreview);
+            placement.DockTop = Canvas.GetTop(_dropPreview);
+            Canvas.SetLeft(tile, placement.DockLeft.Value);
+            Canvas.SetTop(tile, placement.DockTop.Value);
         }
-        int current = _tiles.Children.IndexOf(_dropPreview);
-        int target = insertion == candidates.Length ? _tiles.Children.Count - 1 :
-            _tiles.Children.IndexOf(candidates[insertion]);
-        if (target > current && insertion < candidates.Length) target--;
-        if (target == current) return;
         _tiles.Children.Remove(_dropPreview);
-        _tiles.Children.Insert(target, _dropPreview);
-        _tiles.UpdateLayout();
+        tile.Opacity = 1;
+        _dropPreview = null;
+        _draggedKey = null;
+        UpdateCanvasSize();
+    }
+
+    private void UpdateCanvasSize()
+    {
+        var children = _tiles.Children.OfType<FrameworkElement>().ToArray();
+        double width = children.Select(t => Canvas.GetLeft(t) + t.Width + 12).DefaultIfEmpty(0).Max();
+        double height = children.Select(t => Canvas.GetTop(t) + t.Height + 12).DefaultIfEmpty(0).Max();
+        _tiles.Width = Math.Max(Math.Max(0, _tilesArea.ActualWidth - 20), width);
+        _tiles.Height = Math.Max(Math.Max(0, _tilesArea.ActualHeight - 20), height);
     }
 
     private void UpdateEmpty() => _empty.Visibility = _byKey.Count == 0 ? Visibility.Visible : Visibility.Collapsed;

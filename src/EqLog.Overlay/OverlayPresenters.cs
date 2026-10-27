@@ -60,6 +60,7 @@ public static class OverlayPresenters
         new("spawns", "Spawn Timers", 300, 200, false, Spawns),
         new("motes", "Motes", 300, 320, false, Motes),
         new("quests", "Quest opportunities", 420, 320, false, (_, _, _) => new("Quest opportunities", null, [])),
+        new("sky", "Sky quest tracker", 380, 420, false, (_, _, _) => new("Sky quest tracker", null, [])),
     ];
 
     private static OverlayContent Motes(EngineSnapshot s, LogEngine _, OverlayView __)

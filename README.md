@@ -53,14 +53,23 @@ example after you change character).
 
 ## Overlays
 
-Docked overlays have an accent-colored drag handle at the left of their header. Drag it (or
-noninteractive panel space) onto the left/right half of another tile to place it before/after
-that tile, or drop in empty dock space to move it to the end. The dock reflows tiles and saves
-their order across starts. Buttons, filters, and the bottom-right resize grip remain interactive;
-docked reordering works even when floating overlays are locked.
-During dragging, a full-size highlighted placeholder previews the drop position and surrounding
-panels reflow immediately. Drop to commit the previewed order, or press Escape to restore the
-original layout. Drag near the top/bottom of the dock to scroll while positioning a panel.
+Enable **Sky quest tracker** under **General → Overlays** for a compact Plane of Sky tracker.
+It can be docked or floating and has a class selector shared with the Plane of Sky tab.
+Only quests with at least one currently owned ingredient appear. Each entry shows the quest,
+turn-in NPC, reward, and ingredient owned/required counts. Historical loot and installed augmentations
+do not qualify; collection ownership does, with a turn-in availability warning. Inventory and newer
+loot update counts automatically. The scrollable list is virtualized. **Refresh** reloads wiki data;
+the existing 24-hour Sky cache is shared with the full browser. The overlay is off by default.
+
+Docked overlays live on a **freeform canvas**, not a wrapping grid. Drag the accent-colored header
+handle (or noninteractive panel space) to place a panel anywhere, including empty space, without
+moving any other panels. A full-size highlighted preview follows the pointer, preserving where
+you grabbed the panel. Drop to place it; Escape or dropping outside the dock cancels the move.
+Panels may overlap; dragging a panel brings it to the front. Drag near any edge to scroll.
+Each panel's canvas position and bottom-right-grip size are saved independently of its floating
+window position and size. Resizing panels or the dock window never rearranges neighbors.
+Newly docked panels without saved positions are placed in available space automatically.
+Buttons, filters, and scrollbars remain interactive even when floating overlays are locked.
 
 The **Loot** overlay selector offers **Recent drops**, **Grouped: most recent**, and
 **Grouped: item name (A-Z)**. Grouped rows show the session quantity and last-looted time,
@@ -91,12 +100,17 @@ as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels r
 | Spawn Timers | Respawn countdowns for the named mobs you track in the current zone (see below) |
 | Motes | Motes of Potential looted per tier (session and all time), motes/hr, recent drops, drop rates here (see below) |
 
-- **Lock overlays** (or **Ctrl+Shift+L**): when locked, overlays are click-through so they don't block the game.
+- **Lock all overlays** (or **Ctrl+Shift+L**): when locked, overlays are click-through so they don't block the game.
   When unlocked they have a gold border; drag to move and drag the edges to resize.
+  A dash in the checkbox means some overlays are locked; clicking it or pressing the hotkey locks all.
+  When all are locked, the same control unlocks all. Docked panels remain interactive.
 - **Only show overlays while EverQuest is visible** (on by default): floating overlays hide while `eqgame.exe`
   isn't running, is minimized, or is mostly covered by another app's window, and come back when the game does.
   Docked panels always stay visible. Turn this off to arrange overlays without the game running.
-- Opacity and font size sliders apply to every overlay. Positions are saved on exit.
+- Expand **General > Overlays > Individual overlay appearance and locks**, then an overlay's name,
+  to adjust its text size, background opacity, and floating-window lock independently.
+  Size and opacity apply to both floating and docked panels, update live, and are saved with positions.
+  Existing settings retain the previous global appearance and lock values until individually changed.
 - **Reset session** clears totals. You can also have them reset automatically when you log in.
 
 ### Main window: settings + docked panels (second monitor)
@@ -109,7 +123,7 @@ Tick **docked** next to an overlay to show it as a tile in this window instead o
 Each panel also has its own button: **Dock** on a floating overlay (visible while overlays are unlocked) and
 **Pop out** on a docked tile, to move just that one panel.
 **Dock all** docks everything except Alerts; **Float all** turns every panel back into an overlay.
-Drag a tile to reorder it and drag its gold bottom-right corner to resize it.
+Drag a tile anywhere on the canvas and drag its gold bottom-right corner to resize it.
 Tiles wrap to fit the window width. Tile order and sizes, the window's position and the side panel's width and
 visibility are saved.
 ## Loot quest lookup
@@ -174,15 +188,21 @@ bar, checked/total and cached/queued/failed counts, and the current lookup text 
 attempts count as processed, not cached; use Retry lookups to retry them.
 Quest titles use accent-colored section headings. Clickable items sit beneath them in indented,
 translucent cards with bold item names and separate muted inventory details.
+Quest opportunities uses a visible vertical scrollbar and a recycling virtualized list: only
+visible/nearby rows create UI elements. Scrollbar dragging does not reorder the docked panel.
 Use **Retry lookups** after a network failure. Only item names are sent to EQLWiki.
 
-For a manual lookup, open **Settings > Loot quests**, select a recently looted item (or type its exact name), then click
-**Look up quests**. This uses EQLWiki's public MediaWiki API to find quest-category pages that link to
+For a manual lookup, open **Settings > Loot quests** and select an inventory grid row to load its
+quest references automatically. **Look up quests** repeats the selected row's lookup, and **Item wiki page**
+opens that same item's page. This uses EQLWiki's public MediaWiki API to find quest-category pages that link to
 or transclude the item's page, including redirects. Select a result and click **Open selected quest**.
 References may describe requirements, rewards, or other mentions; check the linked quest before selling
 an item. No results means no linked quest pages were found, not that the item has no quest use.
 
-You can also **click an item directly in the Loot panel** to open the Loot quests tab and start its lookup.
+You can also **click an item directly in the Loot or Quest opportunities panel** to open the Loot quests
+tab, select its inventory row, scroll to it, and start its lookup. Matching ignores numeric upgrades.
+Items not yet in the inventory grid are added as zero-owned lookup candidates; clicking someone else's
+loot never adds ownership. Quickly changing selection cannot replace the latest item's results with an older response.
 This works in the docked panel and in unlocked floating overlays. Press **Ctrl+Shift+L** to unlock a
 floating overlay first; locked overlays pass clicks through to the game.
 
@@ -213,6 +233,11 @@ Built-in examples:
 - `^You are no longer feigning death, because (.+)\.$` → **Feign broken: $1**
 
 Use **Test** to try a line against your triggers. Invalid regexes are listed under the grid and skipped.
+Testing automatically enables and reveals the Alerts panel. Floating test alerts remain visible even
+without EverQuest on screen until the test duration expires, then the usual game-visibility rule resumes.
+Docked Alerts are brought forward and scrolled into view.
+To remove triggers, select one or more rows and click **Delete selected** or press **Delete**.
+Both methods ask for confirmation, defaulting to **No**. Confirmed deletions are saved.
 
 ### Log lines
 
