@@ -58,16 +58,21 @@ public sealed class SpellCastTracker
         _casts = _interrupts = _resists = _fizzles = 0;
     }
 
-    public SpellCastSnapshot Snapshot(int top) => new(
+    public SpellCastSnapshot Snapshot(int top)
+    {
+        return new(
         _casts,
         _interrupts,
         _resists,
         _fizzles,
         _spells.Values.OrderByDescending(s => s.Casts).Take(top)
             .Select(s => new SpellStats(s.Spell, s.Casts, s.Interrupts, s.Resists, s.LastCast)).ToList());
+    }
 
-    private string? Recent(DateTime t) =>
-        _lastCast is { } lc && t - lc.Time <= AttributionWindow ? lc.Spell : null;
+    private string? Recent(DateTime t)
+    {
+        return _lastCast is { } lc && t - lc.Time <= AttributionWindow ? lc.Spell : null;
+    }
 
     private Entry Get(string spell)
     {
@@ -84,12 +89,24 @@ public sealed class SpellCastTracker
     {
         public string Spell { get; } = spell;
 
-        public int Casts { get; set; }
+        public int Casts
+        {
+            get; set;
+        }
 
-        public int Interrupts { get; set; }
+        public int Interrupts
+        {
+            get; set;
+        }
 
-        public int Resists { get; set; }
+        public int Resists
+        {
+            get; set;
+        }
 
-        public DateTime LastCast { get; set; }
+        public DateTime LastCast
+        {
+            get; set;
+        }
     }
 }

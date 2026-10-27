@@ -7,7 +7,10 @@ public class LogEventParserTests
     private static readonly DateTime T = new(2026, 10, 21, 17, 7, 4);
     private readonly LogEventParser _parser = new("Quethrosar");
 
-    private LogEvent? P(string message) => _parser.Parse(T, message);
+    private LogEvent? P(string message)
+    {
+        return _parser.Parse(T, message);
+    }
 
     [Fact]
     public void ParsesTimestampedLine()
@@ -64,8 +67,10 @@ public class LogEventParserTests
     }
 
     [Fact]
-    public void IgnoresSelfDamage() =>
+    public void IgnoresSelfDamage()
+    {
         Assert.Null(P("You hit yourself for 578 points of fire damage by Conflagration X."));
+    }
 
     [Fact]
     public void ParsesYourDot()
@@ -222,6 +227,8 @@ public class LogEventParserTests
     }
 
     [Fact]
-    public void OtherSpellsInterruptedAreNotYours() =>
+    public void OtherSpellsInterruptedAreNotYours()
+    {
         Assert.Null(P("Lord Rikantus Everling's Insidious Retrogression spell is interrupted."));
+    }
 }

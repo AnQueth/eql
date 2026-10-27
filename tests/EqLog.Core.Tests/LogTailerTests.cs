@@ -20,7 +20,10 @@ public class LogTailerTests
                 lock (received)
                 {
                     received.AddRange(lines);
-                    if (received.Count == 4) gotAppended.TrySetResult();
+                    if (received.Count == 4)
+                    {
+                        gotAppended.TrySetResult();
+                    }
                 }
             }, null, cts.Token);
 

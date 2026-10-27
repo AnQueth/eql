@@ -22,7 +22,10 @@ public sealed class ThemeEditor : UserControl
     private ThemePalette? _original;
     private bool _loading;
 
-    public Func<ThemePalette, bool>? ApplyRequested { get; set; }
+    public Func<ThemePalette, bool>? ApplyRequested
+    {
+        get; set;
+    }
 
     public ThemeEditor()
     {
@@ -33,7 +36,8 @@ public sealed class ThemeEditor : UserControl
         root.Children.Add(new TextBlock
         {
             Text = "Edit #RRGGBB colors below. Draft changes affect only this preview until Apply & save. Choosing another theme replaces this draft.",
-            TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 8),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 8, 0, 8),
         });
         root.Children.Add(new TextBlock { Text = "Theme name", Margin = new Thickness(0, 0, 0, 4) });
         _name.TextChanged += (_, _) => UpdatePreview();
@@ -41,7 +45,13 @@ public sealed class ThemeEditor : UserControl
         var actions = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
         AddButton(actions, "Apply & save", Apply);
         AddButton(actions, "Export JSON...", Export);
-        AddButton(actions, "Reset draft", () => { if (_original is not null) LoadPalette(_original); });
+        AddButton(actions, "Reset draft", () =>
+        {
+            if (_original is not null)
+            {
+                LoadPalette(_original);
+            }
+        });
         root.Children.Add(actions);
         _status.SetResourceReference(TextBlock.ForegroundProperty, "Pumpkin");
         root.Children.Add(_status);
@@ -61,8 +71,11 @@ public sealed class ThemeEditor : UserControl
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
             row.Children.Add(new TextBlock
             {
-                Text = Label(key), ToolTip = key, VerticalAlignment = VerticalAlignment.Center,
-                TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 8, 0),
+                Text = Label(key),
+                ToolTip = key,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 8, 0),
             });
             var swatch = new Border { CornerRadius = new CornerRadius(4), Margin = new Thickness(0, 3, 8, 3), BorderThickness = new Thickness(1) };
             swatch.SetResourceReference(Border.BorderBrushProperty, "NightMuted");
@@ -78,7 +91,8 @@ public sealed class ThemeEditor : UserControl
         }
         Content = new ScrollViewer
         {
-            Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = root,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
         };
     }
@@ -88,7 +102,11 @@ public sealed class ThemeEditor : UserControl
         _loading = true;
         _original = ThemePalette.Parse(JsonSerializer.Serialize(palette));
         _name.Text = palette.Name;
-        foreach (string key in ThemePalette.ColorKeys) _colors[key].Text = palette.Colors[key];
+        foreach (string key in ThemePalette.ColorKeys)
+        {
+            _colors[key].Text = palette.Colors[key];
+        }
+
         _loading = false;
         UpdatePreview();
     }
@@ -106,7 +124,11 @@ public sealed class ThemeEditor : UserControl
 
     private void UpdatePreview()
     {
-        if (_loading) return;
+        if (_loading)
+        {
+            return;
+        }
+
         foreach (var (key, input) in _colors)
         {
             string value = input.Text.Trim();
@@ -116,7 +138,11 @@ public sealed class ThemeEditor : UserControl
         try
         {
             var palette = ReadPalette();
-            Brush BrushFor(string key) => new SolidColorBrush((Color)ColorConverter.ConvertFromString(palette.Colors[key]));
+            Brush BrushFor(string key)
+            {
+                return new SolidColorBrush((Color)ColorConverter.ConvertFromString(palette.Colors[key]));
+            }
+
             _preview.Background = BrushFor("NightSurface");
             _previewTitle.Foreground = BrushFor("Pumpkin");
             _previewText.Foreground = BrushFor("NightText");
@@ -124,7 +150,10 @@ public sealed class ThemeEditor : UserControl
             _previewAccentText.Foreground = BrushFor("AccentText");
             _status.Text = "Valid draft. Apply to save for future starts, or export without changing your active theme.";
         }
-        catch (FormatException ex) { _status.Text = $"Draft needs attention: {ex.Message} Preview shows the last valid palette."; }
+        catch (FormatException ex)
+        {
+            _status.Text = $"Draft needs attention: {ex.Message} Preview shows the last valid palette.";
+        }
     }
 
     private void Apply()
@@ -133,15 +162,23 @@ public sealed class ThemeEditor : UserControl
         {
             var palette = ReadPalette();
             if (ApplyRequested is null)
+            {
                 _status.Text = "Cannot apply: no theme handler is available.";
+            }
             else if (ApplyRequested(palette))
             {
                 LoadPalette(palette);
                 _status.Text = $"{palette.Name} applied and saved.";
             }
-            else _status.Text = "Could not save this theme. See the Theme status above; your draft is retained.";
+            else
+            {
+                _status.Text = "Could not save this theme. See the Theme status above; your draft is retained.";
+            }
         }
-        catch (FormatException ex) { _status.Text = $"Cannot apply: {ex.Message}"; }
+        catch (FormatException ex)
+        {
+            _status.Text = $"Cannot apply: {ex.Message}";
+        }
     }
 
     private void Export()
@@ -151,10 +188,17 @@ public sealed class ThemeEditor : UserControl
             var palette = ReadPalette();
             var dialog = new SaveFileDialog
             {
-                Title = "Export theme JSON", Filter = "JSON themes (*.json)|*.json",
-                FileName = "CustomTheme.json", DefaultExt = ".json", AddExtension = true,
+                Title = "Export theme JSON",
+                Filter = "JSON themes (*.json)|*.json",
+                FileName = "CustomTheme.json",
+                DefaultExt = ".json",
+                AddExtension = true,
             };
-            if (dialog.ShowDialog(Window.GetWindow(this)) != true) return;
+            if (dialog.ShowDialog(Window.GetWindow(this)) != true)
+            {
+                return;
+            }
+
             AtomicFile.WriteAllText(dialog.FileName, JsonSerializer.Serialize(palette, new JsonSerializerOptions { WriteIndented = true }));
             _status.Text = $"Exported {palette.Name} to {dialog.FileName}. Active theme unchanged.";
         }
@@ -171,22 +215,25 @@ public sealed class ThemeEditor : UserControl
         panel.Children.Add(button);
     }
 
-    private static string Label(string key) => key switch
+    private static string Label(string key)
     {
-        "NightBackground" => "Window background",
-        "NightSurface" => "Panel / card background",
-        "NightRaised" => "Raised controls / headers",
-        "NightBorder" => "Borders",
-        "NightText" => "Main text",
-        "NightMuted" => "Secondary text",
-        "Pumpkin" => "Accent / headings",
-        "Hover" => "Hovered controls",
-        "Pressed" => "Pressed controls",
-        "Selection" => "Selected rows / text",
-        "Alternate" => "Alternating table rows",
-        "GridLine" => "Table grid lines",
-        "ScrollThumb" => "Scrollbar thumb",
-        "AccentText" => "Text on accent color",
-        _ => key,
-    };
+        return key switch
+        {
+            "NightBackground" => "Window background",
+            "NightSurface" => "Panel / card background",
+            "NightRaised" => "Raised controls / headers",
+            "NightBorder" => "Borders",
+            "NightText" => "Main text",
+            "NightMuted" => "Secondary text",
+            "Pumpkin" => "Accent / headings",
+            "Hover" => "Hovered controls",
+            "Pressed" => "Pressed controls",
+            "Selection" => "Selected rows / text",
+            "Alternate" => "Alternating table rows",
+            "GridLine" => "Table grid lines",
+            "ScrollThumb" => "Scrollbar thumb",
+            "AccentText" => "Text on accent color",
+            _ => key,
+        };
+    }
 }

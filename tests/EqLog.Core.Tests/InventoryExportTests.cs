@@ -40,8 +40,10 @@ public class InventoryExportTests
 
     [Fact]
     public void InvalidCollectionRowsAreNotSilentlySkipped()
-        => Assert.Throws<FormatException>(() => InventoryExport.Parse(
-            "Location\tName\tID\tCount\tSlots\nKeyRing\tName\tID\t\nEquipment\tBroken item\tbad"));
+    {
+        Assert.Throws<FormatException>(() => InventoryExport.Parse(
+                "Location\tName\tID\tCount\tSlots\nKeyRing\tName\tID\t\nEquipment\tBroken item\tbad"));
+    }
 
     [Fact]
     public void CollectionAndInstalledCountsAreNotLooseOwnedCountsAndAreResetOnNextExport()

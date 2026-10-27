@@ -57,19 +57,49 @@ public sealed class LogEngine
 
     public string CharacterName
     {
-        get { lock (_gate) return _parser.CharacterName; }
-        set { lock (_gate) _parser.CharacterName = value; }
+        get
+        {
+            lock (_gate)
+            {
+                return _parser.CharacterName;
+            }
+        }
+        set
+        {
+            lock (_gate)
+            {
+                _parser.CharacterName = value;
+            }
+        }
     }
 
     public TimeSpan FightTimeout
     {
-        get { lock (_gate) return _fights.FightTimeout; }
-        set { lock (_gate) _fights.FightTimeout = value; }
+        get
+        {
+            lock (_gate)
+            {
+                return _fights.FightTimeout;
+            }
+        }
+        set
+        {
+            lock (_gate)
+            {
+                _fights.FightTimeout = value;
+            }
+        }
     }
 
     public DateTime? LastLogTime
     {
-        get { lock (_gate) return _lastLogTime; }
+        get
+        {
+            lock (_gate)
+            {
+                return _lastLogTime;
+            }
+        }
     }
 
     public void ProcessLines(IReadOnlyList<string> rawLines)
@@ -272,7 +302,13 @@ public sealed class LogEngine
 
     public string? SpawnZone
     {
-        get { lock (_gate) return _spawns.Zone; }
+        get
+        {
+            lock (_gate)
+            {
+                return _spawns.Zone;
+            }
+        }
     }
 
     public void SetSpawnTracked(string zone, string mob, bool tracked)
@@ -302,7 +338,13 @@ public sealed class LogEngine
         }
     }
 
-    private string MoteCharacter => _parser.CharacterName.Length > 0 ? _parser.CharacterName : "Unknown";
+    private string MoteCharacter
+    {
+        get
+        {
+            return _parser.CharacterName.Length > 0 ? _parser.CharacterName : "Unknown";
+        }
+    }
 
     public void SaveMotes(string path, bool onlyIfDirty = true)
     {

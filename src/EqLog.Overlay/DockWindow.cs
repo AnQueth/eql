@@ -129,11 +129,24 @@ public sealed class DockWindow : Window
             {
                 UpdateDropPreview(e.GetPosition(_tiles));
                 double y = e.GetPosition(tilesArea).Y;
-                if (y < 35) tilesArea.ScrollToVerticalOffset(tilesArea.VerticalOffset - 12);
-                else if (y > tilesArea.ActualHeight - 35) tilesArea.ScrollToVerticalOffset(tilesArea.VerticalOffset + 12);
+                if (y < 35)
+                {
+                    tilesArea.ScrollToVerticalOffset(tilesArea.VerticalOffset - 12);
+                }
+                else if (y > tilesArea.ActualHeight - 35)
+                {
+                    tilesArea.ScrollToVerticalOffset(tilesArea.VerticalOffset + 12);
+                }
+
                 double x = e.GetPosition(tilesArea).X;
-                if (x < 35) tilesArea.ScrollToHorizontalOffset(tilesArea.HorizontalOffset - 12);
-                else if (x > tilesArea.ActualWidth - 35) tilesArea.ScrollToHorizontalOffset(tilesArea.HorizontalOffset + 12);
+                if (x < 35)
+                {
+                    tilesArea.ScrollToHorizontalOffset(tilesArea.HorizontalOffset - 12);
+                }
+                else if (x > tilesArea.ActualWidth - 35)
+                {
+                    tilesArea.ScrollToHorizontalOffset(tilesArea.HorizontalOffset + 12);
+                }
             }
             e.Handled = true;
         };
@@ -184,10 +197,16 @@ public sealed class DockWindow : Window
         };
     }
 
-    public DockWindowSettings Settings { get; }
+    public DockWindowSettings Settings
+    {
+        get;
+    }
 
     /// <summary>Puts the settings UI into the side panel.</summary>
-    public void SetSidePanel(FrameworkElement content) => _side.Child = content;
+    public void SetSidePanel(FrameworkElement content)
+    {
+        _side.Child = content;
+    }
 
     public void SetSidePanelOpen(bool open)
     {
@@ -206,12 +225,19 @@ public sealed class DockWindow : Window
             : new GridLength(0);
     }
 
-    public bool HasPanel(string key) => _byKey.ContainsKey(key);
+    public bool HasPanel(string key)
+    {
+        return _byKey.ContainsKey(key);
+    }
 
     /// <summary>Brings a docked panel forward and scrolls it into view.</summary>
     public void RevealPanel(string key)
     {
-        if (!_byKey.TryGetValue(key, out var tile)) return;
+        if (!_byKey.TryGetValue(key, out var tile))
+        {
+            return;
+        }
+
         BringToFront(tile);
         _tiles.UpdateLayout();
         _tilesArea.ScrollToHorizontalOffset(Canvas.GetLeft(tile));
@@ -276,14 +302,20 @@ public sealed class DockWindow : Window
                 _dragOffset = start - tile.TranslatePoint(new Point(), this);
                 _dropPreview = new Border
                 {
-                    Width = tile.Width, Height = tile.Height,
-                    BorderThickness = new Thickness(2), CornerRadius = new CornerRadius(6),
-                    VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false,
+                    Width = tile.Width,
+                    Height = tile.Height,
+                    BorderThickness = new Thickness(2),
+                    CornerRadius = new CornerRadius(6),
+                    VerticalAlignment = VerticalAlignment.Top,
+                    IsHitTestVisible = false,
                     Child = new TextBlock
                     {
-                        Text = $"Drop {panel.Caption} here", TextWrapping = TextWrapping.Wrap,
-                        HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
-                        Margin = new Thickness(10), FontWeight = FontWeights.SemiBold,
+                        Text = $"Drop {panel.Caption} here",
+                        TextWrapping = TextWrapping.Wrap,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(10),
+                        FontWeight = FontWeights.SemiBold,
                     },
                 };
                 _dropPreview.SetResourceReference(Border.BorderBrushProperty, "Pumpkin");
@@ -328,7 +360,10 @@ public sealed class DockWindow : Window
     {
         int index = 0;
         foreach (var other in _byKey.Values.Where(t => t != tile).OrderBy(Panel.GetZIndex))
+        {
             Panel.SetZIndex(other, index++);
+        }
+
         Panel.SetZIndex(tile, index);
     }
 
@@ -344,10 +379,17 @@ public sealed class DockWindow : Window
         {
             foreach (double x in xs)
             {
-                if (x > 4 && x + width + 4 > available) continue;
+                if (x > 4 && x + width + 4 > available)
+                {
+                    continue;
+                }
+
                 var candidate = new Rect(x, y, width + 8, height + 8);
                 if (!bounds.Any(r => r.Left < candidate.Right && r.Right > candidate.Left &&
-                    r.Top < candidate.Bottom && r.Bottom > candidate.Top)) return new Point(x, y);
+                    r.Top < candidate.Bottom && r.Bottom > candidate.Top))
+                {
+                    return new Point(x, y);
+                }
             }
         }
         return new Point(4, bounds.Length == 0 ? 4 : bounds.Max(r => r.Bottom) + 1);
@@ -355,7 +397,11 @@ public sealed class DockWindow : Window
 
     private void UpdateDropPreview(Point pointer)
     {
-        if (_dropPreview is null) return;
+        if (_dropPreview is null)
+        {
+            return;
+        }
+
         Canvas.SetLeft(_dropPreview, Math.Max(4, pointer.X - _dragOffset.X));
         Canvas.SetTop(_dropPreview, Math.Max(4, pointer.Y - _dragOffset.Y));
         UpdateCanvasSize();
@@ -363,7 +409,11 @@ public sealed class DockWindow : Window
 
     private void FinishPanelDrag(Grid tile, OverlayPlacement placement)
     {
-        if (_dropPreview is null) return;
+        if (_dropPreview is null)
+        {
+            return;
+        }
+
         if (_dropCommitted)
         {
             placement.DockLeft = Canvas.GetLeft(_dropPreview);
@@ -387,7 +437,10 @@ public sealed class DockWindow : Window
         _tiles.Height = Math.Max(Math.Max(0, _tilesArea.ActualHeight - 20), height);
     }
 
-    private void UpdateEmpty() => _empty.Visibility = _byKey.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    private void UpdateEmpty()
+    {
+        _empty.Visibility = _byKey.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     private static Thumb MakeGrip()
     {

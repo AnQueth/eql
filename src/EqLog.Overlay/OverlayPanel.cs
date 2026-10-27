@@ -73,7 +73,9 @@ public sealed class OverlayPanel : ContentControl
         var header = new DockPanel();
         _dockDragHandle = new TextBlock
         {
-            Text = "\u2630", FontSize = 16, Margin = new Thickness(0, 0, 8, 0),
+            Text = "\u2630",
+            FontSize = 16,
+            Margin = new Thickness(0, 0, 8, 0),
             Cursor = System.Windows.Input.Cursors.SizeAll,
             ToolTip = "Drag this panel anywhere on the dock canvas. Other panels stay put.",
             VerticalAlignment = VerticalAlignment.Center,
@@ -105,8 +107,11 @@ public sealed class OverlayPanel : ContentControl
         {
             _virtualList = new VirtualRowList(BuildRow)
             {
-                ItemsSource = _virtualRows, Background = Brushes.Transparent, BorderThickness = new Thickness(0),
-                Padding = new Thickness(0), Margin = new Thickness(0, 3, 0, 0),
+                ItemsSource = _virtualRows,
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(0),
+                Margin = new Thickness(0, 3, 0, 0),
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
             };
             ScrollViewer.SetVerticalScrollBarVisibility(_virtualList, ScrollBarVisibility.Auto);
@@ -128,7 +133,10 @@ public sealed class OverlayPanel : ContentControl
             _virtualList.ItemContainerStyle = itemStyle;
             layout.Children.Add(_virtualList);
         }
-        else layout.Children.Add(_scroll);
+        else
+        {
+            layout.Children.Add(_scroll);
+        }
 
         _frame = new Border
         {
@@ -144,11 +152,20 @@ public sealed class OverlayPanel : ContentControl
         Apply();
     }
 
-    public string Key { get; }
+    public string Key
+    {
+        get;
+    }
 
-    public string Caption { get; }
+    public string Caption
+    {
+        get;
+    }
 
-    public bool AutoScrollToEnd { get; }
+    public bool AutoScrollToEnd
+    {
+        get;
+    }
 
     /// <summary>Raised when the user clicks the panel's dock / pop-out button.</summary>
     public event Action<OverlayPanel>? DockToggleRequested;
@@ -156,7 +173,10 @@ public sealed class OverlayPanel : ContentControl
     public event Action<string>? LootLookupRequested;
     public event Action<AbilityBreakdown>? BreakdownRequested;
 
-    public void SetToolbar(UIElement toolbar) => _toolbar.Content = toolbar;
+    public void SetToolbar(UIElement toolbar)
+    {
+        _toolbar.Content = toolbar;
+    }
 
     internal static bool IsInteractive(DependencyObject? source)
     {
@@ -164,7 +184,11 @@ public sealed class OverlayPanel : ContentControl
         {
             if (source is System.Windows.Controls.Primitives.ButtonBase or
                 System.Windows.Controls.Primitives.TextBoxBase or
-                System.Windows.Controls.Primitives.ScrollBar or System.Windows.Controls.Primitives.Thumb or ComboBox) return true;
+                System.Windows.Controls.Primitives.ScrollBar or System.Windows.Controls.Primitives.Thumb or ComboBox)
+            {
+                return true;
+            }
+
             source = source is Visual ? VisualTreeHelper.GetParent(source) : LogicalTreeHelper.GetParent(source);
         }
         return false;
@@ -206,7 +230,10 @@ public sealed class OverlayPanel : ContentControl
             ? "Pop this panel out into its own floating overlay"
             : "Move this overlay into the docked window";
         _frame.SetResourceReference(Border.BorderBrushProperty, _docked ? "NightBorder" : "Pumpkin");
-        if (!_docked && _locked) _frame.BorderBrush = Brushes.Transparent;
+        if (!_docked && _locked)
+        {
+            _frame.BorderBrush = Brushes.Transparent;
+        }
     }
 
     protected override void OnPropertyChanged(DependencyPropertyChangedEventArgs e)
@@ -240,9 +267,23 @@ public sealed class OverlayPanel : ContentControl
             }
             int shared = Math.Min(_virtualRows.Count, rows.Count);
             for (int i = 0; i < shared; i++)
-                if (_virtualRows[i] != rows[i]) _virtualRows[i] = rows[i];
-            while (_virtualRows.Count > rows.Count) _virtualRows.RemoveAt(_virtualRows.Count - 1);
-            for (int i = shared; i < rows.Count; i++) _virtualRows.Add(rows[i]);
+            {
+                if (_virtualRows[i] != rows[i])
+                {
+                    _virtualRows[i] = rows[i];
+                }
+            }
+
+            while (_virtualRows.Count > rows.Count)
+            {
+                _virtualRows.RemoveAt(_virtualRows.Count - 1);
+            }
+
+            for (int i = shared; i < rows.Count; i++)
+            {
+                _virtualRows.Add(rows[i]);
+            }
+
             _current = rows;
             return;
         }
@@ -256,13 +297,23 @@ public sealed class OverlayPanel : ContentControl
         }
         int prefix = 0;
         while (prefix < _current.Count && prefix < rows.Count && _current[prefix] == rows[prefix])
+        {
             prefix++;
+        }
+
         int suffix = 0;
         while (suffix < _current.Count - prefix && suffix < rows.Count - prefix &&
             _current[_current.Count - 1 - suffix] == rows[rows.Count - 1 - suffix])
+        {
             suffix++;
+        }
+
         int remove = _current.Count - prefix - suffix;
-        if (remove > 0) _rows.Children.RemoveRange(prefix, remove);
+        if (remove > 0)
+        {
+            _rows.Children.RemoveRange(prefix, remove);
+        }
+
         for (int i = prefix; i < rows.Count - suffix; i++)
         {
             _rows.Children.Insert(i, BuildRow(rows[i]));
@@ -298,13 +349,21 @@ public sealed class OverlayPanel : ContentControl
         }
 
         grid.SetResourceReference(TextElement.ForegroundProperty, "NightText");
-        if (row.QuestHeading) grid.SetResourceReference(TextElement.ForegroundProperty, "Pumpkin");
+        if (row.QuestHeading)
+        {
+            grid.SetResourceReference(TextElement.ForegroundProperty, "Pumpkin");
+        }
+
         var weight = row.Bold ? FontWeights.Bold : FontWeights.Normal;
         var text = new DockPanel { Margin = new Thickness(3, 0, 3, 0) };
         if (!string.IsNullOrEmpty(row.Right))
         {
             var right = new TextBlock { Text = row.Right, FontWeight = weight, Margin = new Thickness(8, 0, 0, 0) };
-            if (row.Foreground is not null) right.Foreground = row.Foreground;
+            if (row.Foreground is not null)
+            {
+                right.Foreground = row.Foreground;
+            }
+
             DockPanel.SetDock(right, Dock.Right);
             text.Children.Add(right);
         }
@@ -316,7 +375,11 @@ public sealed class OverlayPanel : ContentControl
             TextWrapping = row.Wrap ? TextWrapping.Wrap : TextWrapping.NoWrap,
             TextTrimming = row.Wrap ? TextTrimming.None : TextTrimming.CharacterEllipsis,
         };
-        if (row.Foreground is not null) left.Foreground = row.Foreground;
+        if (row.Foreground is not null)
+        {
+            left.Foreground = row.Foreground;
+        }
+
         if (row.Details is { } details)
         {
             left.FontWeight = FontWeights.SemiBold;
@@ -324,7 +387,9 @@ public sealed class OverlayPanel : ContentControl
             itemContent.Children.Add(left);
             var description = new TextBlock
             {
-                Text = details, TextWrapping = TextWrapping.Wrap, FontSize = Math.Max(10, FontSize - 1),
+                Text = details,
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = Math.Max(10, FontSize - 1),
                 Margin = new Thickness(0, 4, 0, 0),
             };
             description.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
@@ -333,14 +398,19 @@ public sealed class OverlayPanel : ContentControl
             text.Margin = new Thickness(10, 8, 10, 8);
             var glass = new Border
             {
-                CornerRadius = new CornerRadius(6), Opacity = 0.6,
+                CornerRadius = new CornerRadius(6),
+                Opacity = 0.6,
                 BorderThickness = new Thickness(1),
             };
             glass.SetResourceReference(Border.BackgroundProperty, "NightRaised");
             glass.SetResourceReference(Border.BorderBrushProperty, "NightBorder");
             grid.Children.Insert(0, glass);
         }
-        else text.Children.Add(left);
+        else
+        {
+            text.Children.Add(left);
+        }
+
         grid.Children.Add(text);
         if (row.LootItem is not null || row.Breakdown is not null)
         {
@@ -355,11 +425,21 @@ public sealed class OverlayPanel : ContentControl
                 ToolTip = row.Breakdown is not null ? "Click for ability breakdown" : $"Look up quest references for {row.LootItem}",
                 Focusable = false,
             };
-            if (row.Details is not null) button.Margin = new Thickness(12, 0, 0, 5);
+            if (row.Details is not null)
+            {
+                button.Margin = new Thickness(12, 0, 0, 5);
+            }
+
             button.Click += (_, _) =>
             {
-                if (row.Breakdown is { } breakdown) BreakdownRequested?.Invoke(breakdown);
-                else if (row.LootItem is { } item) LootLookupRequested?.Invoke(item);
+                if (row.Breakdown is { } breakdown)
+                {
+                    BreakdownRequested?.Invoke(breakdown);
+                }
+                else if (row.LootItem is { } item)
+                {
+                    LootLookupRequested?.Invoke(item);
+                }
             };
             return button;
         }
@@ -380,12 +460,18 @@ public sealed class OverlayPanel : ContentControl
         {
             base.PrepareContainerForItemOverride(element, item);
             if (element is ListBoxItem container && item is OverlayRow row)
+            {
                 container.Content = build(row);
+            }
         }
 
         protected override void ClearContainerForItemOverride(DependencyObject element, object item)
         {
-            if (element is ListBoxItem container) container.Content = null;
+            if (element is ListBoxItem container)
+            {
+                container.Content = null;
+            }
+
             base.ClearContainerForItemOverride(element, item);
         }
     }

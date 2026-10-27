@@ -57,10 +57,12 @@ public sealed class DamageTakenTracker
     }
 
     // "You have taken N damage from Envenomed Bolt." names no caster, so label it by the spell.
-    private static string Label(DamageEvent e) =>
-        e.Source is null ? e.Attacker
+    private static string Label(DamageEvent e)
+    {
+        return e.Source is null ? e.Attacker
         : e.Attacker == Names.Unknown ? $"{e.Source} (DoT)"
         : $"{e.Attacker} ({e.Source})";
+    }
 
     public void ResetSession()
     {
@@ -94,9 +96,11 @@ public sealed class DamageTakenTracker
         d[key] = (v.Total + amount, v.Count + 1);
     }
 
-    internal static IReadOnlyList<NamedTotal> Top(Dictionary<string, (long Total, int Count)> d, long total, int top) =>
-        d.OrderByDescending(kv => kv.Value.Total)
+    internal static IReadOnlyList<NamedTotal> Top(Dictionary<string, (long Total, int Count)> d, long total, int top)
+    {
+        return d.OrderByDescending(kv => kv.Value.Total)
             .Take(top)
             .Select(kv => new NamedTotal(kv.Key, kv.Value.Total, total == 0 ? 0 : (double)kv.Value.Total / total, kv.Value.Count))
             .ToList();
+    }
 }

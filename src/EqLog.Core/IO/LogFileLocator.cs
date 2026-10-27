@@ -25,9 +25,15 @@ public static partial class LogFileLocator
     }
 
     /// <summary>The most recently written log file (i.e. the character currently being played).</summary>
-    public static LogFileInfo? FindNewest(string directory) => FindLogs(directory).FirstOrDefault();
+    public static LogFileInfo? FindNewest(string directory)
+    {
+        return FindLogs(directory).FirstOrDefault();
+    }
 
-    public static LogFileInfo Describe(string path) => Describe(new FileInfo(path));
+    public static LogFileInfo Describe(string path)
+    {
+        return Describe(new FileInfo(path));
+    }
 
     private static LogFileInfo Describe(FileInfo fi)
     {

@@ -16,20 +16,35 @@ public partial class MainWindow
     private bool _skyOverlayLoadAttempted;
     private ComboBox? _skyOverlayClass;
     private string _skyInventorySignature = "";
-    private static string SkyCachePath => Path.Combine(AppSettings.Folder, "sky-quests.json");
+    private static string SkyCachePath
+    {
+        get
+        {
+            return Path.Combine(AppSettings.Folder, "sky-quests.json");
+        }
+    }
 
     private async void SkyTab_Selected(object sender, RoutedEventArgs e)
     {
         if (e.Source == Tabs && SkyTab?.IsSelected == true && !_skyLoading &&
             (_skyCatalog is null || DateTime.UtcNow - _skyCatalog.CheckedUtc >= TimeSpan.FromDays(1)))
+        {
             await LoadSkyQuestsAsync(false);
+        }
     }
 
-    private async void SkyRefresh_Click(object sender, RoutedEventArgs e) => await LoadSkyQuestsAsync(true);
+    private async void SkyRefresh_Click(object sender, RoutedEventArgs e)
+    {
+        await LoadSkyQuestsAsync(true);
+    }
 
     private async Task LoadSkyQuestsAsync(bool refresh)
     {
-        if (_skyLoading) return;
+        if (_skyLoading)
+        {
+            return;
+        }
+
         _skyLoading = true;
         SkyRefreshButton.IsEnabled = false;
         SkyStatus.Text = "Loading Plane of Sky class quests...";
@@ -41,7 +56,10 @@ public partial class MainWindow
                 {
                     _skyCatalog = JsonSerializer.Deserialize<SkyQuestCatalog>(await File.ReadAllTextAsync(SkyCachePath, _wikiCts.Token))
                         ?? throw new JsonException("Empty Sky quest cache.");
-                    if (_skyCatalog.Quests.Count == 0) throw new JsonException("Sky cache contains no quests.");
+                    if (_skyCatalog.Quests.Count == 0)
+                    {
+                        throw new JsonException("Sky cache contains no quests.");
+                    }
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
                 {
@@ -89,81 +107,110 @@ public partial class MainWindow
         {
             _settings.SkyClass = selected;
             if (_skyOverlayClass is not null && !Equals(_skyOverlayClass.SelectedItem, selected))
+            {
                 _skyOverlayClass.SelectedItem = selected;
+            }
+
             RenderSkyQuests();
         }
     }
 
-        private void ConfigureSkyToolbar(OverlayPanel panel)
+    private void ConfigureSkyToolbar(OverlayPanel panel)
+    {
+        var toolbar = new DockPanel { Margin = new Thickness(0, 5, 0, 5) };
+        var refresh = new Button { Content = "Refresh", Margin = new Thickness(6, 0, 0, 0) };
+        refresh.Click += async (_, _) => await LoadSkyQuestsAsync(true);
+        DockPanel.SetDock(refresh, Dock.Right);
+        toolbar.Children.Add(refresh);
+        _skyOverlayClass = new ComboBox
         {
-            var toolbar = new DockPanel { Margin = new Thickness(0, 5, 0, 5) };
-            var refresh = new Button { Content = "Refresh", Margin = new Thickness(6, 0, 0, 0) };
-            refresh.Click += async (_, _) => await LoadSkyQuestsAsync(true);
-            DockPanel.SetDock(refresh, Dock.Right);
-            toolbar.Children.Add(refresh);
-            _skyOverlayClass = new ComboBox
+            ItemsSource = new[] { "All classes", _settings.SkyClass }.Distinct().ToArray(),
+            SelectedItem = _settings.SkyClass,
+            ToolTip = "Class filter shared with the Plane of Sky tab. Only quests with an owned ingredient appear.",
+        };
+        _skyOverlayClass.SelectionChanged += (_, _) =>
+        {
+            if (_skyOverlayClass.SelectedItem is not string selected)
             {
-                ItemsSource = new[] { "All classes", _settings.SkyClass }.Distinct().ToArray(),
-                SelectedItem = _settings.SkyClass,
-                ToolTip = "Class filter shared with the Plane of Sky tab. Only quests with an owned ingredient appear.",
-            };
-            _skyOverlayClass.SelectionChanged += (_, _) =>
-            {
-                if (_skyOverlayClass.SelectedItem is not string selected) return;
-                _settings.SkyClass = selected;
-                if (SkyClassBox.Items.Contains(selected)) SkyClassBox.SelectedItem = selected;
-            };
-            toolbar.Children.Add(_skyOverlayClass);
-            panel.SetToolbar(toolbar);
-        }
+                return;
+            }
 
-        private OverlayContent SkyOverlayContent()
+            _settings.SkyClass = selected;
+            if (SkyClassBox.Items.Contains(selected))
+            {
+                SkyClassBox.SelectedItem = selected;
+            }
+        };
+        toolbar.Children.Add(_skyOverlayClass);
+        panel.SetToolbar(toolbar);
+    }
+
+    private OverlayContent SkyOverlayContent()
+    {
+        if (_skyCatalog is null && !_skyLoading && !_skyOverlayLoadAttempted)
         {
-            if (_skyCatalog is null && !_skyLoading && !_skyOverlayLoadAttempted)
-            {
-                _skyOverlayLoadAttempted = true;
-                _ = LoadSkyQuestsAsync(false);
-            }
-            var rows = new List<OverlayRow>();
-            if (_skyCatalog is null)
-            {
-                rows.Add(new(_skyLoading ? "Loading Plane of Sky quests..." : SkyStatus.Text, Wrap: true));
-            }
-            else
-            {
-                foreach (var entry in SkyQuests.OwnedQuests(_skyCatalog, _questInventory, _characterName ?? "", _settings.SkyClass))
-                {
-                    var quest = entry.Quest;
-                    rows.Add(new(quest.Name, Bold: true, QuestHeading: true, Wrap: true));
-                    rows.Add(new($"Give to: {quest.Giver}", Wrap: true));
-                    rows.Add(new($"Reward: {quest.Reward}", Wrap: true, Bold: true));
-                    if (_settings.SkyClass == "All classes") rows.Add(new($"Class: {quest.Class}"));
-                    foreach (var item in entry.Progress)
-                    {
-                        string note = item.Collection > 0 ? $" | Collection {item.Collection}: verify turn-in availability" : "";
-                        rows.Add(new(item.Item, $"{item.Owned} / {item.Required}", Wrap: true, LootItem: item.Item,
-                            Details: $"{(item.Satisfied ? "Have" : "Missing")} | Carried {item.Carried} | Bank {item.Bank}{note}"));
-                    }
-                }
-                if (rows.Count == 0)
-                    rows.Add(new("No quests with owned ingredients for this class. Import inventory or loot a required item.", Wrap: true));
-                if (_skyLoading) rows.Insert(0, new("Refreshing wiki data...", Wrap: true));
-                else if (SkyStatus.Text.StartsWith("Sky quest load failed:", StringComparison.Ordinal))
-                    rows.Insert(0, new(SkyStatus.Text, Wrap: true));
-            }
-            return new("Sky quest tracker", $"{_settings.SkyClass} | {_characterName} | owned ingredients only", rows);
+            _skyOverlayLoadAttempted = true;
+            _ = LoadSkyQuestsAsync(false);
         }
+        var rows = new List<OverlayRow>();
+        if (_skyCatalog is null)
+        {
+            rows.Add(new(_skyLoading ? "Loading Plane of Sky quests..." : SkyStatus.Text, Wrap: true));
+        }
+        else
+        {
+            foreach (var entry in SkyQuests.OwnedQuests(_skyCatalog, _questInventory, _characterName ?? "", _settings.SkyClass))
+            {
+                var quest = entry.Quest;
+                rows.Add(new(quest.Name, Bold: true, QuestHeading: true, Wrap: true));
+                rows.Add(new($"Give to: {quest.Giver}", Wrap: true));
+                rows.Add(new($"Reward: {quest.Reward}", Wrap: true, Bold: true));
+                if (_settings.SkyClass == "All classes")
+                {
+                    rows.Add(new($"Class: {quest.Class}"));
+                }
+
+                foreach (var item in entry.Progress)
+                {
+                    string note = item.Collection > 0 ? $" | Collection {item.Collection}: verify turn-in availability" : "";
+                    rows.Add(new(item.Item, $"{item.Owned} / {item.Required}", Wrap: true, LootItem: item.Item,
+                        Details: $"{(item.Satisfied ? "Have" : "Missing")} | Carried {item.Carried} | Bank {item.Bank}{note}"));
+                }
+            }
+            if (rows.Count == 0)
+            {
+                rows.Add(new("No quests with owned ingredients for this class. Import inventory or loot a required item.", Wrap: true));
+            }
+
+            if (_skyLoading)
+            {
+                rows.Insert(0, new("Refreshing wiki data...", Wrap: true));
+            }
+            else if (SkyStatus.Text.StartsWith("Sky quest load failed:", StringComparison.Ordinal))
+            {
+                rows.Insert(0, new(SkyStatus.Text, Wrap: true));
+            }
+        }
+        return new("Sky quest tracker", $"{_settings.SkyClass} | {_characterName} | owned ingredients only", rows);
+    }
     private void RenderSkyQuests()
     {
-        if (_skyCatalog is null) return;
+        if (_skyCatalog is null)
+        {
+            return;
+        }
+
         SkyCards.Children.Clear();
         string selected = SkyClassBox.SelectedItem as string ?? "All classes";
         foreach (var group in _skyCatalog.Quests.Where(q => selected == "All classes" || q.Class == selected).GroupBy(q => q.Class))
         {
             SkyCards.Children.Add(new TextBlock
             {
-                Text = group.Key.ToUpperInvariant(), FontSize = 17, FontWeight = FontWeights.Bold,
-                Foreground = (Brush)FindResource("Pumpkin"), Margin = new Thickness(0, 18, 0, 10),
+                Text = group.Key.ToUpperInvariant(),
+                FontSize = 17,
+                FontWeight = FontWeights.Bold,
+                Foreground = (Brush)FindResource("Pumpkin"),
+                Margin = new Thickness(0, 18, 0, 10),
             });
             foreach (var quest in group)
             {
@@ -193,37 +240,66 @@ public partial class MainWindow
                     {
                         Text = $"{(item.Satisfied ? "HAVE" : "NEED")}  {item.Owned} / {item.Required}",
                         Foreground = item.Satisfied ? Brushes.LightGreen : (Brush)FindResource("Pumpkin"),
-                        FontWeight = FontWeights.SemiBold, Margin = new Thickness(12, 0, 0, 0),
+                        FontWeight = FontWeights.SemiBold,
+                        Margin = new Thickness(12, 0, 0, 0),
                     };
                     DockPanel.SetDock(count, Dock.Right);
                     heading.Children.Add(count);
                     heading.Children.Add(new TextBlock
                     {
-                        Text = item.Item, TextWrapping = TextWrapping.Wrap, FontWeight = FontWeights.SemiBold,
+                        Text = item.Item,
+                        TextWrapping = TextWrapping.Wrap,
+                        FontWeight = FontWeights.SemiBold,
                         Foreground = (Brush)FindResource("NightText"),
                     });
                     requirement.Children.Add(heading);
                     string detail = $"Carried / equipped {item.Carried}  |  Bank {item.Bank}";
-                    if (!item.Satisfied) detail += $"  |  Missing {item.Required - item.Owned}";
-                    if (item.Collection > 0) detail += $"  |  Collection {item.Collection} (verify turn-in availability)";
-                    if (item.Installed > 0) detail += $"  |  Installed {item.Installed} (not loose)";
-                    if (item.Historical > 0) detail += $"  |  History {item.Historical} (unconfirmed)";
+                    if (!item.Satisfied)
+                    {
+                        detail += $"  |  Missing {item.Required - item.Owned}";
+                    }
+
+                    if (item.Collection > 0)
+                    {
+                        detail += $"  |  Collection {item.Collection} (verify turn-in availability)";
+                    }
+
+                    if (item.Installed > 0)
+                    {
+                        detail += $"  |  Installed {item.Installed} (not loose)";
+                    }
+
+                    if (item.Historical > 0)
+                    {
+                        detail += $"  |  History {item.Historical} (unconfirmed)";
+                    }
+
                     requirement.Children.Add(new TextBlock
                     {
-                        Text = detail, TextWrapping = TextWrapping.Wrap, FontSize = 12,
-                        Foreground = (Brush)FindResource("NightMuted"), Margin = new Thickness(0, 5, 0, 0),
+                        Text = detail,
+                        TextWrapping = TextWrapping.Wrap,
+                        FontSize = 12,
+                        Foreground = (Brush)FindResource("NightMuted"),
+                        Margin = new Thickness(0, 5, 0, 0),
                     });
                     content.Children.Add(new Border
                     {
-                        Child = requirement, Background = (Brush)FindResource("NightBackground"),
-                        CornerRadius = new CornerRadius(5), Padding = new Thickness(10), Margin = new Thickness(0, 8, 0, 0),
+                        Child = requirement,
+                        Background = (Brush)FindResource("NightBackground"),
+                        CornerRadius = new CornerRadius(5),
+                        Padding = new Thickness(10),
+                        Margin = new Thickness(0, 8, 0, 0),
                     });
                 }
                 SkyCards.Children.Add(new Border
                 {
-                    Child = content, Background = (Brush)FindResource("NightSurface"),
-                    BorderBrush = (Brush)FindResource("NightBorder"), BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(8), Padding = new Thickness(16), Margin = new Thickness(0, 0, 0, 12),
+                    Child = content,
+                    Background = (Brush)FindResource("NightSurface"),
+                    BorderBrush = (Brush)FindResource("NightBorder"),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(16),
+                    Margin = new Thickness(0, 0, 0, 12),
                 });
             }
         }
@@ -231,11 +307,19 @@ public partial class MainWindow
 
     private void RefreshSkyInventory()
     {
-        if (SkyTab.IsSelected != true || _skyCatalog is null) return;
+        if (SkyTab.IsSelected != true || _skyCatalog is null)
+        {
+            return;
+        }
+
         string signature = (_characterName ?? "") + "|" + string.Join("|", _questInventory.Items
             .Where(i => i.Character.Equals(_characterName, StringComparison.OrdinalIgnoreCase))
             .Select(i => $"{i.Item}:{i.Owned}:{i.Carried}:{i.Bank}:{i.Historical}:{i.Collection}:{i.Installed}"));
-        if (signature == _skyInventorySignature) return;
+        if (signature == _skyInventorySignature)
+        {
+            return;
+        }
+
         _skyInventorySignature = signature;
         RenderSkyQuests();
     }
@@ -248,11 +332,17 @@ public partial class MainWindow
         parent.Children.Add(text);
     }
 
-    private void SkySource_Click(object sender, RoutedEventArgs e) => OpenSkyWiki(SkyQuests.SourceUrl);
+    private void SkySource_Click(object sender, RoutedEventArgs e)
+    {
+        OpenSkyWiki(SkyQuests.SourceUrl);
+    }
 
     private void OpenSkyWiki(string url)
     {
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
             SkyStatus.Text = $"Could not open browser: {ex.Message}";

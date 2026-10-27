@@ -13,11 +13,20 @@ public sealed record HealSnapshot(
     IReadOnlyList<NamedTotal> IncomingByHealer)
 {
     public IReadOnlyList<HealingCombatant> Healers { get; init; } = [];
-    public IReadOnlyDictionary<string, IReadOnlyList<AbilityStats>> OutgoingTargetAbilities { get; init; }
+    public IReadOnlyDictionary<string, IReadOnlyList<AbilityStats>> OutgoingTargetAbilities
+    {
+        get; init;
+    }
         = new Dictionary<string, IReadOnlyList<AbilityStats>>(StringComparer.OrdinalIgnoreCase);
-    public IReadOnlyDictionary<string, IReadOnlyList<AbilityStats>> IncomingHealerAbilities { get; init; }
+    public IReadOnlyDictionary<string, IReadOnlyList<AbilityStats>> IncomingHealerAbilities
+    {
+        get; init;
+    }
         = new Dictionary<string, IReadOnlyList<AbilityStats>>(StringComparer.OrdinalIgnoreCase);
-    public double DurationSeconds { get; init; }
+    public double DurationSeconds
+    {
+        get; init;
+    }
 }
 
 public sealed record HealingCombatant(string Name, IReadOnlyList<AbilityStats> Abilities);
@@ -96,8 +105,19 @@ public sealed class HealTracker
         long recentOut = 0, recentIn = 0;
         foreach (var r in _recent)
         {
-            if (now - r.Time > RecentWindow) continue;
-            if (r.Outgoing) recentOut += r.Amount; else recentIn += r.Amount;
+            if (now - r.Time > RecentWindow)
+            {
+                continue;
+            }
+
+            if (r.Outgoing)
+            {
+                recentOut += r.Amount;
+            }
+            else
+            {
+                recentIn += r.Amount;
+            }
         }
 
         double seconds = _start is { } start && _last is { } last ? Math.Max(1, (last - start).TotalSeconds + 1) : 1;
@@ -121,7 +141,11 @@ public sealed class HealTracker
 
     private static AbilityTotals Get(Dictionary<string, AbilityTotals> dictionary, string name)
     {
-        if (!dictionary.TryGetValue(name, out var totals)) dictionary[name] = totals = new AbilityTotals();
+        if (!dictionary.TryGetValue(name, out var totals))
+        {
+            dictionary[name] = totals = new AbilityTotals();
+        }
+
         return totals;
     }
 

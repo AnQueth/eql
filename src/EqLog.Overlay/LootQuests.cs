@@ -15,9 +15,23 @@ public partial class MainWindow
     private readonly Dictionary<string, QuestLookupResult> _questCache = new(StringComparer.OrdinalIgnoreCase);
     private long _questSelectionVersion;
     private readonly CancellationTokenSource _wikiCts = new();
-    private static string QuestCachePath => Path.Combine(AppSettings.Folder, "quest-lookups.json");
+    private static string QuestCachePath
+    {
+        get
+        {
+            return Path.Combine(AppSettings.Folder, "quest-lookups.json");
+        }
+    }
+
     private QuestInventory _questInventory = new();
-    private static string QuestInventoryPath => Path.Combine(AppSettings.Folder, "quest-inventory.json");
+    private static string QuestInventoryPath
+    {
+        get
+        {
+            return Path.Combine(AppSettings.Folder, "quest-inventory.json");
+        }
+    }
+
     private readonly System.Collections.Concurrent.ConcurrentQueue<Action> _questLoot = new();
     private readonly SemaphoreSlim _questLookupGate = new(1, 1);
     private readonly HashSet<string> _questAttempted = new(StringComparer.OrdinalIgnoreCase);
@@ -63,7 +77,10 @@ public partial class MainWindow
         if (!_ownedQuestItems.SequenceEqual(items))
         {
             _ownedQuestItems.Clear();
-            foreach (var item in items) _ownedQuestItems.Add(item);
+            foreach (var item in items)
+            {
+                _ownedQuestItems.Add(item);
+            }
         }
         else if (changed && !QuestOwnedGrid.IsKeyboardFocusWithin)
         {
@@ -89,7 +106,10 @@ public partial class MainWindow
         try
         {
             if (_questCache.TryGetValue(item, out var cached) && DateTime.UtcNow - cached.CheckedUtc < TimeSpan.FromDays(7))
+            {
                 return cached;
+            }
+
             var result = await Task.Run(() => new QuestLookup(_wikiHttp).FindAsync(item, _wikiCts.Token), _wikiCts.Token);
             var snapshot = _questCache.Values.Where(r => !QuestLookup.ItemTitle(r.Item).Equals(item,
                 StringComparison.OrdinalIgnoreCase)).Append(result).ToArray();
@@ -124,7 +144,12 @@ public partial class MainWindow
             _questProgress = $"Lookup failed for {item}: {ex.Message}. Use Retry lookups.";
             QuestLookupStatus.Text = _questProgress;
         }
-        finally { _questWorking = false; _questActiveItem = null; UpdateQuestProgress(); }
+        finally
+        {
+            _questWorking = false;
+            _questActiveItem = null;
+            UpdateQuestProgress();
+        }
     }
 
     private OverlayContent QuestOpportunities()
@@ -138,11 +163,17 @@ public partial class MainWindow
                 ? quest.Items.OrderByDescending(i => i.LastLootUtc).ThenBy(i => i.Item, StringComparer.OrdinalIgnoreCase)
                 : quest.Items.OrderBy(i => i.Item, StringComparer.OrdinalIgnoreCase);
             foreach (var item in items)
+            {
                 rows.Add(new(item.Item, Wrap: true, LootItem: item.Item,
                     Details: $"Owned {item.Owned}  |  Carried / equipped {item.Carried}  |  Bank {item.Bank}  |  Collection {item.Collection}  |  Installed {item.Installed}  |  History {item.Historical} (unconfirmed)"));
+            }
         }
-        if (rows.Count == 0) rows.Add(new(string.IsNullOrWhiteSpace(_settings.QuestFilter)
+        if (rows.Count == 0)
+        {
+            rows.Add(new(string.IsNullOrWhiteSpace(_settings.QuestFilter)
             ? "No quest opportunities found yet." : "No quests or items match your filter.", Wrap: true));
+        }
+
         return new("Quest opportunities", _characterName, rows);
     }
 
@@ -173,7 +204,10 @@ public partial class MainWindow
         toolbar.Children.Add(controls);
         _questProgressBar = new ProgressBar
         {
-            Height = 8, Minimum = 0, Maximum = 1, Margin = new Thickness(0, 10, 0, 5),
+            Height = 8,
+            Minimum = 0,
+            Maximum = 1,
+            Margin = new Thickness(0, 10, 0, 5),
             ToolTip = "Completed checks, including failed attempts. Failed items can be retried from Loot quests.",
         };
         toolbar.Children.Add(_questProgressBar);
@@ -182,7 +216,8 @@ public partial class MainWindow
         toolbar.Children.Add(_questProgressText);
         _questCurrentText = new TextBlock
         {
-            TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 3, 0, 6),
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(0, 3, 0, 6),
         };
         _questCurrentText.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
         toolbar.Children.Add(_questCurrentText);
@@ -194,12 +229,20 @@ public partial class MainWindow
 
     private void UpdateQuestProgress()
     {
-        if (_questProgressBar is null || _questProgressText is null || _questCurrentText is null) return;
+        if (_questProgressBar is null || _questProgressText is null || _questCurrentText is null)
+        {
+            return;
+        }
+
         var items = _questInventory.Items.Where(i => i.Character.Equals(_characterName, StringComparison.OrdinalIgnoreCase))
             .Select(i => QuestLookup.ItemTitle(i.Item)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var now = DateTime.UtcNow;
-        bool Cached(string item) => _questCache.TryGetValue(item, out var result) &&
+        bool Cached(string item)
+        {
+            return _questCache.TryGetValue(item, out var result) &&
             now - result.CheckedUtc < TimeSpan.FromDays(7);
+        }
+
         int cached = items.Count(Cached);
         int failed = items.Count(i => _questFailed.Contains(i) && !Cached(i));
         int completed = items.Count(i => Cached(i) || (_questAttempted.Contains(i) && i != _questActiveItem));
@@ -220,7 +263,11 @@ public partial class MainWindow
             note();
             _questDirty = true;
         }
-        if (!_questDirty) return;
+        if (!_questDirty)
+        {
+            return;
+        }
+
         try
         {
             AtomicFile.WriteAllText(QuestInventoryPath, JsonSerializer.Serialize(_questInventory));
@@ -243,7 +290,11 @@ public partial class MainWindow
             return;
         }
         _questDirty = true;
-        Dispatcher.BeginInvoke(() => { QuestOwnedGrid.CommitEdit(); SaveQuestInventory(); });
+        Dispatcher.BeginInvoke(() =>
+        {
+            QuestOwnedGrid.CommitEdit();
+            SaveQuestInventory();
+        });
     }
 
     private void CompleteQuest_Click(object sender, RoutedEventArgs e)
@@ -255,7 +306,11 @@ public partial class MainWindow
         }
         string key = QuestInventory.CompletionKey(_characterName ?? "", quest.Title);
         bool completed = _questInventory.Completed.Add(key);
-        if (!completed) _questInventory.Completed.Remove(key);
+        if (!completed)
+        {
+            _questInventory.Completed.Remove(key);
+        }
+
         _questDirty = true;
         SaveQuestInventory();
         QuestLookupStatus.Text = completed ? "Quest marked completed. Adjust owned counts after turning items in." : "Quest marked incomplete.";
@@ -282,7 +337,12 @@ public partial class MainWindow
             {
                 string title = QuestLookup.ItemTitle(result.Item);
                 if (!_questCache.TryGetValue(title, out var existing) || result.CheckedUtc > existing.CheckedUtc)
-                    _questCache[title] = result with { Item = title };
+                {
+                    _questCache[title] = result with
+                    {
+                        Item = title
+                    };
+                }
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
@@ -294,7 +354,9 @@ public partial class MainWindow
     private async void QuestItem_Selected(object sender, SelectionChangedEventArgs e)
     {
         if (QuestOwnedGrid.SelectedItem is QuestInventoryItem selected)
+        {
             await LookupSelectedQuestItemAsync(selected);
+        }
         else
         {
             _questSelectionVersion++;
@@ -305,8 +367,13 @@ public partial class MainWindow
     private async void LookupQuest_Click(object sender, RoutedEventArgs e)
     {
         if (QuestOwnedGrid.SelectedItem is QuestInventoryItem selected)
+        {
             await LookupSelectedQuestItemAsync(selected);
-        else QuestLookupStatus.Text = "Select an inventory row first.";
+        }
+        else
+        {
+            QuestLookupStatus.Text = "Select an inventory row first.";
+        }
     }
 
     private async Task LookupLootItemAsync(string item)
@@ -323,10 +390,20 @@ public partial class MainWindow
             _questInventory.Items.Add(selected);
             _questDirty = true;
         }
-        if (!_ownedQuestItems.Contains(selected)) _ownedQuestItems.Add(selected);
+        if (!_ownedQuestItems.Contains(selected))
+        {
+            _ownedQuestItems.Add(selected);
+        }
+
         if (ReferenceEquals(QuestOwnedGrid.SelectedItem, selected))
+        {
             await LookupSelectedQuestItemAsync(selected);
-        else QuestOwnedGrid.SelectedItem = selected;
+        }
+        else
+        {
+            QuestOwnedGrid.SelectedItem = selected;
+        }
+
         await Dispatcher.InvokeAsync(() =>
         {
             QuestOwnedGrid.UpdateLayout();
@@ -343,7 +420,11 @@ public partial class MainWindow
         try
         {
             var result = await GetQuestResultAsync(item);
-            if (version != _questSelectionVersion) return;
+            if (version != _questSelectionVersion)
+            {
+                return;
+            }
+
             QuestResults.ItemsSource = result.Quests;
             QuestLookupStatus.Text = result.Quests.Count == 0
                 ? "No linked quest pages found. This does not prove the item has no quest use; wiki coverage may be incomplete."
@@ -351,12 +432,18 @@ public partial class MainWindow
         }
         catch (OperationCanceledException) when (_wikiCts.IsCancellationRequested)
         {
-            if (version == _questSelectionVersion) QuestLookupStatus.Text = "Wiki lookup cancelled.";
+            if (version == _questSelectionVersion)
+            {
+                QuestLookupStatus.Text = "Wiki lookup cancelled.";
+            }
         }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or IOException or
             UnauthorizedAccessException or JsonException or InvalidOperationException)
         {
-            if (version == _questSelectionVersion) QuestLookupStatus.Text = $"Wiki lookup failed: {ex.Message}";
+            if (version == _questSelectionVersion)
+            {
+                QuestLookupStatus.Text = $"Wiki lookup failed: {ex.Message}";
+            }
         }
     }
 
@@ -375,8 +462,13 @@ public partial class MainWindow
     private void OpenItemWiki_Click(object sender, RoutedEventArgs e)
     {
         if (QuestOwnedGrid.SelectedItem is QuestInventoryItem selected)
+        {
             OpenWiki(QuestLookup.PageUrl(QuestLookup.ItemTitle(selected.Item)));
-        else QuestLookupStatus.Text = "Select an inventory row first.";
+        }
+        else
+        {
+            QuestLookupStatus.Text = "Select an inventory row first.";
+        }
     }
 
     private void OpenWiki(string url)

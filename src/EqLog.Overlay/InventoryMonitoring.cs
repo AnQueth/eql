@@ -11,7 +11,11 @@ public partial class MainWindow
 
     private async Task CheckInventoryAsync()
     {
-        if (_inventoryReading || _currentFile is null || _characterName is null) return;
+        if (_inventoryReading || _currentFile is null || _characterName is null)
+        {
+            return;
+        }
+
         string path = InventoryExport.PathForLog(_currentFile);
         string character = _characterName;
         string log = _currentFile;
@@ -27,7 +31,11 @@ public partial class MainWindow
                 return;
             }
             var stamp = (Path: path, Size: file.Length, Written: file.LastWriteTimeUtc);
-            if (_inventoryLoaded == stamp) return;
+            if (_inventoryLoaded == stamp)
+            {
+                return;
+            }
+
             if (_inventoryObserved != stamp)
             {
                 _inventoryObserved = stamp;
@@ -38,9 +46,15 @@ public partial class MainWindow
             var items = InventoryExport.Parse(text);
             file.Refresh();
             if (!file.Exists || file.Length != stamp.Size || file.LastWriteTimeUtc != stamp.Written || _currentFile != log)
+            {
                 return;
+            }
             // Apply queued loot first so the snapshot can reconcile it by export time.
-            while (_questLoot.TryDequeue(out var note)) note();
+            while (_questLoot.TryDequeue(out var note))
+            {
+                note();
+            }
+
             _questInventory.ApplyExport(character, items, stamp.Written);
             _questDirty = true;
             _inventoryLoaded = stamp;
@@ -55,6 +69,9 @@ public partial class MainWindow
         {
             InventoryStatus.Text = $"Inventory import failed (previous counts kept): {ex.Message}. Retrying automatically.";
         }
-        finally { _inventoryReading = false; }
+        finally
+        {
+            _inventoryReading = false;
+        }
     }
 }

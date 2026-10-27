@@ -6,7 +6,13 @@ namespace EqLog.Core.Tracking;
 
 public sealed record SpawnInfo(string Zone, string Mob, double? LearnedSeconds, int Samples, double? OverrideSeconds, bool Tracked, DateTime? LastKill = null, DateTime? LastSeen = null)
 {
-    public double? RespawnSeconds => OverrideSeconds ?? LearnedSeconds;
+    public double? RespawnSeconds
+    {
+        get
+        {
+            return OverrideSeconds ?? LearnedSeconds;
+        }
+    }
 }
 
 /// <summary>
@@ -20,10 +26,16 @@ public sealed partial class SpawnStore
 
     private readonly Dictionary<string, Dictionary<string, Entry>> _zones = new(StringComparer.OrdinalIgnoreCase);
 
-    public bool IsDirty { get; private set; }
+    public bool IsDirty
+    {
+        get; private set;
+    }
 
     /// <summary>"Nektropos Castle 4 (Refined)" becomes "Nektropos Castle".</summary>
-    public static string BaseZone(string zone) => InstanceSuffixRegex().Replace(zone.Trim(), "");
+    public static string BaseZone(string zone)
+    {
+        return InstanceSuffixRegex().Replace(zone.Trim(), "");
+    }
 
     /// <summary>
     /// Records that <paramref name="mob"/> was seen alive <paramref name="seconds"/> after it was killed at <paramref name="killedAt"/>.
@@ -89,9 +101,15 @@ public sealed partial class SpawnStore
         }
     }
 
-    public bool IsTracked(string zone, string mob) => TryGet(zone, mob, out var e) && e.Tracked;
+    public bool IsTracked(string zone, string mob)
+    {
+        return TryGet(zone, mob, out var e) && e.Tracked;
+    }
 
-    public SpawnInfo? Get(string zone, string mob) => TryGet(zone, mob, out var e) ? Info(BaseZone(zone), mob, e) : null;
+    public SpawnInfo? Get(string zone, string mob)
+    {
+        return TryGet(zone, mob, out var e) ? Info(BaseZone(zone), mob, e) : null;
+    }
 
     /// <summary>All mobs remembered for the zone.</summary>
     public IReadOnlyList<SpawnInfo> List(string zone)
@@ -102,8 +120,10 @@ public sealed partial class SpawnStore
             : [];
     }
 
-    private static SpawnInfo Info(string zone, string mob, Entry e) =>
-        new(zone, mob, Estimate(e.Samples.Select(x => x.Seconds)), e.Samples.Count, e.Override, e.Tracked, e.LastKill, e.LastSeen);
+    private static SpawnInfo Info(string zone, string mob, Entry e)
+    {
+        return new(zone, mob, Estimate(e.Samples.Select(x => x.Seconds)), e.Samples.Count, e.Override, e.Tracked, e.LastKill, e.LastSeen);
+    }
 
     /// <summary>
     /// Each sample is an upper bound (the mob had respawned by the time it was seen), so the respawn time is near the
@@ -225,13 +245,25 @@ public sealed partial class SpawnStore
     {
         public List<Sample> Samples { get; set; } = [];
 
-        public double? Override { get; set; }
+        public double? Override
+        {
+            get; set;
+        }
 
-        public bool Tracked { get; set; }
+        public bool Tracked
+        {
+            get; set;
+        }
 
-        public DateTime? LastKill { get; set; }
+        public DateTime? LastKill
+        {
+            get; set;
+        }
 
-        public DateTime? LastSeen { get; set; }
+        public DateTime? LastSeen
+        {
+            get; set;
+        }
     }
 
     /// <summary>A kill at <see cref="At"/> after which the mob was next seen alive <see cref="Seconds"/> later.</summary>

@@ -8,58 +8,115 @@ namespace EqLog.Overlay;
 
 public sealed class OverlayPlacement
 {
-    public double Left { get; set; }
+    public double Left
+    {
+        get; set;
+    }
 
-    public double Top { get; set; }
+    public double Top
+    {
+        get; set;
+    }
 
-    public double Width { get; set; }
+    public double Width
+    {
+        get; set;
+    }
 
-    public double Height { get; set; }
+    public double Height
+    {
+        get; set;
+    }
 
     public bool Visible { get; set; } = true;
 
     /// <summary>Shown as a tile in the docked-panels window instead of as a floating overlay.</summary>
-    public bool Docked { get; set; }
+    public bool Docked
+    {
+        get; set;
+    }
 
     /// <summary>Individual text size; null inherits the previous global setting when first loaded.</summary>
-    public double? FontSize { get; set; }
+    public double? FontSize
+    {
+        get; set;
+    }
 
     /// <summary>Individual background opacity; null inherits the previous global setting when first loaded.</summary>
-    public double? BackgroundOpacity { get; set; }
+    public double? BackgroundOpacity
+    {
+        get; set;
+    }
 
     /// <summary>Individual floating-window click-through lock; null inherits the previous global lock.</summary>
-    public bool? Locked { get; set; }
+    public bool? Locked
+    {
+        get; set;
+    }
 
     /// <summary>Tile size in the docked-panels window (0 = use the overlay size).</summary>
-    public double DockWidth { get; set; }
+    public double DockWidth
+    {
+        get; set;
+    }
 
-    public double DockHeight { get; set; }
+    public double DockHeight
+    {
+        get; set;
+    }
 
     /// <summary>Freeform canvas position, separate from the floating-window position.</summary>
-    public double? DockLeft { get; set; }
+    public double? DockLeft
+    {
+        get; set;
+    }
 
-    public double? DockTop { get; set; }
+    public double? DockTop
+    {
+        get; set;
+    }
 }
 
 public sealed class DockWindowSettings
 {
-    public double? Left { get; set; }
+    public double? Left
+    {
+        get; set;
+    }
 
-    public double? Top { get; set; }
+    public double? Top
+    {
+        get; set;
+    }
 
-    public double Width { get; set; }
+    public double Width
+    {
+        get; set;
+    }
 
-    public double Height { get; set; }
+    public double Height
+    {
+        get; set;
+    }
 
-    public bool Maximized { get; set; }
+    public bool Maximized
+    {
+        get; set;
+    }
 
-    public bool Topmost { get; set; }
+    public bool Topmost
+    {
+        get; set;
+    }
 
     /// <summary>Show the settings side panel.</summary>
     public bool SidePanelOpen { get; set; } = true;
 
     /// <summary>Width of the settings side panel; 0 until first saved.</summary>
-    public double SidePanelWidth { get; set; }
+    public double SidePanelWidth
+    {
+        get; set;
+    }
 
     /// <summary>Tile order by overlay key.</summary>
     public List<string> Order { get; set; } = [];
@@ -81,14 +138,23 @@ public sealed class AppSettings
     };
 
     /// <summary>Explicit log file. When null the newest eqlog file in <see cref="LogDirectory"/> is used.</summary>
-    public string? LogPath { get; set; }
+    public string? LogPath
+    {
+        get; set;
+    }
 
-    public string? LogDirectory { get; set; }
+    public string? LogDirectory
+    {
+        get; set;
+    }
 
     /// <summary>Switch automatically when a newer eqlog file appears (e.g. you log in another character).</summary>
     public bool FollowNewest { get; set; } = true;
 
-    public bool Locked { get; set; }
+    public bool Locked
+    {
+        get; set;
+    }
 
     /// <summary>Hide floating overlays while the EverQuest window isn't visible (not running, minimized or covered).</summary>
     public bool OnlyWhenGameVisible { get; set; } = true;
@@ -103,14 +169,23 @@ public sealed class AppSettings
     public string SkyClass { get; set; } = "All classes";
     public bool QuestRecentFirst { get; set; } = true;
     public string QuestFilter { get; set; } = "";
-    public int LootGrouping { get; set; }
-    public EqLog.Core.ThemePalette? Theme { get; set; }
+    public int LootGrouping
+    {
+        get; set;
+    }
+    public EqLog.Core.ThemePalette? Theme
+    {
+        get; set;
+    }
 
     public Dictionary<string, OverlayPlacement> Overlays { get; set; } = [];
 
     public DockWindowSettings DockWindow { get; set; } = new();
 
-    public List<ChatChannel> ChatChannels { get; set; } =
+    public List<ChatChannel> ChatChannels
+    {
+        get; set;
+    } =
         [ChatChannel.Tell, ChatChannel.Group, ChatChannel.Guild, ChatChannel.Raid, ChatChannel.Fellowship, ChatChannel.Say, ChatChannel.Shout];
 
     /// <summary>Custom alerts. They fire only for lines written while the app is following the log, never for history.</summary>

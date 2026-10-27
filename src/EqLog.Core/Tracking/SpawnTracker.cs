@@ -58,9 +58,18 @@ public sealed class SpawnTracker
         Store = store;
     }
 
-    public SpawnStore Store { get; }
+    public SpawnStore Store
+    {
+        get;
+    }
 
-    public string? Zone => _zone;
+    public string? Zone
+    {
+        get
+        {
+            return _zone;
+        }
+    }
 
     public void OnEvent(LogEvent e)
     {
@@ -117,25 +126,31 @@ public sealed class SpawnTracker
     }
 
     /// <summary>Heuristic: proper-noun mobs ("Lord Rikantus Everling") rather than "a skeleton", pets or players.</summary>
-    public bool IsLikelyNamed(string mob) =>
-        mob.Length > 0
+    public bool IsLikelyNamed(string mob)
+    {
+        return mob.Length > 0
         && char.IsUpper(mob[0])
         && !mob.StartsWith("A ", StringComparison.Ordinal)
         && !mob.StartsWith("An ", StringComparison.Ordinal)
         && !_players.Contains(mob)
         && !KilledByHostile(mob);
+    }
 
     // Killed by something that attacks you (or that you kill), so it was on your side: a player, mercenary or pet.
-    private bool KilledByHostile(string mob) =>
-        !_npcs.Contains(mob)
+    private bool KilledByHostile(string mob)
+    {
+        return !_npcs.Contains(mob)
         && _killedBy.TryGetValue(mob, out var killer)
         && (_hostiles.Contains(killer) || _npcs.Contains(killer));
+    }
 
-    private static bool IsCreature(string name) =>
-        name is not (Names.You or Names.Self or Names.Unknown)
+    private static bool IsCreature(string name)
+    {
+        return name is not (Names.You or Names.Self or Names.Unknown)
         && !name.EndsWith(" pet", StringComparison.OrdinalIgnoreCase)
         && !name.Contains("`s ", StringComparison.Ordinal)
         && !name.Contains("'s ", StringComparison.Ordinal);
+    }
 
     private void OnKill(KillEvent k)
     {
@@ -288,19 +303,40 @@ public sealed class SpawnTracker
         return new SpawnSnapshot(_zone, timers);
     }
 
-    private static DateTime? Latest(DateTime? a, DateTime? b) => a > b || b is null ? a : b;
+    private static DateTime? Latest(DateTime? a, DateTime? b)
+    {
+        return a > b || b is null ? a : b;
+    }
 
     private sealed class MobState
     {
-        public int Kills { get; set; }
+        public int Kills
+        {
+            get; set;
+        }
 
-        public DateTime? LastKill { get; set; }
+        public DateTime? LastKill
+        {
+            get; set;
+        }
 
-        public DateTime? LastSeen { get; set; }
+        public DateTime? LastSeen
+        {
+            get; set;
+        }
 
         /// <summary>Kills followed within seconds by activity from a same-named mob.</summary>
-        public int Crowded { get; set; }
+        public int Crowded
+        {
+            get; set;
+        }
 
-        public bool HasSeveral => Crowded >= 2 && Crowded * 4 >= Kills;
+        public bool HasSeveral
+        {
+            get
+            {
+                return Crowded >= 2 && Crowded * 4 >= Kills;
+            }
+        }
     }
 }

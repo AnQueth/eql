@@ -34,15 +34,20 @@ public sealed class AbilityBreakdownWindow : Window
         var note = new TextBlock
         {
             Text = "Snapshot captured when clicked. Rates use the displayed fight/session healing span, not the rolling 30-second meter. Only events visible in your log are included; unnamed melee is grouped as Melee.",
-            TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 10, 0, 0),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 10, 0, 0),
         };
         note.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
         DockPanel.SetDock(note, Dock.Bottom);
         root.Children.Add(note);
         var table = new DataGrid
         {
-            IsReadOnly = true, AutoGenerateColumns = false, CanUserAddRows = false, CanUserDeleteRows = false,
-            ItemsSource = breakdown.Abilities, SelectionMode = DataGridSelectionMode.Single,
+            IsReadOnly = true,
+            AutoGenerateColumns = false,
+            CanUserAddRows = false,
+            CanUserDeleteRows = false,
+            ItemsSource = breakdown.Abilities,
+            SelectionMode = DataGridSelectionMode.Single,
         };
         AddColumn(table, "Ability", "Name", null, new DataGridLength(1, DataGridLengthUnitType.Star));
         AddColumn(table, "Total", "Total", "N0");
@@ -51,15 +56,23 @@ public sealed class AbilityBreakdownWindow : Window
         AddColumn(table, "Hits", "Hits", "N0");
         AddColumn(table, "Crits", "Crits", "N0");
         AddColumn(table, "Max", "MaxHit", "N0");
-        if (breakdown.RateLabel == "HPS") AddColumn(table, "Overheal", "Overheal", "N0");
+        if (breakdown.RateLabel == "HPS")
+        {
+            AddColumn(table, "Overheal", "Overheal", "N0");
+        }
+
         root.Children.Add(table);
         Content = root;
     }
 
     private static void AddColumn(DataGrid grid, string header, string path, string? format, DataGridLength? width = null)
-        => grid.Columns.Add(new DataGridTextColumn
+    {
+        grid.Columns.Add(new DataGridTextColumn
         {
-            Header = header, Binding = new Binding(path) { StringFormat = format },
-            Width = width ?? DataGridLength.Auto, MinWidth = path == "Name" ? 160 : 65,
+            Header = header,
+            Binding = new Binding(path) { StringFormat = format },
+            Width = width ?? DataGridLength.Auto,
+            MinWidth = path == "Name" ? 160 : 65,
         });
+    }
 }

@@ -20,32 +20,62 @@ namespace EqLog.Overlay;
 
 public sealed class DurationRow
 {
-    public required string Spell { get; init; }
+    public required string Spell
+    {
+        get; init;
+    }
 
-    public required string Learned { get; init; }
+    public required string Learned
+    {
+        get; init;
+    }
 
-    public required int Samples { get; init; }
+    public required int Samples
+    {
+        get; init;
+    }
 
     public string Override { get; set; } = "";
 }
 
 public sealed class SpawnRow
 {
-    public required string Zone { get; init; }
+    public required string Zone
+    {
+        get; init;
+    }
 
-    public required string Mob { get; init; }
+    public required string Mob
+    {
+        get; init;
+    }
 
-    public required int Kills { get; init; }
+    public required int Kills
+    {
+        get; init;
+    }
 
-    public required string LastKilled { get; init; }
+    public required string LastKilled
+    {
+        get; init;
+    }
 
-    public required string Learned { get; init; }
+    public required string Learned
+    {
+        get; init;
+    }
 
-    public required int Samples { get; init; }
+    public required int Samples
+    {
+        get; init;
+    }
 
     public string Override { get; set; } = "";
 
-    public bool Tracked { get; set; }
+    public bool Tracked
+    {
+        get; set;
+    }
 }
 
 public partial class MainWindow : Window
@@ -171,8 +201,16 @@ public partial class MainWindow : Window
             p.Locked ??= _settings.Locked;
             var panel = new OverlayPanel(def.Key, def.Caption, def.AutoScroll) { FontSize = p.FontSize.Value };
             panel.SetBackgroundOpacity(p.BackgroundOpacity.Value);
-            if (def.Key == "quests") ConfigureQuestToolbar(panel);
-            if (def.Key == "sky") ConfigureSkyToolbar(panel);
+            if (def.Key == "quests")
+            {
+                ConfigureQuestToolbar(panel);
+            }
+
+            if (def.Key == "sky")
+            {
+                ConfigureSkyToolbar(panel);
+            }
+
             if (def.Key == "loot")
             {
                 var grouping = new ComboBox
@@ -231,7 +269,8 @@ public partial class MainWindow : Window
         var controls = new StackPanel { Margin = new Thickness(8, 4, 8, 8) };
         var locked = new CheckBox
         {
-            Content = "Locked (click-through)", IsChecked = placement.Locked,
+            Content = "Locked (click-through)",
+            IsChecked = placement.Locked,
             Margin = new Thickness(0, 4, 0, 8),
             ToolTip = "Locks this floating overlay only. Docked panels remain interactive. Unlock here to move or resize it.",
         };
@@ -266,13 +305,19 @@ public partial class MainWindow : Window
             row.Children.Add(new TextBlock { Text = caption, VerticalAlignment = VerticalAlignment.Center });
             var slider = new Slider
             {
-                Minimum = minimum, Maximum = maximum, Value = value, TickFrequency = tick,
-                SmallChange = tick, LargeChange = tick * 2, IsSnapToTickEnabled = true,
+                Minimum = minimum,
+                Maximum = maximum,
+                Value = value,
+                TickFrequency = tick,
+                SmallChange = tick,
+                LargeChange = tick * 2,
+                IsSnapToTickEnabled = true,
                 ToolTip = $"{caption} for {window.Panel.Caption}",
             };
             var label = new TextBlock
             {
-                Text = format(slider.Value), HorizontalAlignment = HorizontalAlignment.Right,
+                Text = format(slider.Value),
+                HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Center,
             };
             slider.ValueChanged += (_, e) =>
@@ -322,7 +367,13 @@ public partial class MainWindow : Window
         }
     }
 
-    private bool FloatingAllowed => !_settings.OnlyWhenGameVisible || _gameVisible;
+    private bool FloatingAllowed
+    {
+        get
+        {
+            return !_settings.OnlyWhenGameVisible || _gameVisible;
+        }
+    }
 
     private void CheckGameVisible()
     {
@@ -446,13 +497,22 @@ public partial class MainWindow : Window
         {
             var box = new CheckBox
             {
-                Content = channel.ToString(), IsChecked = _chatChannels.Contains(channel),
-                Width = 140, Margin = new Thickness(0, 6, 10, 6),
+                Content = channel.ToString(),
+                IsChecked = _chatChannels.Contains(channel),
+                Width = 140,
+                Margin = new Thickness(0, 6, 10, 6),
             };
             box.Click += (_, _) =>
             {
-                if (box.IsChecked == true) _chatChannels.Add(channel);
-                else _chatChannels.Remove(channel);
+                if (box.IsChecked == true)
+                {
+                    _chatChannels.Add(channel);
+                }
+                else
+                {
+                    _chatChannels.Remove(channel);
+                }
+
                 _settings.ChatChannels = [.. _chatChannels];
             };
             ChatToggles.Children.Add(box);
@@ -515,7 +575,11 @@ public partial class MainWindow : Window
         _settings.LogPath = path;
         _settings.LogDirectory = Path.GetDirectoryName(path);
         LogPathBox.Text = path;
-        lock (_progressGate) _progress = default;
+        lock (_progressGate)
+        {
+            _progress = default;
+        }
+
         lock (_rawGate)
         {
             _rawLines.Clear();
@@ -546,13 +610,19 @@ public partial class MainWindow : Window
                 RememberRawLines(lines);
                 if (live)
                 {
-                    foreach (var alert in _matcher.Match(lines)) _pendingAlerts.Enqueue(alert);
+                    foreach (var alert in _matcher.Match(lines))
+                    {
+                        _pendingAlerts.Enqueue(alert);
+                    }
                 }
             },
             onProgress: p =>
             {
                 live |= p.CaughtUp;
-                lock (_progressGate) _progress = p;
+                lock (_progressGate)
+                {
+                    _progress = p;
+                }
             },
             cts.Token));
     }
@@ -614,7 +684,11 @@ public partial class MainWindow : Window
         }
 
         TailProgress p;
-        lock (_progressGate) p = _progress;
+        lock (_progressGate)
+        {
+            p = _progress;
+        }
+
         HistoryProgress.Value = p.TotalBytes > 0 ? (double)p.BytesRead / p.TotalBytes : 0;
         HistoryProgress.Visibility = p.CaughtUp ? Visibility.Collapsed : Visibility.Visible;
 
@@ -869,9 +943,15 @@ public partial class MainWindow : Window
         _followBaseline = DateTime.Now;
     }
 
-    private void Lock_Click(object sender, RoutedEventArgs e) => SetLocked(!_settings.Locked);
+    private void Lock_Click(object sender, RoutedEventArgs e)
+    {
+        SetLocked(!_settings.Locked);
+    }
 
-    private void ResetSession_Click(object sender, RoutedEventArgs e) => _engine.ResetSession();
+    private void ResetSession_Click(object sender, RoutedEventArgs e)
+    {
+        _engine.ResetSession();
+    }
 
     private void ResetOnLogin_Click(object sender, RoutedEventArgs e)
     {
@@ -961,7 +1041,10 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(RebuildTriggers, DispatcherPriority.Background);
     }
 
-    private void TriggerCheck_Click(object sender, RoutedEventArgs e) => Dispatcher.BeginInvoke(RebuildTriggers, DispatcherPriority.Background);
+    private void TriggerCheck_Click(object sender, RoutedEventArgs e)
+    {
+        Dispatcher.BeginInvoke(RebuildTriggers, DispatcherPriority.Background);
+    }
 
     private void DeleteTriggers_CanExecute(object sender, CanExecuteRoutedEventArgs e)
     {
@@ -975,7 +1058,10 @@ public partial class MainWindow : Window
         CommandManager.InvalidateRequerySuggested();
     }
 
-    private void DeleteTriggers_Click(object sender, RoutedEventArgs e) => DeleteSelectedTriggers();
+    private void DeleteTriggers_Click(object sender, RoutedEventArgs e)
+    {
+        DeleteSelectedTriggers();
+    }
 
     private void DeleteTriggers_Executed(object sender, ExecutedRoutedEventArgs e)
     {
@@ -993,18 +1079,32 @@ public partial class MainWindow : Window
         }
 
         var selected = TriggersGrid.SelectedItems.OfType<AlertTrigger>().ToArray();
-        if (selected.Length == 0) return;
+        if (selected.Length == 0)
+        {
+            return;
+        }
+
         string names = string.Join("\n", selected.Take(10).Select(t =>
             $"- {(string.IsNullOrWhiteSpace(t.Name) ? "(unnamed trigger)" : t.Name)}"));
-        if (selected.Length > 10) names += $"\n... and {selected.Length - 10} more";
+        if (selected.Length > 10)
+        {
+            names += $"\n... and {selected.Length - 10} more";
+        }
+
         string message = selected.Length == 1
             ? $"Delete this alert trigger?\n\n{names}\n\nThis cannot be undone."
             : $"Delete these {selected.Length} alert triggers?\n\n{names}\n\nThis cannot be undone.";
         if (MessageBox.Show(_dock, message, "Delete alert triggers",
             MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
+        {
             return;
+        }
 
-        foreach (var trigger in selected) _triggers.Remove(trigger);
+        foreach (var trigger in selected)
+        {
+            _triggers.Remove(trigger);
+        }
+
         RebuildTriggers();
     }
 
@@ -1019,7 +1119,9 @@ public partial class MainWindow : Window
         _overlayToggles["alerts"].IsChecked = true;
         SetOverlayVisible("alerts", true);
         if (_settings.Overlays["alerts"].Docked)
+        {
             _dock.RevealPanel("alerts");
+        }
         else
         {
             EnsureOnScreen(_overlays["alerts"]);
@@ -1104,8 +1206,14 @@ public partial class MainWindow : Window
                     keep = raw =>
                     {
                         string message = LogLine.TryParse(raw, out var l) ? l.Message : raw;
-                        try { return regex.IsMatch(message); }
-                        catch (System.Text.RegularExpressions.RegexMatchTimeoutException) { return false; }
+                        try
+                        {
+                            return regex.IsMatch(message);
+                        }
+                        catch (System.Text.RegularExpressions.RegexMatchTimeoutException)
+                        {
+                            return false;
+                        }
                     };
                 }
                 else
@@ -1152,16 +1260,29 @@ public partial class MainWindow : Window
         for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
         {
             var child = VisualTreeHelper.GetChild(root, i);
-            if (child is ScrollViewer sv) return sv;
-            if (FindScrollViewer(child) is { } found) return found;
+            if (child is ScrollViewer sv)
+            {
+                return sv;
+            }
+
+            if (FindScrollViewer(child) is { } found)
+            {
+                return found;
+            }
         }
 
         return null;
     }
 
-    private void RawLines_DoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e) => MakeTriggerFromSelection();
+    private void RawLines_DoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        MakeTriggerFromSelection();
+    }
 
-    private void MakeTrigger_Click(object sender, RoutedEventArgs e) => MakeTriggerFromSelection();
+    private void MakeTrigger_Click(object sender, RoutedEventArgs e)
+    {
+        MakeTriggerFromSelection();
+    }
 
     private void MakeTriggerFromSelection()
     {
@@ -1238,7 +1359,10 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ShowAllMobs_Click(object sender, RoutedEventArgs e) => RefreshSpawns(force: true);
+    private void ShowAllMobs_Click(object sender, RoutedEventArgs e)
+    {
+        RefreshSpawns(force: true);
+    }
 
     private void SpawnTrack_Click(object sender, RoutedEventArgs e)
     {

@@ -6,28 +6,35 @@ public class SpawnTrackerTests
 {
     private static readonly DateTime T0 = new(2026, 10, 21, 18, 0, 0);
 
-    private static string L(int seconds, string msg) =>
-        $"[{T0.AddSeconds(seconds):ddd MMM dd HH:mm:ss yyyy}] {msg}";
+    private static string L(int seconds, string msg)
+    {
+        return $"[{T0.AddSeconds(seconds):ddd MMM dd HH:mm:ss yyyy}] {msg}";
+    }
 
-    private static string[] KillAndRespawn(int start, int respawn) =>
-    [
+    private static string[] KillAndRespawn(int start, int respawn)
+    {
+        return [
         L(start, "You slash Lord Rikantus Everling for 100 points of damage."),
         L(start + 5, "You have slain Lord Rikantus Everling!"),
         L(start + 6, "Lord Rikantus Everling is burned by YOUR flames for 50 points of non-melee damage."),
         L(start + 5 + respawn, "Lord Rikantus Everling punches YOU for 200 points of damage."),
     ];
+    }
 
     [Fact]
     public void SameNamedMobActiveRightAfterKillIsNotLearned()
     {
         var store = new SpawnStore();
         var engine = new LogEngine(spawns: store);
-        string[] Wave(int s) =>
-        [
+        static string[] Wave(int s)
+        {
+            return [
             L(s, "You have slain Guardian Golem!"),
             L(s + 10, "Guardian Golem hits YOU for 50 points of damage."),
             L(s + 40, "Guardian Golem hits YOU for 50 points of damage."),
         ];
+        }
+
         engine.ProcessLines([L(0, "You have entered Nektropos Castle."), .. Wave(100), .. Wave(1000), .. Wave(2000)]);
 
         Assert.Equal(0, store.Get("Nektropos Castle", "Guardian Golem")!.Samples);
@@ -158,7 +165,10 @@ public class SpawnTrackerTests
     [Theory]
     [InlineData("Nektropos Castle 4 (Refined)", "Nektropos Castle")]
     [InlineData("The Plane of Fear", "The Plane of Fear")]
-    public void BaseZoneStripsInstanceSuffix(string zone, string expected) => Assert.Equal(expected, SpawnStore.BaseZone(zone));
+    public void BaseZoneStripsInstanceSuffix(string zone, string expected)
+    {
+        Assert.Equal(expected, SpawnStore.BaseZone(zone));
+    }
 
     [Theory]
     [InlineData("966", 966)]
@@ -171,5 +181,8 @@ public class SpawnTrackerTests
     }
 
     [Fact]
-    public void EstimateIgnoresSingleLowOutlier() => Assert.Equal(966, SpawnStore.Estimate([300, 966, 970, 1500]));
+    public void EstimateIgnoresSingleLowOutlier()
+    {
+        Assert.Equal(966, SpawnStore.Estimate([300, 966, 970, 1500]));
+    }
 }

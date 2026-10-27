@@ -109,18 +109,28 @@ internal static partial class GameWindowWatcher
         return false;
     }
 
-    private static bool IsCloaked(IntPtr hwnd) =>
-        DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, out int cloaked, sizeof(int)) == 0 && cloaked != 0;
+    private static bool IsCloaked(IntPtr hwnd)
+    {
+        return DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, out int cloaked, sizeof(int)) == 0 && cloaked != 0;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Rect
     {
         public int Left, Top, Right, Bottom;
 
-        public readonly long Area => Math.Max(0L, Right - Left) * Math.Max(0L, Bottom - Top);
+        public readonly long Area
+        {
+            get
+            {
+                return Math.Max(0L, Right - Left) * Math.Max(0L, Bottom - Top);
+            }
+        }
 
-        public readonly long Intersect(Rect o) =>
-            Math.Max(0L, Math.Min(Right, o.Right) - Math.Max(Left, o.Left)) * Math.Max(0L, Math.Min(Bottom, o.Bottom) - Math.Max(Top, o.Top));
+        public readonly long Intersect(Rect o)
+        {
+            return Math.Max(0L, Math.Min(Right, o.Right) - Math.Max(Left, o.Left)) * Math.Max(0L, Math.Min(Bottom, o.Bottom) - Math.Max(Top, o.Top));
+        }
     }
 
     private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);

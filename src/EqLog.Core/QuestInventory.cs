@@ -14,24 +14,37 @@ public sealed class QuestInventory
             ItemNames.Comparer.Equals(i.Item, item));
         if (entry is null)
         {
-            entry = new() { Character = character, Item = item };
+            entry = new()
+            {
+                Character = character,
+                Item = item
+            };
             Items.Add(entry);
         }
 
         if (timeUtc is DateTime observed && (entry.LastLootUtc is null || observed > entry.LastLootUtc))
+        {
             entry.LastLootUtc = observed;
+        }
 
         if (!ImportedLines.Add($"{character}\t{source}\t{line}"))
+        {
             return;
+        }
 
         string key = character.ToUpperInvariant();
         bool afterExport = timeUtc is DateTime time && ExportTimes.TryGetValue(key, out var exported) && time > exported;
         if (live || afterExport)
         {
             if (timeUtc is DateTime at)
+            {
                 RecentLoot.Add(new(character, item, quantity, at));
+            }
+
             if (!ExportTimes.TryGetValue(key, out var cutoff) || timeUtc is null || timeUtc > cutoff)
+            {
                 entry.Owned += quantity;
+            }
         }
         else
         {
@@ -56,7 +69,11 @@ public sealed class QuestInventory
                 ItemNames.Comparer.Equals(i.Item, group.Key));
             if (item is null)
             {
-                item = new() { Character = character, Item = group.Key };
+                item = new()
+                {
+                    Character = character,
+                    Item = group.Key
+                };
                 Items.Add(item);
             }
             item.Carried = group.Where(r => !r.Bank && !r.Collection && !r.Installed).Sum(r => r.Count);
@@ -67,12 +84,18 @@ public sealed class QuestInventory
         }
         RecentLoot.RemoveAll(d => d.Character.Equals(character, StringComparison.OrdinalIgnoreCase) && d.TimeUtc <= writtenUtc);
         foreach (var delta in RecentLoot.Where(d => d.Character.Equals(character, StringComparison.OrdinalIgnoreCase)))
+        {
             Items.First(i => i.Character.Equals(character, StringComparison.OrdinalIgnoreCase) &&
                 ItemNames.Comparer.Equals(i.Item, delta.Item)).Owned += delta.Quantity;
+        }
+
         ExportTimes[key] = writtenUtc;
     }
 
-    public static string CompletionKey(string character, string quest) => character.ToUpperInvariant() + "\t" + quest;
+    public static string CompletionKey(string character, string quest)
+    {
+        return character.ToUpperInvariant() + "\t" + quest;
+    }
 
     public IEnumerable<QuestOpportunity> Opportunities(string character, IReadOnlyDictionary<string, QuestLookupResult> cache,
         string filter, bool recentFirst)
@@ -98,13 +121,34 @@ public sealed class QuestInventoryItem
 {
     public string Character { get; set; } = "";
     public string Item { get; set; } = "";
-    public int Owned { get; set; }
-    public int Historical { get; set; }
-    public int Carried { get; set; }
-    public int Bank { get; set; }
-    public int Collection { get; set; }
-    public int Installed { get; set; }
-    public DateTime? LastLootUtc { get; set; }
+    public int Owned
+    {
+        get; set;
+    }
+    public int Historical
+    {
+        get; set;
+    }
+    public int Carried
+    {
+        get; set;
+    }
+    public int Bank
+    {
+        get; set;
+    }
+    public int Collection
+    {
+        get; set;
+    }
+    public int Installed
+    {
+        get; set;
+    }
+    public DateTime? LastLootUtc
+    {
+        get; set;
+    }
 }
 
 public sealed record InventoryLootDelta(string Character, string Item, int Quantity, DateTime TimeUtc);

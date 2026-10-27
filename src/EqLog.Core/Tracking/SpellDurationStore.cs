@@ -16,7 +16,10 @@ public sealed class SpellDurationStore
     private readonly Dictionary<string, List<Sample>> _samples = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, double> _overrides = new(StringComparer.OrdinalIgnoreCase);
 
-    public bool IsDirty { get; private set; }
+    public bool IsDirty
+    {
+        get; private set;
+    }
 
     /// <summary>
     /// Records a measured duration. <paramref name="observedAt"/> is the wear-off time; a second sample
@@ -63,22 +66,37 @@ public sealed class SpellDurationStore
     }
 
     /// <summary>True when the spell (or another rank of it) has a learned or overridden duration.</summary>
-    public bool IsKnown(string spell) => GetDuration(spell) is not null;
+    public bool IsKnown(string spell)
+    {
+        return GetDuration(spell) is not null;
+    }
 
     /// <summary>Override first, then learned duration; falls back to another rank of the same spell.</summary>
     public double? GetDuration(string spell)
     {
-        if (_overrides.TryGetValue(spell, out double o)) return o;
-        if (_samples.TryGetValue(spell, out var s) && s.Count > 0) return Estimate(s);
+        if (_overrides.TryGetValue(spell, out double o))
+        {
+            return o;
+        }
+
+        if (_samples.TryGetValue(spell, out var s) && s.Count > 0)
+        {
+            return Estimate(s);
+        }
 
         string? alt = SpellNames.FindByBase(_overrides.Keys, spell);
-        if (alt is not null) return _overrides[alt];
+        if (alt is not null)
+        {
+            return _overrides[alt];
+        }
+
         alt = SpellNames.FindByBase(_samples.Keys, spell);
         return alt is not null && _samples[alt].Count > 0 ? Estimate(_samples[alt]) : null;
     }
 
-    public IReadOnlyList<SpellDurationInfo> List() =>
-        _samples.Keys.Union(_overrides.Keys, StringComparer.OrdinalIgnoreCase)
+    public IReadOnlyList<SpellDurationInfo> List()
+    {
+        return _samples.Keys.Union(_overrides.Keys, StringComparer.OrdinalIgnoreCase)
             .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
             .Select(k => new SpellDurationInfo(
                 k,
@@ -86,6 +104,7 @@ public sealed class SpellDurationStore
                 _samples.TryGetValue(k, out var s2) ? s2.Count : 0,
                 _overrides.TryGetValue(k, out var o) ? o : null))
             .ToList();
+    }
 
     // Mez/charm often break early, so use a high percentile instead of the mean to approximate the full duration.
     private static double Estimate(List<Sample> samples)
@@ -108,8 +127,15 @@ public sealed class SpellDurationStore
             var dto = JsonSerializer.Deserialize<Dto>(File.ReadAllText(path));
             if (dto is not null)
             {
-                foreach (var kv in dto.Samples ?? []) store._samples[kv.Key] = kv.Value.OrderBy(x => x.At).TakeLast(MaxSamples).ToList();
-                foreach (var kv in dto.Overrides ?? []) store._overrides[kv.Key] = kv.Value;
+                foreach (var kv in dto.Samples ?? [])
+                {
+                    store._samples[kv.Key] = kv.Value.OrderBy(x => x.At).TakeLast(MaxSamples).ToList();
+                }
+
+                foreach (var kv in dto.Overrides ?? [])
+                {
+                    store._overrides[kv.Key] = kv.Value;
+                }
             }
         }
         catch (JsonException)
@@ -130,9 +156,15 @@ public sealed class SpellDurationStore
 
     private sealed class Dto
     {
-        public Dictionary<string, List<Sample>>? Samples { get; set; }
+        public Dictionary<string, List<Sample>>? Samples
+        {
+            get; set;
+        }
 
-        public Dictionary<string, double>? Overrides { get; set; }
+        public Dictionary<string, double>? Overrides
+        {
+            get; set;
+        }
     }
 
     public sealed record Sample(DateTime At, double Seconds);

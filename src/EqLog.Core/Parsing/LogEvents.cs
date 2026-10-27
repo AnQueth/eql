@@ -19,7 +19,13 @@ public sealed record DamageEvent(
     string? Source,
     string? Modifier) : LogEvent(Time)
 {
-    public bool IsCritical => Modifier?.Contains("Critical", StringComparison.OrdinalIgnoreCase) == true;
+    public bool IsCritical
+    {
+        get
+        {
+            return Modifier?.Contains("Critical", StringComparison.OrdinalIgnoreCase) == true;
+        }
+    }
 }
 
 public sealed record HealEvent(
@@ -101,7 +107,13 @@ public sealed record SpellWornOffEvent(DateTime Time, string Spell, string Targe
 /// <summary>"Y has been mesmerized." / "Y has been charmed." - the landing message of a spell on Y.</summary>
 public sealed record EffectLandedEvent(DateTime Time, string Target, string Effect) : LogEvent(Time)
 {
-    public bool IsCharm => Effect == "charmed";
+    public bool IsCharm
+    {
+        get
+        {
+            return Effect == "charmed";
+        }
+    }
 }
 
 /// <summary>"Y has been awakened by Z." - a mez was broken.</summary>

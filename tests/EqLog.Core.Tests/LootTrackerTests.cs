@@ -28,7 +28,10 @@ public class LootTrackerTests
     {
         var tracker = new LootTracker();
         for (int i = 0; i < 80; i++)
+        {
             tracker.OnLoot(new(DateTime.Today.AddSeconds(i), Names.You, "Bone Chips", 2, null, null, false));
+        }
+
         var snapshot = tracker.Snapshot(60, 10);
         Assert.Equal(60, snapshot.Recent.Count);
         Assert.Equal(160, Assert.Single(snapshot.Groups).Quantity);

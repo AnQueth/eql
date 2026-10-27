@@ -7,7 +7,13 @@ public sealed record MoteCount(string Tier, int Count);
 public sealed record MoteMobRate(string Mob, int Kills, int Drops, IReadOnlyList<MoteCount> Tiers)
 {
     /// <summary>Mote drops per kill, or null when no kills are known (e.g. a reward chest).</summary>
-    public double? DropRate => Kills > 0 ? (double)Drops / Kills : null;
+    public double? DropRate
+    {
+        get
+        {
+            return Kills > 0 ? (double)Drops / Kills : null;
+        }
+    }
 }
 
 /// <summary>
@@ -22,7 +28,10 @@ public sealed class MoteStore
 
     private Data _data = new();
 
-    public bool IsDirty { get; private set; }
+    public bool IsDirty
+    {
+        get; private set;
+    }
 
     /// <summary>Returns true if the event at <paramref name="time"/> hasn't been counted yet, and marks it counted.</summary>
     /// <param name="indexAtTime">1-based position of this event among the character's counted-type events at that same second.</param>
@@ -69,19 +78,25 @@ public sealed class MoteStore
         IsDirty = true;
     }
 
-    public bool HasKills(string zone, string mob) =>
-        _data.Zones.TryGetValue(SpawnStore.BaseZone(zone), out var mobs) && mobs.TryGetValue(mob, out var m) && m.Kills > 0;
+    public bool HasKills(string zone, string mob)
+    {
+        return _data.Zones.TryGetValue(SpawnStore.BaseZone(zone), out var mobs) && mobs.TryGetValue(mob, out var m) && m.Kills > 0;
+    }
 
-    public IReadOnlyList<MoteCount> Totals(string character) =>
-        _data.Characters.TryGetValue(character, out var c) ? MoteTiers.Sort(c.Tiers) : [];
+    public IReadOnlyList<MoteCount> Totals(string character)
+    {
+        return _data.Characters.TryGetValue(character, out var c) ? MoteTiers.Sort(c.Tiers) : [];
+    }
 
     /// <summary>Mobs in the zone that have dropped at least one mote.</summary>
-    public IReadOnlyList<MoteMobRate> ZoneRates(string zone) =>
-        _data.Zones.TryGetValue(SpawnStore.BaseZone(zone), out var mobs)
+    public IReadOnlyList<MoteMobRate> ZoneRates(string zone)
+    {
+        return _data.Zones.TryGetValue(SpawnStore.BaseZone(zone), out var mobs)
             ? mobs.Where(kv => kv.Value.Drops > 0)
                 .Select(kv => new MoteMobRate(kv.Key, kv.Value.Kills, kv.Value.Drops, MoteTiers.Sort(kv.Value.Tiers)))
                 .ToList()
             : [];
+    }
 
     private CharacterData Character(string name)
     {
@@ -178,18 +193,30 @@ public sealed class MoteStore
 
     private sealed class CharacterData
     {
-        public DateTime? Watermark { get; set; }
+        public DateTime? Watermark
+        {
+            get; set;
+        }
 
-        public int WatermarkCount { get; set; }
+        public int WatermarkCount
+        {
+            get; set;
+        }
 
         public Dictionary<string, int> Tiers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
     private sealed class MobData
     {
-        public int Kills { get; set; }
+        public int Kills
+        {
+            get; set;
+        }
 
-        public int Drops { get; set; }
+        public int Drops
+        {
+            get; set;
+        }
 
         public Dictionary<string, int> Tiers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }

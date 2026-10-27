@@ -4,8 +4,10 @@ namespace EqLog.Core;
 
 public static partial class ItemNames
 {
-    public static string Normalize(string name) =>
-        Spaces().Replace(Upgrade().Replace(name, " "), " ").Trim();
+    public static string Normalize(string name)
+    {
+        return Spaces().Replace(Upgrade().Replace(name, " "), " ").Trim();
+    }
 
     public static IEqualityComparer<string> Comparer { get; } = new ItemComparer();
 
@@ -17,9 +19,15 @@ public static partial class ItemNames
 
     private sealed class ItemComparer : IEqualityComparer<string>
     {
-        public bool Equals(string? x, string? y) => x is null || y is null
+        public bool Equals(string? x, string? y)
+        {
+            return x is null || y is null
             ? x == y : StringComparer.OrdinalIgnoreCase.Equals(Normalize(x), Normalize(y));
+        }
 
-        public int GetHashCode(string obj) => StringComparer.OrdinalIgnoreCase.GetHashCode(Normalize(obj));
+        public int GetHashCode(string obj)
+        {
+            return StringComparer.OrdinalIgnoreCase.GetHashCode(Normalize(obj));
+        }
     }
 }

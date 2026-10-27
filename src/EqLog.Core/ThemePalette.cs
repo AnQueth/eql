@@ -25,15 +25,26 @@ public sealed class ThemePalette
     public void Validate()
     {
         if (string.IsNullOrWhiteSpace(Name) || Name.Length > 80)
+        {
             throw new FormatException("Theme Name must contain 1 to 80 characters.");
-        if (Colors is null) throw new FormatException("Theme Colors must be an object.");
+        }
+
+        if (Colors is null)
+        {
+            throw new FormatException("Theme Colors must be an object.");
+        }
+
         foreach (string key in ColorKeys)
         {
             if (!Colors.TryGetValue(key, out string? color) || color is null ||
                 !Regex.IsMatch(color, @"\A#[0-9a-fA-F]{6}\z", RegexOptions.CultureInvariant))
+            {
                 throw new FormatException($"Color '{key}' must be a #RRGGBB value.");
+            }
         }
         if (Colors.Keys.Except(ColorKeys, StringComparer.Ordinal).Any())
+        {
             throw new FormatException("Theme contains an unknown color name.");
+        }
     }
 }

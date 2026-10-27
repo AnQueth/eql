@@ -5,9 +5,12 @@ public class SkyOwnedQuestTests
     [Fact]
     public void OwnedQuests_FilterClassAndCharacter_IncludeCollectionAndUpgradeVariants()
     {
-        SkyQuest Quest(string name, string playerClass, string ingredient) =>
-            new(playerClass, name, "Reward", "Turn-in NPC", "say", "", "", "url",
+        static SkyQuest Quest(string name, string playerClass, string ingredient)
+        {
+            return new(playerClass, name, "Reward", "Turn-in NPC", "say", "", "", "url",
                 [new(ingredient, 1), new("Missing rune", 1)]);
+        }
+
         var catalog = new SkyQuestCatalog(DateTime.UtcNow, [
             Quest("Owned quest", "Cleric", "Raiment"),
             Quest("Other class", "Warrior", "Raiment"),

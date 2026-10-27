@@ -49,7 +49,10 @@ public sealed class OverlayWindow : Window
         SetLocked(false);
     }
 
-    public OverlayPanel Panel { get; }
+    public OverlayPanel Panel
+    {
+        get;
+    }
 
     /// <summary>Takes the panel back from the dock window.</summary>
     public void AttachPanel()
@@ -61,7 +64,10 @@ public sealed class OverlayWindow : Window
         }
     }
 
-    public void DetachPanel() => Content = null;
+    public void DetachPanel()
+    {
+        Content = null;
+    }
 
     public void SetLocked(bool locked)
     {

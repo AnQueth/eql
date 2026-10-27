@@ -10,7 +10,10 @@ public sealed class ChatTracker
     public int Capacity { get; set; } = 300;
 
     /// <summary>Incremented whenever a message is added, so views can skip redraws.</summary>
-    public long Version { get; private set; }
+    public long Version
+    {
+        get; private set;
+    }
 
     public void OnChat(ChatEvent e)
     {

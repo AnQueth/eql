@@ -14,11 +14,14 @@ public sealed record LootSnapshot(
 {
     public IReadOnlyList<LootGroup> Groups { get; init; } = [];
 
-    public IEnumerable<LootGroup> OrderedGroups(bool recentFirst) => recentFirst
+    public IEnumerable<LootGroup> OrderedGroups(bool recentFirst)
+    {
+        return recentFirst
         ? Groups.OrderByDescending(g => g.LastLoot).ThenBy(g => ItemNames.Normalize(g.Item), StringComparer.OrdinalIgnoreCase)
             .ThenBy(g => g.Looter, StringComparer.OrdinalIgnoreCase)
         : Groups.OrderBy(g => ItemNames.Normalize(g.Item), StringComparer.OrdinalIgnoreCase)
             .ThenBy(g => g.Looter, StringComparer.OrdinalIgnoreCase);
+    }
 }
 
 /// <summary>Items you (and others, when visible) looted, plus coin received.</summary>
@@ -35,7 +38,10 @@ public sealed class LootTracker
     public void OnLoot(LootEvent e)
     {
         if (!_groups.TryGetValue(e.Looter, out var items))
+        {
             _groups[e.Looter] = items = new Dictionary<string, LootGroup>(ItemNames.Comparer);
+        }
+
         items.TryGetValue(e.Item, out var previous);
         items[e.Item] = new(e.Looter, e.Item, (previous?.Quantity ?? 0) + e.Quantity,
             previous is not null && previous.LastLoot > e.Time ? previous.LastLoot : e.Time);
@@ -59,7 +65,10 @@ public sealed class LootTracker
         }
     }
 
-    public void OnCoin(CoinEvent e) => _coin += e.Amount;
+    public void OnCoin(CoinEvent e)
+    {
+        _coin += e.Amount;
+    }
 
     public void ResetSession()
     {
@@ -70,13 +79,16 @@ public sealed class LootTracker
         _items = 0;
     }
 
-    public LootSnapshot Snapshot(int recent, int topItems) => new(
+    public LootSnapshot Snapshot(int recent, int topItems)
+    {
+        return new(
         _coin,
         _sold,
         _items,
         _recent.AsEnumerable().Reverse().Take(recent).ToList(),
         _itemCounts.OrderByDescending(kv => kv.Value).Take(topItems).Select(kv => (kv.Key, kv.Value)).ToList())
-    {
-        Groups = _groups.Values.SelectMany(items => items.Values).ToArray(),
-    };
+        {
+            Groups = _groups.Values.SelectMany(items => items.Values).ToArray(),
+        };
+    }
 }

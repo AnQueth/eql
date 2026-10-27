@@ -7,8 +7,18 @@ namespace EqLog.Overlay;
 
 public static class ThemeManager
 {
-    public static string BuiltInFolder => Path.Combine(AppContext.BaseDirectory, "Themes");
-    public static ThemePalette Load(string path) => ThemePalette.Parse(File.ReadAllText(path));
+    public static string BuiltInFolder
+    {
+        get
+        {
+            return Path.Combine(AppContext.BaseDirectory, "Themes");
+        }
+    }
+
+    public static ThemePalette Load(string path)
+    {
+        return ThemePalette.Parse(File.ReadAllText(path));
+    }
 
     public static void Apply(ThemePalette theme)
     {

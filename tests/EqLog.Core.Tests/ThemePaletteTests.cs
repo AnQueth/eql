@@ -15,11 +15,14 @@ public class ThemePaletteTests
         Assert.Equal(ThemePalette.ColorKeys.Length, theme.Colors.Count);
     }
 
-    private static ThemePalette Valid() => new()
+    private static ThemePalette Valid()
     {
-        Name = "Test palette",
-        Colors = ThemePalette.ColorKeys.ToDictionary(k => k, _ => "#aB12EF"),
-    };
+        return new()
+        {
+            Name = "Test palette",
+            Colors = ThemePalette.ColorKeys.ToDictionary(k => k, _ => "#aB12EF"),
+        };
+    }
 
     [Fact]
     public void Parse_RoundTrip_PreservesPalette()
@@ -65,5 +68,7 @@ public class ThemePaletteTests
     [InlineData("{}")]
     [InlineData("{\"Name\":\"Test\",\"Colors\":null}")]
     public void Parse_InvalidShape_RejectsPalette(string json)
-        => Assert.Throws<FormatException>(() => ThemePalette.Parse(json));
+    {
+        Assert.Throws<FormatException>(() => ThemePalette.Parse(json));
+    }
 }

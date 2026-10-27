@@ -36,6 +36,18 @@ orange), and `AccentText` is text on accent-filled controls. `Hover`, `Pressed`,
 Use contrasting text and backgrounds. Combat/status colors and user-configured alert colors
 retain their semantic meaning independently of the theme.
 
+## C# formatting
+
+C# uses Allman braces, braced control-flow bodies, and one statement per line.
+Methods and accessors use expanded block bodies rather than compact one-line implementations.
+Auto-properties and expression lambdas used as predicates/selectors may remain concise.
+The repository `.editorconfig` records these preferences. To apply them:
+
+```powershell
+dotnet format style EqLogOverlay.slnx --no-restore --diagnostics IDE0011 IDE0021 IDE0022 IDE0023 IDE0024 IDE0025 IDE0026 IDE0027 IDE0061 IDE0062 IDE2001 IDE2002 --severity info
+dotnet format whitespace EqLogOverlay.slnx --no-restore
+```
+
 ## Running
 
 ```powershell

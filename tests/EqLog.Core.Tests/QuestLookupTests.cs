@@ -13,7 +13,9 @@ public class QuestLookupTests
     [InlineData("Sword + 2 of Power +10", "Sword of Power")]
     [InlineData("Soul Leech (Exaltation)", "Soul Leech (Exaltation)")]
     public void ItemTitle_RemovesUpgradeLevels(string item, string expected)
-        => Assert.Equal(expected, QuestLookup.ItemTitle(item));
+    {
+        Assert.Equal(expected, QuestLookup.ItemTitle(item));
+    }
 
     [Fact]
     public async Task FindsQuestReferencesAcrossPagesAndTransclusionsWithoutDuplicates()

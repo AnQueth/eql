@@ -6,8 +6,10 @@ public class MoteTrackerTests
 {
     private static readonly DateTime T0 = new(2026, 10, 21, 18, 0, 0);
 
-    private static string L(int seconds, string msg) =>
-        $"[{T0.AddSeconds(seconds):ddd MMM dd HH:mm:ss yyyy}] {msg}";
+    private static string L(int seconds, string msg)
+    {
+        return $"[{T0.AddSeconds(seconds):ddd MMM dd HH:mm:ss yyyy}] {msg}";
+    }
 
     private static readonly string[] Log =
     [
@@ -93,7 +95,10 @@ public class MoteTrackerTests
     [InlineData("Motes of Transcendent Potential", "Transcendent")]
     [InlineData("Mote of Very Small Potential", "Very Small")]
     [InlineData("Swirling Mist", null)]
-    public void TierOf(string item, string? tier) => Assert.Equal(tier, MoteTiers.TierOf(item));
+    public void TierOf(string item, string? tier)
+    {
+        Assert.Equal(tier, MoteTiers.TierOf(item));
+    }
 
     [Fact]
     public void UnknownTiersAreCountedAndSortedByCount()

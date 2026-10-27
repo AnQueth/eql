@@ -1,0 +1,23 @@
+root = true
+
+[*.cs]
+indent_style = space
+indent_size = 4
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_preserve_single_line_blocks = false
+csharp_preserve_single_line_statements = false
+csharp_prefer_braces = true:warning
+csharp_style_allow_embedded_statements_on_same_line_experimental = false:warning
+csharp_style_allow_consecutive_braces_on_same_line_experimental = false:warning
+csharp_style_expression_bodied_methods = false:warning
+csharp_style_expression_bodied_constructors = false:warning
+csharp_style_expression_bodied_operators = false:warning
+csharp_style_expression_bodied_properties = false:warning
+csharp_style_expression_bodied_indexers = false:warning
+csharp_style_expression_bodied_accessors = false:warning
+csharp_style_expression_bodied_local_functions = false:warning
+dotnet_diagnostic.IDE0011.severity = warning
+dotnet_diagnostic.IDE0055.severity = warning

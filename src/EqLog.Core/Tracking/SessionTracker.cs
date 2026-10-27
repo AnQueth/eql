@@ -19,8 +19,10 @@ public sealed record SessionSnapshot(
     bool AaCapped,
     IReadOnlyList<KillRecord> RecentKills)
 {
-    public double ExperiencePercentPerHour(DateTime now) =>
-        SessionStart is DateTime s && now - s > TimeSpan.FromMinutes(1) ? ExperiencePercent / (now - s).TotalHours : 0;
+    public double ExperiencePercentPerHour(DateTime now)
+    {
+        return SessionStart is DateTime s && now - s > TimeSpan.FromMinutes(1) ? ExperiencePercent / (now - s).TotalHours : 0;
+    }
 }
 
 /// <summary>Zone, kills, deaths, experience and levels for the current play session.</summary>
@@ -41,7 +43,10 @@ public sealed class SessionTracker
     private int? _level;
     private int _levelsGained;
 
-    public void OnFirstLine(DateTime t) => _sessionStart ??= t;
+    public void OnFirstLine(DateTime t)
+    {
+        _sessionStart ??= t;
+    }
 
     public void OnZone(ZoneEvent e)
     {
@@ -73,11 +78,21 @@ public sealed class SessionTracker
     public void OnExperience(ExperienceEvent e)
     {
         _xpGains++;
-        if (e.Kind is ExperienceKind.Party or ExperienceKind.Raid) _partyXp++;
-        if (e.Percent is double p) _xpPercent += p;
+        if (e.Kind is ExperienceKind.Party or ExperienceKind.Raid)
+        {
+            _partyXp++;
+        }
+
+        if (e.Percent is double p)
+        {
+            _xpPercent += p;
+        }
     }
 
-    public void OnAaCap(AaCapEvent e) => _lastAaCap = e.Time;
+    public void OnAaCap(AaCapEvent e)
+    {
+        _lastAaCap = e.Time;
+    }
 
     public void OnLevel(LevelEvent e)
     {
@@ -96,7 +111,9 @@ public sealed class SessionTracker
         _lastAaCap = null;
     }
 
-    public SessionSnapshot Snapshot(DateTime now, int recentKills) => new(
+    public SessionSnapshot Snapshot(DateTime now, int recentKills)
+    {
+        return new(
         _zone,
         _zoneAt,
         _sessionStart,
@@ -110,4 +127,5 @@ public sealed class SessionTracker
         _levelsGained,
         _lastAaCap is DateTime cap && now - cap < TimeSpan.FromMinutes(30),
         _kills.AsEnumerable().Reverse().Take(recentKills).ToList());
+    }
 }

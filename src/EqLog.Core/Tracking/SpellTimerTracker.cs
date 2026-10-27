@@ -151,8 +151,10 @@ public sealed class SpellTimerTracker(SpellDurationStore store)
         }
     }
 
-    public void OnKill(KillEvent e) =>
+    public void OnKill(KillEvent e)
+    {
         _timers.RemoveAll(t => string.Equals(t.Target, e.Victim, StringComparison.OrdinalIgnoreCase));
+    }
 
     public void Clear()
     {
@@ -189,7 +191,11 @@ public sealed class SpellTimerTracker(SpellDurationStore store)
 
         if (p.Bound)
         {
-            if (force || now - p.Time > LandingWindow) _pending = null;
+            if (force || now - p.Time > LandingWindow)
+            {
+                _pending = null;
+            }
+
             return;
         }
 
@@ -234,8 +240,10 @@ public sealed class SpellTimerTracker(SpellDurationStore store)
         });
     }
 
-    private static bool SameTimer(ActiveTimer t, string spell, string target) =>
-        string.Equals(t.Target, target, StringComparison.OrdinalIgnoreCase) && SpellNames.SameBase(t.Spell, spell);
+    private static bool SameTimer(ActiveTimer t, string spell, string target)
+    {
+        return string.Equals(t.Target, target, StringComparison.OrdinalIgnoreCase) && SpellNames.SameBase(t.Spell, spell);
+    }
 
     private sealed class Pending(string spell, DateTime time)
     {
@@ -243,7 +251,10 @@ public sealed class SpellTimerTracker(SpellDurationStore store)
 
         public DateTime Time { get; } = time;
 
-        public bool Bound { get; set; }
+        public bool Bound
+        {
+            get; set;
+        }
     }
 
     private sealed class ActiveTimer(string spell, string target, DateTime start, bool confirmed, bool charm)
@@ -260,6 +271,9 @@ public sealed class SpellTimerTracker(SpellDurationStore store)
 
         public TimerState State { get; set; } = TimerState.Running;
 
-        public DateTime? EndedAt { get; set; }
+        public DateTime? EndedAt
+        {
+            get; set;
+        }
     }
 }

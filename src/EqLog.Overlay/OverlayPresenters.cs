@@ -162,13 +162,16 @@ public static class OverlayPresenters
         return b;
     }
 
-    public static string Short(double n) => n switch
+    public static string Short(double n)
     {
-        >= 1_000_000_000 => $"{n / 1_000_000_000:0.##}B",
-        >= 1_000_000 => $"{n / 1_000_000:0.##}M",
-        >= 10_000 => $"{n / 1_000:0.#}K",
-        _ => $"{n:N0}",
-    };
+        return n switch
+        {
+            >= 1_000_000_000 => $"{n / 1_000_000_000:0.##}B",
+            >= 1_000_000 => $"{n / 1_000_000:0.##}M",
+            >= 10_000 => $"{n / 1_000:0.#}K",
+            _ => $"{n:N0}",
+        };
+    }
 
     public static string Clock(double seconds)
     {
@@ -176,7 +179,10 @@ public static class OverlayPresenters
         return t.TotalHours >= 1 ? $"{(int)t.TotalHours}:{t.Minutes:00}:{t.Seconds:00}" : $"{t.Minutes}:{t.Seconds:00}";
     }
 
-    private static string Who(string name) => name == Names.You ? "You" : name;
+    private static string Who(string name)
+    {
+        return name == Names.You ? "You" : name;
+    }
 
     private static OverlayContent Dps(EngineSnapshot s, LogEngine _, OverlayView __)
     {
@@ -283,9 +289,11 @@ public static class OverlayPresenters
         {
             rows.Add(new("Observed healers", "click for abilities", Foreground: Header, Bold: true));
             foreach (var healer in h.Healers)
+            {
                 rows.Add(new(Who(healer.Name), Short(healer.Abilities.Sum(a => a.Total)),
                     Breakdown: new(Who(healer.Name), $"All observed healing | session {Clock(h.DurationSeconds)} | snapshot at click",
                         "HPS", healer.Abilities)));
+            }
         }
         return new("Healing", $"out {Short(h.OutgoingRecentHps)} hps  in {Short(h.IncomingRecentHps)} hps", rows);
     }
@@ -398,12 +406,15 @@ public static class OverlayPresenters
                     Foreground: group.Looter == Names.You ? null : Dim, LootItem: group.Item));
             }
         }
-        else foreach (var r in l.Recent.Take(12))
+        else
         {
-            string qty = r.Quantity > 1 ? $"{r.Quantity} x " : "";
-            string who = r.Looter == Names.You ? "" : $"[{r.Looter}] ";
-            string note = r.SoldFor is { } c ? $"sold {c}" : r.Stored ? "depot" : r.Time.ToString("HH:mm");
-            rows.Add(new($"{who}{qty}{r.Item}", note, Foreground: r.Looter == Names.You ? null : Dim, LootItem: r.Item));
+            foreach (var r in l.Recent.Take(12))
+            {
+                string qty = r.Quantity > 1 ? $"{r.Quantity} x " : "";
+                string who = r.Looter == Names.You ? "" : $"[{r.Looter}] ";
+                string note = r.SoldFor is { } c ? $"sold {c}" : r.Stored ? "depot" : r.Time.ToString("HH:mm");
+                rows.Add(new($"{who}{qty}{r.Item}", note, Foreground: r.Looter == Names.You ? null : Dim, LootItem: r.Item));
+            }
         }
 
         return new("Loot", $"{l.ItemsLooted} items this session", rows);

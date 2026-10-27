@@ -7,8 +7,10 @@ public class EngineTests
 {
     private static readonly DateTime T0 = new(2026, 10, 21, 18, 0, 0);
 
-    private static string L(int seconds, string msg) =>
-        $"[{T0.AddSeconds(seconds):ddd MMM dd HH:mm:ss yyyy}] {msg}";
+    private static string L(int seconds, string msg)
+    {
+        return $"[{T0.AddSeconds(seconds):ddd MMM dd HH:mm:ss yyyy}] {msg}";
+    }
 
     [Fact]
     public void BuildsFightWithPerAttackerDps()

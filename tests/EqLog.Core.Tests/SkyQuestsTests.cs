@@ -48,7 +48,9 @@ public class SkyQuestsTests
 
     [Fact]
     public void ParseRejectsMissingTablesRatherThanShowingEmptySuccess()
-        => Assert.Throws<FormatException>(() => SkyQuests.Parse("Wiki format changed"));
+    {
+        Assert.Throws<FormatException>(() => SkyQuests.Parse("Wiki format changed"));
+    }
 
     [Fact]
     public void ProgressRecognizesScreenshotCollectionItemButStillRequiresMissingRune()

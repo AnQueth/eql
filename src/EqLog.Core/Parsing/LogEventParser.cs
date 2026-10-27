@@ -14,9 +14,15 @@ public sealed partial class LogEventParser
         CharacterName = characterName ?? string.Empty;
     }
 
-    public string CharacterName { get; set; }
+    public string CharacterName
+    {
+        get; set;
+    }
 
-    public LogEvent? Parse(LogLine line) => Parse(line.Timestamp, line.Message);
+    public LogEvent? Parse(LogLine line)
+    {
+        return Parse(line.Timestamp, line.Message);
+    }
 
     public LogEvent? Parse(DateTime t, string m)
     {
@@ -369,14 +375,17 @@ public sealed partial class LogEventParser
         return null;
     }
 
-    private static ChatChannel ChannelFromName(string ch) => ch switch
+    private static ChatChannel ChannelFromName(string ch)
     {
-        "the group" or "your party" or "group" => ChatChannel.Group,
-        "the guild" or "guild" => ChatChannel.Guild,
-        "the raid" or "raid" => ChatChannel.Raid,
-        "the fellowship" or "fellowship" => ChatChannel.Fellowship,
-        _ => ChatChannel.Channel,
-    };
+        return ch switch
+        {
+            "the group" or "your party" or "group" => ChatChannel.Group,
+            "the guild" or "guild" => ChatChannel.Guild,
+            "the raid" or "raid" => ChatChannel.Raid,
+            "the fellowship" or "fellowship" => ChatChannel.Fellowship,
+            _ => ChatChannel.Channel,
+        };
+    }
 
     private static (string Item, int Quantity) SplitQuantity(string text)
     {

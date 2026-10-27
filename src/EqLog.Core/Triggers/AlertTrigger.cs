@@ -21,13 +21,17 @@ public sealed class AlertTrigger
 
     public double Seconds { get; set; } = 8;
 
-    public bool Sound { get; set; }
+    public bool Sound
+    {
+        get; set;
+    }
 
     /// <summary>A WPF color name or #RRGGBB value.</summary>
     public string Color { get; set; } = "#FF5A5A";
 
-    public static List<AlertTrigger> Defaults() =>
-    [
+    public static List<AlertTrigger> Defaults()
+    {
+        return [
         new()
         {
             Name = "Feign Death failed",
@@ -43,6 +47,7 @@ public sealed class AlertTrigger
             Color = "Orange",
         },
     ];
+    }
 }
 
 /// <summary>An alert produced by a trigger match.</summary>
@@ -82,7 +87,13 @@ public sealed class TriggerMatcher
     /// <summary>Triggers that were skipped because their pattern is not a valid regex.</summary>
     public List<string> Errors { get; } = [];
 
-    public int Count => _compiled.Count;
+    public int Count
+    {
+        get
+        {
+            return _compiled.Count;
+        }
+    }
 
     public static bool TryCompile(string pattern, string? characterName, out Regex regex, out string? error)
     {

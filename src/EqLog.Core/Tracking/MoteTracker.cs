@@ -15,8 +15,10 @@ public sealed record MoteSnapshot(
     IReadOnlyList<MoteDrop> Recent,
     IReadOnlyList<MoteMobRate> ZoneRates)
 {
-    public double PerHour(DateTime now) =>
-        SessionStart is DateTime s && now - s > TimeSpan.FromMinutes(1) ? SessionTotal / (now - s).TotalHours : 0;
+    public double PerHour(DateTime now)
+    {
+        return SessionStart is DateTime s && now - s > TimeSpan.FromMinutes(1) ? SessionTotal / (now - s).TotalHours : 0;
+    }
 }
 
 /// <summary>Mote tiers, taken from the item name ("Mote of X Potential"); no fixed list of tiers is assumed.</summary>
@@ -30,12 +32,15 @@ public static partial class MoteTiers
     }
 
     /// <summary>Tiers with a count, most collected first.</summary>
-    public static IReadOnlyList<MoteCount> Sort(IReadOnlyDictionary<string, int> counts) =>
-        counts.Where(kv => kv.Value > 0)
+    public static IReadOnlyList<MoteCount> Sort(IReadOnlyDictionary<string, int> counts)
+    {
+        return counts.Where(kv => kv.Value > 0)
             .OrderByDescending(kv => kv.Value)
             .ThenBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
             .Select(kv => new MoteCount(kv.Key, kv.Value))
             .ToList();
+    }
+
     [GeneratedRegex(@"^Motes? of (?<t>.+?) Potential$", RegexOptions.IgnoreCase)]
     private static partial Regex MoteRegex();
 }
@@ -59,9 +64,15 @@ public sealed class MoteTracker
         Store = store;
     }
 
-    public MoteStore Store { get; }
+    public MoteStore Store
+    {
+        get;
+    }
 
-    public void OnFirstLine(DateTime t) => _sessionStart ??= t;
+    public void OnFirstLine(DateTime t)
+    {
+        _sessionStart ??= t;
+    }
 
     public void OnEvent(LogEvent e, string character)
     {
@@ -136,11 +147,13 @@ public sealed class MoteTracker
         return Store.TryClaim(character, t, _claimIndex);
     }
 
-    private static bool IsCreature(string name) =>
-        name is not (Names.You or Names.Self or Names.Unknown)
+    private static bool IsCreature(string name)
+    {
+        return name is not (Names.You or Names.Self or Names.Unknown)
         && !name.EndsWith(" pet", StringComparison.OrdinalIgnoreCase)
         && !name.Contains("`s ", StringComparison.Ordinal)
         && !name.Contains("'s ", StringComparison.Ordinal);
+    }
 
     public void ResetSession(DateTime at)
     {

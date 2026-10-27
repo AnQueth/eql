@@ -10,10 +10,17 @@ public sealed class AbilityTotals
     public void Add(string name, long amount, bool critical, long overheal = 0)
     {
         if (!_abilities.TryGetValue(name, out var totals))
+        {
             _abilities[name] = totals = new Totals();
+        }
+
         totals.Total += amount;
         totals.Hits++;
-        if (critical) totals.Crits++;
+        if (critical)
+        {
+            totals.Crits++;
+        }
+
         totals.MaxHit = Math.Max(totals.MaxHit, amount);
         totals.Overheal += overheal;
     }

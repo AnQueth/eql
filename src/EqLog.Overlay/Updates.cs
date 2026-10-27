@@ -33,7 +33,10 @@ public partial class MainWindow
                 return;
             }
             UpdateStatusText.Text = "Updates come from stable GitHub releases. Restart is always your choice.";
-            if (_settings.CheckForUpdatesOnStartup) await CheckForUpdatesAsync();
+            if (_settings.CheckForUpdatesOnStartup)
+            {
+                await CheckForUpdatesAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -57,17 +60,28 @@ public partial class MainWindow
         }
     }
 
-    private async void CheckUpdate_Click(object sender, RoutedEventArgs e) => await CheckForUpdatesAsync();
+    private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        await CheckForUpdatesAsync();
+    }
 
     private async Task CheckForUpdatesAsync()
     {
-        if (_updateBusy || _updater is null || !_updater.IsInstalled) return;
+        if (_updateBusy || _updater is null || !_updater.IsInstalled)
+        {
+            return;
+        }
+
         SetUpdateBusy(true);
         UpdateStatusText.Text = "Checking GitHub for a newer stable release...";
         try
         {
             var update = await _updater.CheckForUpdatesAsync();
-            if (_shutDown) return;
+            if (_shutDown)
+            {
+                return;
+            }
+
             _availableUpdate = update;
             _updateDownloaded = false;
             if (update is null)
@@ -77,28 +91,51 @@ public partial class MainWindow
             else
             {
                 UpdateStatusText.Text = $"Version {update.TargetFullRelease.Version} is available.";
-                if (_settings.AutomaticallyDownloadUpdates) await DownloadAvailableUpdateAsync();
+                if (_settings.AutomaticallyDownloadUpdates)
+                {
+                    await DownloadAvailableUpdateAsync();
+                }
             }
         }
         catch (Exception ex)
         {
             UpdateStatusText.Text = $"Update check failed: {ex.Message}";
         }
-        finally { SetUpdateBusy(false); }
+        finally
+        {
+            SetUpdateBusy(false);
+        }
     }
 
     private async void DownloadUpdate_Click(object sender, RoutedEventArgs e)
     {
-        if (_updateBusy) return;
+        if (_updateBusy)
+        {
+            return;
+        }
+
         SetUpdateBusy(true);
-        try { await DownloadAvailableUpdateAsync(); }
-        catch (Exception ex) { UpdateStatusText.Text = $"Update download failed: {ex.Message}"; }
-        finally { SetUpdateBusy(false); }
+        try
+        {
+            await DownloadAvailableUpdateAsync();
+        }
+        catch (Exception ex)
+        {
+            UpdateStatusText.Text = $"Update download failed: {ex.Message}";
+        }
+        finally
+        {
+            SetUpdateBusy(false);
+        }
     }
 
     private async Task DownloadAvailableUpdateAsync()
     {
-        if (_updater is null || _availableUpdate is null) return;
+        if (_updater is null || _availableUpdate is null)
+        {
+            return;
+        }
+
         var update = _availableUpdate;
         UpdateProgress.Value = 0;
         UpdateProgress.Visibility = Visibility.Visible;
@@ -108,15 +145,26 @@ public partial class MainWindow
             await _updater.DownloadUpdatesAsync(update, percent =>
                 Dispatcher.BeginInvoke(() =>
                 {
-                    if (_shutDown || _updateDownloaded || UpdateProgress.Visibility != Visibility.Visible) return;
+                    if (_shutDown || _updateDownloaded || UpdateProgress.Visibility != Visibility.Visible)
+                    {
+                        return;
+                    }
+
                     UpdateProgress.Value = percent;
                     UpdateStatusText.Text = $"Downloading version {update.TargetFullRelease.Version}: {percent}%";
                 }, DispatcherPriority.Background));
-            if (_shutDown) return;
+            if (_shutDown)
+            {
+                return;
+            }
+
             _updateDownloaded = true;
             UpdateStatusText.Text = $"Version {update.TargetFullRelease.Version} is ready. Restart to update when convenient.";
         }
-        finally { UpdateProgress.Visibility = Visibility.Collapsed; }
+        finally
+        {
+            UpdateProgress.Visibility = Visibility.Collapsed;
+        }
     }
 
     private void SetUpdateBusy(bool busy)
@@ -129,17 +177,26 @@ public partial class MainWindow
 
     private async void RestartUpdate_Click(object sender, RoutedEventArgs e)
     {
-        if (_updateBusy || !_updateDownloaded || _updater is null || _availableUpdate is null) return;
+        if (_updateBusy || !_updateDownloaded || _updater is null || _availableUpdate is null)
+        {
+            return;
+        }
+
         if (MessageBox.Show(_dock, "Save your tracking data and restart to install the downloaded update?",
             "Restart to update", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes)
+        {
             return;
+        }
 
         SetUpdateBusy(true);
         try
         {
             if (!TriggersGrid.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Cell, true) ||
                 !TriggersGrid.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Row, true))
+            {
                 throw new InvalidOperationException("Finish or cancel the current alert trigger edit before updating.");
+            }
+
             _settings.Triggers = [.. _triggers];
             // Verify persistence before stopping anything; refuse to restart if data cannot be saved.
             SaveAll(throwOnError: true);

@@ -9,9 +9,15 @@ public sealed record QuestLookupResult(string Item, DateTime CheckedUtc, IReadOn
 /// <summary>Finds quest pages that link to or transclude an exact item page on EQLWiki.</summary>
 public sealed class QuestLookup(HttpClient http)
 {
-    public static string ItemTitle(string item) => ItemNames.Normalize(item);
+    public static string ItemTitle(string item)
+    {
+        return ItemNames.Normalize(item);
+    }
 
-    public static string PageUrl(string title) => "https://eqlwiki.com/" + Uri.EscapeDataString(title.Replace(' ', '_'));
+    public static string PageUrl(string title)
+    {
+        return "https://eqlwiki.com/" + Uri.EscapeDataString(title.Replace(' ', '_'));
+    }
 
     public async Task<QuestLookupResult> FindAsync(string item, CancellationToken cancellationToken = default)
     {
