@@ -1,0 +1,19 @@
+{
+  "Name": "Enchanted Forest",
+  "Colors": {
+    "NightBackground": "#111B17",
+    "NightSurface": "#1B2A22",
+    "NightRaised": "#293D30",
+    "NightBorder": "#49654E",
+    "NightText": "#EEF5E7",
+    "NightMuted": "#B3C5AA",
+    "Pumpkin": "#E9C777",
+    "Hover": "#3A5140",
+    "Pressed": "#516343",
+    "Selection": "#415C45",
+    "Alternate": "#223329",
+    "GridLine": "#344B3B",
+    "ScrollThumb": "#647F5C",
+    "AccentText": "#202819"
+  }
+}

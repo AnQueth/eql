@@ -1,0 +1,48 @@
+# .NET build and publish output
+**/[Bb]in/
+**/[Oo]bj/
+artifacts/
+publish/
+*.nupkg
+*.snupkg
+
+# Test and coverage output
+TestResults/
+**/TestResults/
+coverage/
+*.coverage
+*.coveragexml
+coverage*.xml
+coverage*.json
+
+# Local IDE and user settings
+.vs/
+.idea/
+*.user
+*.suo
+*.sln.docstates
+*.DotSettings.user
+*.rsuser
+
+# Local game logs and character exports
+eqlog_*.txt
+*-Inventory.txt
+# Required regression-test fixture; keep this specific sample in source control.
+!src/EqLog.Overlay/Quethrosar_qeynos-Inventory.txt
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.publishsettings
+*.pubxml.user
+
+# Temporary files and OS metadata
+*.tmp
+*.bak
+*.log
+Thumbs.db
+Desktop.ini
+.DS_Store

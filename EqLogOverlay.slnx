@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/EqLog.Core/EqLog.Core.csproj" />
+    <Project Path="src/EqLog.Overlay/EqLog.Overlay.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/EqLog.Core.Tests/EqLog.Core.Tests.csproj" />
+  </Folder>
+</Solution>

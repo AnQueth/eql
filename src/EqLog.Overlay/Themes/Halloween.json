@@ -1,0 +1,19 @@
+{
+  "Name": "Halloween",
+  "Colors": {
+    "NightBackground": "#15101F",
+    "NightSurface": "#21172F",
+    "NightRaised": "#30203F",
+    "NightBorder": "#513660",
+    "NightText": "#F3EAF8",
+    "NightMuted": "#C0A9CD",
+    "Pumpkin": "#FFAA57",
+    "Hover": "#493056",
+    "Pressed": "#61385C",
+    "Selection": "#573768",
+    "Alternate": "#2A1D38",
+    "GridLine": "#382646",
+    "ScrollThumb": "#614775",
+    "AccentText": "#21172F"
+  }
+}

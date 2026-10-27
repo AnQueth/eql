@@ -1,0 +1,258 @@
+<Window x:Class="EqLog.Overlay.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="EverQuest Log Overlay" Height="720" Width="680" MinWidth="480" MinHeight="420"
+        Background="{DynamicResource NightBackground}" Foreground="{DynamicResource NightText}" FontSize="13">
+    <DockPanel x:Name="SettingsRoot" Margin="10">
+        <TabControl x:Name="Tabs" TabStripPlacement="Top" SelectionChanged="SkyTab_Selected">
+            <TabItem Header="General">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="8">
+                        <StackPanel Margin="4,2,4,16">
+                            <TextBlock Text="EVERQUEST COMPANION" FontSize="21" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" />
+                            <TextBlock Text="Your adventures, decoded." Foreground="{DynamicResource NightMuted}" Margin="0,3,0,0" />
+                        </StackPanel>
+        <GroupBox Header="Log file" DockPanel.Dock="Top">
+            <StackPanel>
+                <DockPanel>
+                    <Button Content="Browse..." DockPanel.Dock="Right" Margin="6,0,0,0" Click="Browse_Click" />
+                    <TextBox x:Name="LogPathBox" IsReadOnly="True" VerticalContentAlignment="Center" />
+                </DockPanel>
+                <CheckBox x:Name="FollowNewestBox" Content="Switch automatically to the newest eqlog file in this folder (character changes)" Margin="0,6,0,0" Click="FollowNewest_Click" />
+                <ProgressBar x:Name="HistoryProgress" Height="6" Margin="0,6,0,0" Maximum="1" />
+                <TextBlock x:Name="StatusText" Margin="0,4,0,0" TextWrapping="Wrap" Foreground="{DynamicResource NightText}" />
+            </StackPanel>
+        </GroupBox>
+
+        <GroupBox Header="Overlays" DockPanel.Dock="Top">
+            <StackPanel>
+                <WrapPanel x:Name="OverlayToggles" />
+                <CheckBox x:Name="LockBox" Content="Lock overlays (click-through)    hotkey Ctrl+Shift+L" Margin="0,6,0,0" FontWeight="Bold" Click="Lock_Click" />
+                <CheckBox x:Name="GameVisibleBox" Content="Only show overlays while EverQuest (eqgame.exe) is visible on screen" Margin="0,6,0,0" Click="GameVisible_Click"
+                          ToolTip="Floating overlays hide when EverQuest isn't running, is minimized or is covered by another window. Docked panels always show." />
+                <Grid Margin="0,6,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Background" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{DynamicResource NightText}" />
+                    <Slider x:Name="OpacitySlider" Grid.Column="1" Minimum="0" Maximum="1" SmallChange="0.05" LargeChange="0.1" ValueChanged="Opacity_Changed" />
+                    <TextBlock Text="Font size" Grid.Column="2" VerticalAlignment="Center" Margin="14,0,6,0" Foreground="{DynamicResource NightText}" />
+                    <Slider x:Name="FontSlider" Grid.Column="3" Minimum="9" Maximum="22" SmallChange="1" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="Font_Changed" />
+                </Grid>
+                <WrapPanel Margin="0,8,0,0">
+                    <Button Content="Reset session stats" Click="ResetSession_Click" />
+                    <Button Content="Reset overlay positions" Click="ResetPositions_Click" />
+                    <Button Content="Dock all" Click="DockAll_Click" ToolTip="Move every panel except Alerts into the docked window" />
+                    <Button Content="Float all" Click="FloatAll_Click" ToolTip="Show every panel as a floating overlay again" />
+                    <CheckBox x:Name="ResetOnLoginBox" Content="Reset stats when you log in" VerticalAlignment="Center" Margin="6,0,0,0" Click="ResetOnLogin_Click" />
+                </WrapPanel>
+            </StackPanel>
+        </GroupBox>
+
+        <GroupBox Header="Chat channels" DockPanel.Dock="Top">
+            <WrapPanel x:Name="ChatToggles" />
+        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem x:Name="TriggersTab" Header="Alert triggers">
+                <DockPanel Margin="4">
+                    <Border DockPanel.Dock="Top" Background="{DynamicResource NightRaised}" CornerRadius="6" Padding="12" Margin="0,0,0,8">
+                        <TextBlock Foreground="{DynamicResource NightText}" TextWrapping="Wrap">
+                            <Run FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Text="{}{C} means your character's full name." />
+                            <LineBreak />
+                            <Run Text="The name comes from the log filename. Use {C} in either the Regex or Alert text; it changes automatically when you switch characters." />
+                            <LineBreak />
+                            <Run Text="Example regex: ^{C} has fallen to the ground\.$" />
+                            <LineBreak />
+                            <Run Text="For Quethrosar, this matches: Quethrosar has fallen to the ground." />
+                        </TextBlock>
+                    </Border>
+                    <TextBlock DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap"
+                               Text="Regex is matched (case-insensitive) against the text after the [timestamp]. {C} = your character name. In the alert text, $1 or ${name} insert captured groups. Only new lines fire alerts, not history. Add a row at the bottom; select a row and press Delete to remove it." />
+                    <DockPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
+                        <Button Content="Test" DockPanel.Dock="Right" Margin="6,0,0,0" Click="TestTrigger_Click" />
+                        <TextBlock Text="Test a line:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{DynamicResource NightText}" DockPanel.Dock="Left" />
+                        <TextBox x:Name="TestLineBox" VerticalContentAlignment="Center" Text="Quethrosar has fallen to the ground." />
+                    </DockPanel>
+                    <TextBlock x:Name="TriggerStatusText" DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="#FF8080" TextWrapping="Wrap" />
+                    <DataGrid x:Name="TriggersGrid" AutoGenerateColumns="False" CanUserAddRows="True" CanUserDeleteRows="True"
+                              HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                              RowEditEnding="Triggers_RowEditEnding">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="On" Width="36">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" Margin="0" Click="TriggerCheck_Click" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="110" />
+                            <DataGridTextColumn Header="Regex" Binding="{Binding Pattern}" Width="2*" />
+                            <DataGridTextColumn Header="Alert text" Binding="{Binding Text}" Width="*" />
+                            <DataGridTextColumn Header="Secs" Binding="{Binding Seconds}" Width="40" />
+                            <DataGridTemplateColumn Header="Sound" Width="46">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding Sound, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" Margin="0" Click="TriggerCheck_Click" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Color" Binding="{Binding Color}" Width="70" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+            <TabItem x:Name="LogLinesTab" Header="Log lines">
+                <DockPanel Margin="4">
+                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                        <Button Content="Make trigger" DockPanel.Dock="Right" Margin="6,0,0,0" Click="MakeTrigger_Click"
+                                ToolTip="Create an alert trigger from the selected line (or double-click a line)" />
+                        <CheckBox x:Name="PauseLinesBox" Content="Pause" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" Click="RawFilter_Changed" />
+                        <CheckBox x:Name="RegexFilterBox" Content="Regex" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" Click="RawFilter_Changed"
+                                  ToolTip="Treat the filter as a trigger regex ({C} = your name) to test it against real lines" />
+                        <TextBlock Text="Filter:" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{DynamicResource NightText}" />
+                        <TextBox x:Name="RawFilterBox" VerticalContentAlignment="Center" TextChanged="RawFilter_Changed" />
+                    </DockPanel>
+                    <TextBlock x:Name="RawStatusText" DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap" />
+                    <ListBox x:Name="RawLinesList" FontFamily="Consolas" FontSize="12"
+                             VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                             ScrollViewer.HorizontalScrollBarVisibility="Auto" MouseDoubleClick="RawLines_DoubleClick" KeyDown="RawLines_KeyDown" />
+                </DockPanel>
+            </TabItem>
+            <TabItem x:Name="SpawnsTab" Header="Spawn timers">
+                <DockPanel Margin="4">
+                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                        <CheckBox x:Name="ShowAllMobsBox" Content="Show all mobs" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" Click="ShowAllMobs_Click"
+                                  ToolTip="Also list generic mobs (a/an ...) and names that might be players" />
+                        <TextBlock x:Name="SpawnZoneText" Foreground="{DynamicResource Pumpkin}" FontWeight="Bold" VerticalAlignment="Center" Text="Zone: -" />
+                    </DockPanel>
+                    <TextBlock DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap"
+                               Text="Mobs killed in your current zone. Tick Track to time them in the Spawn Timers overlay. Respawn is learned from kill to the next time the mob shows up alive while you stay in the zone (instances share what is learned). Override accepts seconds or m:ss; clear it to use the learned value." />
+                    <DataGrid x:Name="SpawnsGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                              HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                              CellEditEnding="Spawns_CellEditEnding">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="Track" Width="46">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding Tracked, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" Margin="0" Click="SpawnTrack_Click" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Mob" Binding="{Binding Mob}" IsReadOnly="True" Width="*" />
+                            <DataGridTextColumn Header="Kills" Binding="{Binding Kills}" IsReadOnly="True" Width="45" />
+                            <DataGridTextColumn Header="Last killed" Binding="{Binding LastKilled}" IsReadOnly="True" Width="80" />
+                            <DataGridTextColumn Header="Learned" Binding="{Binding Learned}" IsReadOnly="True" Width="70" />
+                            <DataGridTextColumn Header="Samples" Binding="{Binding Samples}" IsReadOnly="True" Width="60" />
+                            <DataGridTextColumn Header="Override" Binding="{Binding Override}" Width="70" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+            <TabItem x:Name="LootQuestsTab" Header="Loot quests">
+                <DockPanel Margin="6">
+                    <StackPanel DockPanel.Dock="Top">
+                        <TextBlock Text="LOOT &amp; QUESTS" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,8" />
+                        <Expander Header="How inventory and ownership work" Foreground="{DynamicResource NightMuted}" Margin="0,0,0,8">
+                            <TextBlock Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap" Margin="4,8"
+                                       Text="All inventory sections and loot are looked up automatically on EQLWiki (only item names are sent). The export above Logs replaces counts when updated; run /outputfile inventory after sales or turn-ins. Collection and installed augment counts are shown separately, not assumed available for turn-ins. Newer loot adds to Owned; historical loot is unconfirmed. Quest references may include rewards." />
+                        </Expander>
+                        <TextBlock x:Name="InventoryStatus" Foreground="{DynamicResource NightText}" TextWrapping="Wrap" Margin="0,4"
+                                   Text="Waiting for the log file to locate its character inventory export." />
+                        <ComboBox x:Name="QuestItemBox" IsEditable="True" Margin="0,0,0,6" />
+                        <WrapPanel>
+                            <Button x:Name="LookupQuestButton" Content="Look up quests" Click="LookupQuest_Click" />
+                            <Button Content="Item wiki page" Click="OpenItemWiki_Click" />
+                            <Button Content="Open selected quest" Click="OpenQuest_Click" />
+                            <Button Content="Complete / reopen quest" Click="CompleteQuest_Click" />
+                            <Button Content="Retry lookups" Click="RetryQuests_Click" />
+                        </WrapPanel>
+                        <TextBlock x:Name="QuestLookupStatus" Foreground="{DynamicResource Pumpkin}" TextWrapping="Wrap" Margin="0,6"
+                                   Text="Lookups are cached for seven days. Enable the Quest opportunities panel to see all matching quests." />
+                    </StackPanel>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="2*" MinHeight="90" />
+                            <RowDefinition Height="10" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="3*" MinHeight="90" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="YOUR INVENTORY" Foreground="{DynamicResource NightMuted}" FontSize="11" FontWeight="SemiBold" Margin="0,6" />
+                        <DataGrid x:Name="QuestOwnedGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                                  Grid.Row="1" CellEditEnding="QuestOwned_Edit" MinColumnWidth="70">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Item" Binding="{Binding Item}" IsReadOnly="True" Width="*" MinWidth="190" />
+                                <DataGridTextColumn Header="History" Binding="{Binding Historical}" IsReadOnly="True" />
+                                <DataGridTextColumn Header="Owned" Binding="{Binding Owned}" Width="60" />
+                                <DataGridTextColumn Header="Carried" Binding="{Binding Carried}" IsReadOnly="True" />
+                                <DataGridTextColumn Header="Bank" Binding="{Binding Bank}" IsReadOnly="True" />
+                                <DataGridTextColumn Header="Collection" Binding="{Binding Collection}" IsReadOnly="True" MinWidth="90" />
+                                <DataGridTextColumn Header="Installed" Binding="{Binding Installed}" IsReadOnly="True" MinWidth="80" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <GridSplitter Grid.Row="2" Height="4" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                      Background="{DynamicResource NightBorder}" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
+                                      ToolTip="Drag to resize the inventory and quest lists" />
+                        <TextBlock Grid.Row="3" Text="QUEST REFERENCES" Foreground="{DynamicResource NightMuted}" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,8" />
+                        <ListBox x:Name="QuestResults" Grid.Row="4" DisplayMemberPath="Title"
+                                 ToolTip="Select a quest, then choose Open selected quest. History is unconfirmed loot; Owned is editable. Carried includes equipped items." />
+                    </Grid>
+                </DockPanel>
+            </TabItem>
+            <TabItem x:Name="SkyTab" Header="Plane of Sky">
+                <DockPanel Margin="8">
+                    <StackPanel DockPanel.Dock="Top">
+                        <TextBlock Text="PLANE OF SKY" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" />
+                        <TextBlock Text="Class tests • rewards • runes • quest items" Foreground="{DynamicResource NightMuted}" Margin="0,2,0,8" />
+                        <TextBlock Text="Sky owned counts include carried/equipped, bank, collection items, and newer loot. Collection turn-in availability is unverified; installed augmentations and historical loot do not count as available. Shared items are not reserved per quest. Refresh /outputfile inventory after turn-ins. All items owned does not verify faction or other prerequisites."
+                                   Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                        <DockPanel>
+                            <Button x:Name="SkyRefreshButton" Content="Refresh" DockPanel.Dock="Right" Click="SkyRefresh_Click" />
+                            <Button Content="Wiki" DockPanel.Dock="Right" Click="SkySource_Click" />
+                            <ComboBox x:Name="SkyClassBox" SelectionChanged="SkyClass_Changed" MinWidth="130" />
+                        </DockPanel>
+                        <TextBlock x:Name="SkyStatus" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap" Margin="0,6" />
+                    </StackPanel>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel x:Name="SkyCards" />
+                    </ScrollViewer>
+                </DockPanel>
+            </TabItem>
+            <TabItem Header="Spell durations">
+            <DockPanel Margin="4">
+                <TextBlock DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap"
+                           Text="Learned from 'worn off' messages; type an override in seconds. Timers start only for spells with a known duration. Clear an override to go back to the learned value." />
+                <DataGrid x:Name="DurationsGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                          HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                          CellEditEnding="Durations_CellEditEnding">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Spell" Binding="{Binding Spell}" IsReadOnly="True" Width="*" />
+                        <DataGridTextColumn Header="Learned" Binding="{Binding Learned}" IsReadOnly="True" Width="80" />
+                        <DataGridTextColumn Header="Samples" Binding="{Binding Samples}" IsReadOnly="True" Width="70" />
+                        <DataGridTextColumn Header="Override (s)" Binding="{Binding Override}" Width="100" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+            </TabItem>
+            <TabItem Header="Appearance">
+                <DockPanel Margin="8">
+                    <GroupBox Header="Theme" DockPanel.Dock="Top">
+                        <StackPanel>
+                            <DockPanel>
+                                <Button Content="Import JSON..." DockPanel.Dock="Right" Margin="8,0,0,0" Click="ImportTheme_Click" />
+                                <ComboBox x:Name="ThemePicker" DisplayMemberPath="Name" SelectionChanged="Theme_Changed" />
+                            </DockPanel>
+                            <TextBlock x:Name="ThemeStatus" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                        </StackPanel>
+                    </GroupBox>
+                    <ContentControl x:Name="ThemeEditorHost" />
+                </DockPanel>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

@@ -1,0 +1,19 @@
+{
+  "Name": "Midnight Ocean",
+  "Colors": {
+    "NightBackground": "#0D1724",
+    "NightSurface": "#142235",
+    "NightRaised": "#20344B",
+    "NightBorder": "#395672",
+    "NightText": "#E8F4FF",
+    "NightMuted": "#A6BDD4",
+    "Pumpkin": "#69D9E7",
+    "Hover": "#2B4560",
+    "Pressed": "#345C73",
+    "Selection": "#28516C",
+    "Alternate": "#192B40",
+    "GridLine": "#293C52",
+    "ScrollThumb": "#4E718E",
+    "AccentText": "#102131"
+  }
+}
