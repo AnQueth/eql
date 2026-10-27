@@ -98,6 +98,8 @@ public sealed class AppSettings
     public double FontSize { get; set; } = 13;
 
     public bool ResetOnLogin { get; set; } = true;
+    public bool CheckForUpdatesOnStartup { get; set; } = true;
+    public bool AutomaticallyDownloadUpdates { get; set; } = true;
     public string SkyClass { get; set; } = "All classes";
     public bool QuestRecentFirst { get; set; } = true;
     public string QuestFilter { get; set; } = "";

@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <PackageReference Include="Velopack" Version="1.2.161" />
     <ProjectReference Include="..\EqLog.Core\EqLog.Core.csproj" />
     <Resource Include="AppIcon.ico" />
     <Content Include="Themes\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
@@ -15,6 +16,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>EqLogOverlay</AssemblyName>
     <ApplicationIcon>AppIcon.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <StartupObject>EqLog.Overlay.Program</StartupObject>
   </PropertyGroup>
 
 </Project>

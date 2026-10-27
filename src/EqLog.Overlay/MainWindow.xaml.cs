@@ -151,6 +151,7 @@ public partial class MainWindow : Window
         _houseTimer.Start();
         _gameTimer.Start();
         Dispatcher.BeginInvoke(async () => await OpenInitialLogAsync(), DispatcherPriority.Loaded);
+        Dispatcher.BeginInvoke(async () => await InitializeUpdatesAsync(), DispatcherPriority.Loaded);
     }
 
     private void CreateOverlays()
@@ -740,7 +741,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Saves window layout, settings and everything learned. Runs every few seconds, on close and on Windows logoff.</summary>
-    private void SaveAll()
+    private void SaveAll(bool throwOnError = false)
     {
         foreach (var (key, w) in _overlays)
         {
@@ -761,23 +762,23 @@ public partial class MainWindow : Window
         {
             _settings.Save();
         }
-        catch (IOException)
+        catch (IOException) when (!throwOnError)
         {
         }
 
-        SaveDurations();
-        SaveSpawns();
-        SaveMotes();
-        SaveQuestInventory();
+        SaveDurations(throwOnError);
+        SaveSpawns(throwOnError);
+        SaveMotes(throwOnError);
+        SaveQuestInventory(throwOnError);
     }
 
-    private void SaveDurations()
+    private void SaveDurations(bool throwOnError = false)
     {
         try
         {
             _engine.SaveSpellDurations(AppSettings.DurationsPath);
         }
-        catch (IOException)
+        catch (IOException) when (!throwOnError)
         {
             // Try again on the next save.
         }
@@ -1275,25 +1276,25 @@ public partial class MainWindow : Window
         SaveSpawns();
     }
 
-    private void SaveSpawns()
+    private void SaveSpawns(bool throwOnError = false)
     {
         try
         {
             _engine.SaveSpawns(AppSettings.SpawnsPath);
         }
-        catch (IOException)
+        catch (IOException) when (!throwOnError)
         {
             // Try again on the next save.
         }
     }
 
-    private void SaveMotes()
+    private void SaveMotes(bool throwOnError = false)
     {
         try
         {
             _engine.SaveMotes(AppSettings.MotesPath);
         }
-        catch (IOException)
+        catch (IOException) when (!throwOnError)
         {
             // Try again on the next save.
         }

@@ -1,0 +1,157 @@
+using System.Diagnostics;
+using System.IO;
+using System.Reflection;
+using System.Windows;
+using System.Windows.Threading;
+using Velopack;
+using Velopack.Sources;
+
+namespace EqLog.Overlay;
+
+public partial class MainWindow
+{
+    private const string UpdateRepository = "https://github.com/AnQueth/eql";
+    private UpdateManager? _updater;
+    private UpdateInfo? _availableUpdate;
+    private bool _updateBusy;
+    private bool _updateDownloaded;
+
+    private async Task InitializeUpdatesAsync()
+    {
+        string version = typeof(App).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion.Split('+')[0] ?? "unknown";
+        AppVersionText.Text = $"EverQuest Log Overlay {version}";
+        CheckUpdatesBox.IsChecked = _settings.CheckForUpdatesOnStartup;
+        DownloadUpdatesBox.IsChecked = _settings.AutomaticallyDownloadUpdates;
+        try
+        {
+            _updater = new UpdateManager(new GithubSource(UpdateRepository, accessToken: null, prerelease: false));
+            if (Debugger.IsAttached || !_updater.IsInstalled)
+            {
+                CheckUpdateButton.IsEnabled = false;
+                UpdateStatusText.Text = "Automatic updates require the installed GitHub release. Development/unpackaged builds are not updated.";
+                return;
+            }
+            UpdateStatusText.Text = "Updates come from stable GitHub releases. Restart is always your choice.";
+            if (_settings.CheckForUpdatesOnStartup) await CheckForUpdatesAsync();
+        }
+        catch (Exception ex)
+        {
+            // Update failures must not prevent the log reader or overlay windows from starting.
+            UpdateStatusText.Text = $"Could not initialize updates: {ex.Message}";
+            CheckUpdateButton.IsEnabled = false;
+        }
+    }
+
+    private void UpdatePreferences_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.CheckForUpdatesOnStartup = CheckUpdatesBox.IsChecked == true;
+        _settings.AutomaticallyDownloadUpdates = DownloadUpdatesBox.IsChecked == true;
+        try
+        {
+            _settings.Save();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            UpdateStatusText.Text = $"Could not save update preferences: {ex.Message}";
+        }
+    }
+
+    private async void CheckUpdate_Click(object sender, RoutedEventArgs e) => await CheckForUpdatesAsync();
+
+    private async Task CheckForUpdatesAsync()
+    {
+        if (_updateBusy || _updater is null || !_updater.IsInstalled) return;
+        SetUpdateBusy(true);
+        UpdateStatusText.Text = "Checking GitHub for a newer stable release...";
+        try
+        {
+            var update = await _updater.CheckForUpdatesAsync();
+            if (_shutDown) return;
+            _availableUpdate = update;
+            _updateDownloaded = false;
+            if (update is null)
+            {
+                UpdateStatusText.Text = "You are running the latest stable release.";
+            }
+            else
+            {
+                UpdateStatusText.Text = $"Version {update.TargetFullRelease.Version} is available.";
+                if (_settings.AutomaticallyDownloadUpdates) await DownloadAvailableUpdateAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            UpdateStatusText.Text = $"Update check failed: {ex.Message}";
+        }
+        finally { SetUpdateBusy(false); }
+    }
+
+    private async void DownloadUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        if (_updateBusy) return;
+        SetUpdateBusy(true);
+        try { await DownloadAvailableUpdateAsync(); }
+        catch (Exception ex) { UpdateStatusText.Text = $"Update download failed: {ex.Message}"; }
+        finally { SetUpdateBusy(false); }
+    }
+
+    private async Task DownloadAvailableUpdateAsync()
+    {
+        if (_updater is null || _availableUpdate is null) return;
+        var update = _availableUpdate;
+        UpdateProgress.Value = 0;
+        UpdateProgress.Visibility = Visibility.Visible;
+        UpdateStatusText.Text = $"Downloading version {update.TargetFullRelease.Version}: 0%";
+        try
+        {
+            await _updater.DownloadUpdatesAsync(update, percent =>
+                Dispatcher.BeginInvoke(() =>
+                {
+                    if (_shutDown || _updateDownloaded || UpdateProgress.Visibility != Visibility.Visible) return;
+                    UpdateProgress.Value = percent;
+                    UpdateStatusText.Text = $"Downloading version {update.TargetFullRelease.Version}: {percent}%";
+                }, DispatcherPriority.Background));
+            if (_shutDown) return;
+            _updateDownloaded = true;
+            UpdateStatusText.Text = $"Version {update.TargetFullRelease.Version} is ready. Restart to update when convenient.";
+        }
+        finally { UpdateProgress.Visibility = Visibility.Collapsed; }
+    }
+
+    private void SetUpdateBusy(bool busy)
+    {
+        _updateBusy = busy;
+        CheckUpdateButton.IsEnabled = !busy;
+        DownloadUpdateButton.IsEnabled = !busy && _availableUpdate is not null && !_updateDownloaded;
+        RestartUpdateButton.IsEnabled = !busy && _updateDownloaded;
+    }
+
+    private async void RestartUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        if (_updateBusy || !_updateDownloaded || _updater is null || _availableUpdate is null) return;
+        if (MessageBox.Show(_dock, "Save your tracking data and restart to install the downloaded update?",
+            "Restart to update", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes)
+            return;
+
+        SetUpdateBusy(true);
+        try
+        {
+            if (!TriggersGrid.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Cell, true) ||
+                !TriggersGrid.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Row, true))
+                throw new InvalidOperationException("Finish or cancel the current alert trigger edit before updating.");
+            _settings.Triggers = [.. _triggers];
+            // Verify persistence before stopping anything; refuse to restart if data cannot be saved.
+            SaveAll(throwOnError: true);
+            await StopTailingAsync();
+            SaveAll(throwOnError: true);
+            _updater.WaitExitThenApplyUpdates(_availableUpdate, restart: true);
+            _dock.Close();
+        }
+        catch (Exception ex)
+        {
+            UpdateStatusText.Text = $"Update was not applied: {ex.Message} If log reading stopped, select the log again using Browse.";
+            SetUpdateBusy(false);
+        }
+    }
+}

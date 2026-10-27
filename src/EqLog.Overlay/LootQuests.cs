@@ -213,7 +213,7 @@ public partial class MainWindow
         _questCurrentText.ToolTip = _questProgress;
     }
 
-    private void SaveQuestInventory()
+    private void SaveQuestInventory(bool throwOnError = false)
     {
         while (_questLoot.TryDequeue(out var note))
         {
@@ -226,7 +226,7 @@ public partial class MainWindow
             AtomicFile.WriteAllText(QuestInventoryPath, JsonSerializer.Serialize(_questInventory));
             _questDirty = false;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (!throwOnError && (ex is IOException or UnauthorizedAccessException))
         {
             QuestLookupStatus.Text = $"Could not save quest inventory: {ex.Message}";
         }

@@ -43,6 +43,71 @@ dotnet run --project src\EqLog.Overlay                 # newest eqlog_* in the d
 dotnet run --project src\EqLog.Overlay -- "C:\path\to\eqlog_Name_server.txt"
 ```
 
+## Releases and automatic updates
+
+Install **EqLogOverlay-win-Setup.exe** from the [latest stable GitHub release](https://github.com/AnQueth/eql/releases/latest).
+The Windows x64 release includes .NET; a separate runtime installation is not required.
+`EqLogOverlay-win-Portable.zip` is also available: extract the entire archive and keep its launcher,
+`Update.exe`, and `current` directory together. Do not copy just the executable.
+
+**General > Application updates** shows the current version and update status. Startup checks and
+automatic downloads are enabled by default and can be disabled independently. **Check for updates**
+and **Download update** also work manually. Only stable releases from `AnQueth/eql` are considered;
+drafts, prereleases, and downgrades are excluded. Downloads display progress and are verified by
+Velopack against the release feed. Failures are shown without stopping normal log reading.
+
+Updates **never restart the app automatically**. Choose **Restart to update**, then confirm.
+The app saves tracking data, stops the log reader, saves the final state, and exits so the updater
+can replace application files and restart. A failed data save blocks the restart.
+Settings, triggers, inventory, and learned timers remain in `%AppData%\EqLogOverlay`, outside
+the application installation. Development/unpackaged builds and attached debugging sessions are
+not updated; existing plain builds must install an updater-enabled release once.
+
+### Publishing a release
+
+The tag-triggered workflow in `.github\workflows\release.yml` uses Windows and .NET 10 to run tests,
+publish self-contained `win-x64` binaries (including bundled themes), and package them with the
+pinned Velopack tool. It validates the install hook and checks update discovery, package download,
+and no-update/downgrade behavior against the generated local feed before publishing.
+Full update packages are used initially; delta downloads are not generated.
+
+Commit and push the changes first, then push a new stable semantic-version tag:
+
+```powershell
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The tag, not the development version in the project file, sets the published application version.
+Use a higher version for each subsequent release, for example `v1.0.1`. GitHub Actions must be
+enabled and allowed `contents: write`; the workflow uses its built-in `GITHUB_TOKEN`, not a token
+embedded in the app. It creates a draft, uploads the installer, portable ZIP, full update package,
+and feed metadata, then publishes the release as latest. Never remove the feed/package assets.
+If uploading fails after creating the draft, finish uploading all assets before publishing it,
+or delete that incomplete draft and rerun the workflow.
+
+The client uses public, unauthenticated GitHub downloads. Keep this release repository public;
+private distribution needs a separate authentication design. GitHub API rate limits and offline
+errors are shown in update status. Do not put a personal access token in the shipped app.
+Installers are currently **unsigned**; Windows may show SmartScreen warnings. Configure code
+signing with protected CI credentials before distributing broadly.
+
+### Local release validation
+
+```powershell
+dotnet tool restore
+dotnet test tests\EqLog.Core.Tests\EqLog.Core.Tests.csproj -c Release
+dotnet publish src\EqLog.Overlay\EqLog.Overlay.csproj -c Release -r win-x64 --self-contained true -p:Version=1.0.1 -o artifacts\publish
+dotnet tool run vpk -- pack --packId EqLogOverlay --packVersion 1.0.1 --packDir artifacts\publish --mainExe EqLogOverlay.exe --packTitle "EverQuest Log Overlay" --icon src\EqLog.Overlay\AppIcon.ico --runtime win-x64 --channel win --delta None --outputDir artifacts\releases
+dotnet run --project tests\EqLog.UpdateSmoke -- artifacts\releases 1.0.0 1.0.1
+```
+
+The smoke check uses an isolated simulated installation and never reads or writes your live
+overlay settings. It validates discovery/download/staging, not a GUI restart. Before broad
+distribution, also exercise two real versions in a disposable Windows account/VM: install A,
+save settings and triggers, publish B, check/download, restart, and verify B and the retained data.
+Test cancellation, offline operation, an unwritable settings folder, and skipped updates too.
+
 Default log folder: `C:\Users\Public\Daybreak Game Company\Installed Games\EverQuest Legends\Logs`.
 Logging must be on in game (`/log on`). Run the game **windowed or borderless**; overlays can't
 draw over exclusive fullscreen.

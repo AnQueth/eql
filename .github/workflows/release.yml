@@ -1,0 +1,93 @@
+name: Release Windows app
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Validate stable release version
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+            throw 'Release tags must be stable versions such as v1.0.0.'
+          }
+          "version=$($env:RELEASE_TAG.Substring(1))" >> $env:GITHUB_OUTPUT
+
+      - name: Restore
+        run: |
+          dotnet restore EqLogOverlay.slnx
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet tool restore
+
+      - name: Test
+        run: dotnet test tests\EqLog.Core.Tests\EqLog.Core.Tests.csproj -c Release --no-restore --logger trx --results-directory artifacts\tests
+
+      - name: Publish self-contained Windows x64 app
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          dotnet publish src\EqLog.Overlay\EqLog.Overlay.csproj -c Release -r win-x64 --self-contained true -p:Version=$env:RELEASE_VERSION -o artifacts\publish
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (!(Test-Path artifacts\publish\Themes\Halloween.json)) { throw 'Bundled themes are missing.' }
+
+      - name: Package installer and update feed
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          dotnet tool run vpk -- pack --packId EqLogOverlay --packVersion $env:RELEASE_VERSION --packDir artifacts\publish --mainExe EqLogOverlay.exe --packTitle "EverQuest Log Overlay" --icon src\EqLog.Overlay\AppIcon.ico --runtime win-x64 --channel win --delta None --outputDir artifacts\releases
+
+      - name: Verify install hook exits without starting UI
+        run: |
+          $process = Start-Process artifacts\publish\EqLogOverlay.exe -ArgumentList '--veloapp-install', '${{ steps.version.outputs.version }}' -PassThru
+          if (!$process.WaitForExit(15000)) {
+            Stop-Process -Id $process.Id -Force
+            throw 'Velopack install hook did not exit promptly.'
+          }
+          if ($process.ExitCode -ne 0) { throw "Install hook failed: $($process.ExitCode)" }
+
+      - name: Verify update discovery, download and version policy
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: dotnet run --project tests\EqLog.UpdateSmoke\EqLog.UpdateSmoke.csproj -c Release -- artifacts\releases 0.0.0 $env:RELEASE_VERSION
+
+      - name: Keep build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-${{ steps.version.outputs.version }}
+          path: artifacts\releases\*
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          gh release create $env:RELEASE_TAG --repo $env:RELEASE_REPOSITORY --verify-tag --title "EverQuest Log Overlay $env:RELEASE_VERSION" --generate-notes --draft
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $assets = (Get-ChildItem artifacts\releases -File).FullName
+          gh release upload $env:RELEASE_TAG @assets --repo $env:RELEASE_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release edit $env:RELEASE_TAG --repo $env:RELEASE_REPOSITORY --draft=false --latest
