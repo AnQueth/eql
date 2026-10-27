@@ -23,6 +23,7 @@ public sealed class DockWindow : Window
     private readonly Canvas _tiles = new() { Background = Brushes.Transparent };
     private readonly ScrollViewer _tilesArea;
     private readonly Dictionary<string, Grid> _byKey = [];
+    private readonly Dictionary<string, OverlayPlacement> _placements = [];
     private readonly TextBlock _empty;
     private readonly Border _side = new() { Padding = new Thickness(0) };
     private readonly ColumnDefinition _sideColumn = new() { MinWidth = MinSideWidth };
@@ -93,7 +94,7 @@ public sealed class DockWindow : Window
         bar.Children.Add(topmost);
         var dragHint = new TextBlock
         {
-            Text = "Drag panels anywhere; drag the bottom-right corner to resize. Other panels stay put.",
+            Text = "Drag panels anywhere; resizing moves overlapping panels into nearby clear space.",
             VerticalAlignment = VerticalAlignment.Center,
         };
         dragHint.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
@@ -273,10 +274,14 @@ public sealed class DockWindow : Window
         var grip = MakeGrip();
         grip.DragDelta += (_, e) =>
         {
+            double previousWidth = tile.Width;
+            double previousHeight = tile.Height;
             tile.Width = Math.Max(MinTileWidth, tile.Width + e.HorizontalChange);
             tile.Height = Math.Max(MinTileHeight, tile.Height + e.VerticalChange);
             placement.DockWidth = tile.Width;
             placement.DockHeight = tile.Height;
+            CloseResizeGaps(tile, previousWidth, previousHeight);
+            ResolveResizeOverlaps(tile);
             UpdateCanvasSize();
         };
         grip.DragCompleted += (_, _) => UpdateCanvasSize();
@@ -339,6 +344,7 @@ public sealed class DockWindow : Window
         };
 
         _byKey[panel.Key] = tile;
+        _placements[panel.Key] = placement;
         _tiles.Children.Add(tile);
         BringToFront(tile);
         UpdateEmpty();
@@ -349,6 +355,7 @@ public sealed class DockWindow : Window
     {
         if (_byKey.Remove(key, out var tile))
         {
+            _placements.Remove(key);
             tile.Children.Clear();
             _tiles.Children.Remove(tile);
             UpdateEmpty();
@@ -365,6 +372,114 @@ public sealed class DockWindow : Window
         }
 
         Panel.SetZIndex(tile, index);
+    }
+
+    private void CloseResizeGaps(Grid resized, double previousWidth, double previousHeight)
+    {
+        var original = _byKey.Values.ToDictionary(t => t,
+            t => new Rect(Canvas.GetLeft(t), Canvas.GetTop(t), t.Width, t.Height));
+        original[resized] = new Rect(Canvas.GetLeft(resized), Canvas.GetTop(resized),
+            previousWidth, previousHeight);
+        PullNeighbors(horizontal: true, resized.Width - previousWidth);
+        PullNeighbors(horizontal: false, resized.Height - previousHeight);
+
+        void PullNeighbors(bool horizontal, double change)
+        {
+            if (change >= 0)
+            {
+                return;
+            }
+
+            var connected = new HashSet<Grid> { resized };
+            var queue = new Queue<Grid>();
+            queue.Enqueue(resized);
+            while (queue.TryDequeue(out var current))
+            {
+                var source = original[current];
+                foreach (var (candidate, bounds) in original)
+                {
+                    if (connected.Contains(candidate))
+                    {
+                        continue;
+                    }
+
+                    double gap = horizontal ? bounds.Left - source.Right : bounds.Top - source.Bottom;
+                    bool sharesSpan = horizontal
+                        ? bounds.Top < source.Bottom && bounds.Bottom > source.Top
+                        : bounds.Left < source.Right && bounds.Right > source.Left;
+                    if (gap >= -0.5 && gap <= 8.5 && sharesSpan)
+                    {
+                        connected.Add(candidate);
+                        queue.Enqueue(candidate);
+                    }
+                }
+            }
+
+            foreach (var neighbor in connected.Where(t => t != resized))
+            {
+                var placement = _placements[(string)neighbor.Tag];
+                if (horizontal)
+                {
+                    double left = Math.Max(4, Canvas.GetLeft(neighbor) + change);
+                    Canvas.SetLeft(neighbor, left);
+                    placement.DockLeft = left;
+                }
+                else
+                {
+                    double top = Math.Max(4, Canvas.GetTop(neighbor) + change);
+                    Canvas.SetTop(neighbor, top);
+                    placement.DockTop = top;
+                }
+            }
+        }
+    }
+
+    private void ResolveResizeOverlaps(Grid resized)
+    {
+        const double gap = 8;
+        Rect Bounds(Grid tile)
+        {
+            return new Rect(Canvas.GetLeft(tile), Canvas.GetTop(tile), tile.Width, tile.Height);
+        }
+
+        bool Overlaps(Rect first, Rect second)
+        {
+            return first.Left < second.Right + gap && first.Right + gap > second.Left &&
+                first.Top < second.Bottom + gap && first.Bottom + gap > second.Top;
+        }
+
+        var anchor = Bounds(resized);
+        var placed = new List<Rect> { anchor };
+        // Keep unaffected neighbors in place before finding space for displaced panels.
+        var others = _byKey.Values.Where(t => t != resized)
+            .OrderBy(t => Overlaps(Bounds(t), anchor)).ToArray();
+        foreach (var tile in others)
+        {
+            var original = Bounds(tile);
+            if (!placed.Any(r => Overlaps(original, r)))
+            {
+                placed.Add(original);
+                continue;
+            }
+
+            var xs = placed.SelectMany(r => new[] { r.Left - tile.Width - gap, r.Right + gap })
+                .Append(original.Left).Append(4).Where(x => x >= 4).Distinct().ToArray();
+            var ys = placed.SelectMany(r => new[] { r.Top - tile.Height - gap, r.Bottom + gap })
+                .Append(original.Top).Append(4).Where(y => y >= 4).Distinct().ToArray();
+            var destination = (from x in xs
+                               from y in ys
+                               let candidate = new Rect(x, y, tile.Width, tile.Height)
+                               where !placed.Any(r => Overlaps(candidate, r))
+                               orderby (x - original.Left) * (x - original.Left) +
+                                   (y - original.Top) * (y - original.Top), y, x
+                               select candidate).First();
+            Canvas.SetLeft(tile, destination.Left);
+            Canvas.SetTop(tile, destination.Top);
+            var placement = _placements[(string)tile.Tag];
+            placement.DockLeft = destination.Left;
+            placement.DockTop = destination.Top;
+            placed.Add(destination);
+        }
     }
 
     private Point FindEmptyPosition(double width, double height)

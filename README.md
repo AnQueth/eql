@@ -1,13 +1,47 @@
 # EqLog Overlay
 
-A .NET 10 WPF app that reads EverQuest Legends log files (`eqlog_*.txt`) and shows live stats in
+An app for Windows that reads EverQuest Legends log files (`eqlog_*.txt`) and shows live stats in
 small borderless, always-on-top overlay windows over the game.
 
-The settings, quest browser, and docked panels use a dark purple Halloween palette with pumpkin-orange
-accents, dark input controls, and readable alternating inventory rows. Plane of Sky cards separate
-each requirement's owned/needed count from its inventory locations and turn-in caveats.
+Track damage, healing, loot, spell and spawn timers, quest ingredients, chat, and custom alerts.
+Use floating overlays over the game or arrange panels in the main window on another monitor.
 
-### JSON themes
+## Installation
+
+1. Download **EqLogOverlay-win-Setup.exe** from the [latest stable release](https://github.com/AnQueth/eql/releases/latest).
+2. Close any running copy of the app, then run the installer.
+3. Launch **EverQuest Log Overlay**.
+
+The Windows x64 release includes .NET; you do not need to install a separate runtime.
+Installers are currently unsigned, so Windows may display a SmartScreen warning. Only install
+files from a source you trust.
+
+For a portable copy, download **EqLogOverlay-win-Portable.zip**, extract the entire archive,
+and launch **EverQuest Log Overlay.exe**. Keep the launcher, `Update.exe`, and `current` directory
+together; do not copy just the executable.
+
+## First-time setup
+
+1. Turn logging on in EverQuest with **`/log on`**.
+2. Use **windowed or borderless** mode; overlays cannot draw over exclusive fullscreen.
+3. In **General > Log file**, use **Browse...** if your log is not selected automatically.
+4. In **General > Overlays**, enable the panels you want and choose floating or **docked**.
+5. Unlock floating overlays to arrange them, then lock them to pass clicks through to the game.
+
+The default log folder is:
+
+```text
+C:\Users\Public\Daybreak Game Company\Installed Games\EverQuest Legends\Logs
+```
+
+On startup the app reads the selected file's history, then follows new lines live.
+With **Follow newest log** checked, it switches to whichever `eqlog_*` file is written to next,
+such as when you change characters. Startup history does not fire alert triggers.
+
+If floating overlays are missing while arranging them, temporarily turn off
+**Only show overlays while EverQuest is visible**.
+
+## Appearance and themes
 
 Settings tabs sit at the top of the side panel, with no global settings stacked above them.
 **General** contains log, overlay, and chat settings; each tool uses the remaining panel height.
@@ -25,48 +59,16 @@ and the complete selected palette is saved in `%AppData%\EqLogOverlay\settings.j
 import file is not needed on subsequent starts. Importing another file with the same name is allowed.
 Invalid JSON, missing colors, and invalid color values are reported without replacing your theme.
 
-Copy one of the bundled files in `Themes` next to the executable (or
-`src\EqLog.Overlay\Themes\Halloween.json` in the source) to create a theme. Keep its structure:
-`Name` is a nonempty string up to 80 characters, and `Colors` supplies every listed color as
-`#RRGGBB`. Keys are case-sensitive; unknown color names are rejected.
-`NightBackground`, `NightSurface`, and `NightRaised` control the dark layers; `NightBorder`,
-`NightText`, and `NightMuted` control outlines and text. `Pumpkin` is the accent color (not necessarily
-orange), and `AccentText` is text on accent-filled controls. `Hover`, `Pressed`, `Selection`,
-`Alternate`, `GridLine`, and `ScrollThumb` complete the interaction/table palette.
-Use contrasting text and backgrounds. Combat/status colors and user-configured alert colors
-retain their semantic meaning independently of the theme.
+Use contrasting text and backgrounds. Combat/status colors and custom alert colors are separate
+from the selected theme. Export a theme from the editor to share it with another user.
 
-## C# formatting
-
-C# uses Allman braces, braced control-flow bodies, and one statement per line.
-Methods and accessors use expanded block bodies rather than compact one-line implementations.
-Auto-properties and expression lambdas used as predicates/selectors may remain concise.
-The repository `.editorconfig` records these preferences. To apply them:
-
-```powershell
-dotnet format style EqLogOverlay.slnx --no-restore --diagnostics IDE0011 IDE0021 IDE0022 IDE0023 IDE0024 IDE0025 IDE0026 IDE0027 IDE0061 IDE0062 IDE2001 IDE2002 --severity info
-dotnet format whitespace EqLogOverlay.slnx --no-restore
-```
-
-## Running
-
-```powershell
-dotnet run --project src\EqLog.Overlay                 # newest eqlog_* in the default Logs folder
-dotnet run --project src\EqLog.Overlay -- "C:\path\to\eqlog_Name_server.txt"
-```
-
-## Releases and automatic updates
-
-Install **EqLogOverlay-win-Setup.exe** from the [latest stable GitHub release](https://github.com/AnQueth/eql/releases/latest).
-The Windows x64 release includes .NET; a separate runtime installation is not required.
-`EqLogOverlay-win-Portable.zip` is also available: extract the entire archive and keep its launcher,
-`Update.exe`, and `current` directory together. Do not copy just the executable.
+## Automatic updates
 
 **General > Application updates** shows the current version and update status. Startup checks and
 automatic downloads are enabled by default and can be disabled independently. **Check for updates**
 and **Download update** also work manually. Only stable releases from `AnQueth/eql` are considered;
 drafts, prereleases, and downgrades are excluded. Downloads display progress and are verified by
-Velopack against the release feed. Failures are shown without stopping normal log reading.
+the updater against the release feed. Failures are shown without stopping normal log reading.
 
 Updates **never restart the app automatically**. Choose **Restart to update**, then confirm.
 The app saves tracking data, stops the log reader, saves the final state, and exits so the updater
@@ -74,59 +76,6 @@ can replace application files and restart. A failed data save blocks the restart
 Settings, triggers, inventory, and learned timers remain in `%AppData%\EqLogOverlay`, outside
 the application installation. Development/unpackaged builds and attached debugging sessions are
 not updated; existing plain builds must install an updater-enabled release once.
-
-### Publishing a release
-
-The tag-triggered workflow in `.github\workflows\release.yml` uses Windows and .NET 10 to run tests,
-publish self-contained `win-x64` binaries (including bundled themes), and package them with the
-pinned Velopack tool. It validates the install hook and checks update discovery, package download,
-and no-update/downgrade behavior against the generated local feed before publishing.
-Full update packages are used initially; delta downloads are not generated.
-
-Commit and push the changes first, then push a new stable semantic-version tag:
-
-```powershell
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-The tag, not the development version in the project file, sets the published application version.
-Use a higher version for each subsequent release, for example `v1.0.1`. GitHub Actions must be
-enabled and allowed `contents: write`; the workflow uses its built-in `GITHUB_TOKEN`, not a token
-embedded in the app. It creates a draft, uploads the installer, portable ZIP, full update package,
-and feed metadata, then publishes the release as latest. Never remove the feed/package assets.
-If uploading fails after creating the draft, finish uploading all assets before publishing it,
-or delete that incomplete draft and rerun the workflow.
-
-The client uses public, unauthenticated GitHub downloads. Keep this release repository public;
-private distribution needs a separate authentication design. GitHub API rate limits and offline
-errors are shown in update status. Do not put a personal access token in the shipped app.
-Installers are currently **unsigned**; Windows may show SmartScreen warnings. Configure code
-signing with protected CI credentials before distributing broadly.
-
-### Local release validation
-
-```powershell
-dotnet tool restore
-dotnet test tests\EqLog.Core.Tests\EqLog.Core.Tests.csproj -c Release
-dotnet publish src\EqLog.Overlay\EqLog.Overlay.csproj -c Release -r win-x64 --self-contained true -p:Version=1.0.1 -o artifacts\publish
-dotnet tool run vpk -- pack --packId EqLogOverlay --packVersion 1.0.1 --packDir artifacts\publish --mainExe EqLogOverlay.exe --packTitle "EverQuest Log Overlay" --icon src\EqLog.Overlay\AppIcon.ico --runtime win-x64 --channel win --delta None --outputDir artifacts\releases
-dotnet run --project tests\EqLog.UpdateSmoke -- artifacts\releases 1.0.0 1.0.1
-```
-
-The smoke check uses an isolated simulated installation and never reads or writes your live
-overlay settings. It validates discovery/download/staging, not a GUI restart. Before broad
-distribution, also exercise two real versions in a disposable Windows account/VM: install A,
-save settings and triggers, publish B, check/download, restart, and verify B and the retained data.
-Test cancellation, offline operation, an unwritable settings folder, and skipped updates too.
-
-Default log folder: `C:\Users\Public\Daybreak Game Company\Installed Games\EverQuest Legends\Logs`.
-Logging must be on in game (`/log on`). Run the game **windowed or borderless**; overlays can't
-draw over exclusive fullscreen.
-
-On start the app reads the whole file for history, then follows new lines live. With
-**Follow newest log** checked, it switches to whichever `eqlog_*` file is written to next (for
-example after you change character).
 
 ## Overlays
 
@@ -144,7 +93,11 @@ moving any other panels. A full-size highlighted preview follows the pointer, pr
 you grabbed the panel. Drop to place it; Escape or dropping outside the dock cancels the move.
 Panels may overlap; dragging a panel brings it to the front. Drag near any edge to scroll.
 Each panel's canvas position and bottom-right-grip size are saved independently of its floating
-window position and size. Resizing panels or the dock window never rearranges neighbors.
+window position and size. Resizing a panel moves overlapping neighbors into the nearest clear
+space (left, right, above, or below), with a small gap. Unaffected panels stay put where possible;
+the resized panel stays anchored, and displaced positions are saved. Shrinking pulls adjacent
+panels and connected rows or columns closer to fill the freed space; deliberately separated
+panels stay put. Resizing the dock window itself never rearranges panels.
 Newly docked panels without saved positions are placed in available space automatically.
 Buttons, filters, and scrollbars remain interactive even when floating overlays are locked.
 
@@ -201,8 +154,8 @@ Each panel also has its own button: **Dock** on a floating overlay (visible whil
 **Pop out** on a docked tile, to move just that one panel.
 **Dock all** docks everything except Alerts; **Float all** turns every panel back into an overlay.
 Drag a tile anywhere on the canvas and drag its gold bottom-right corner to resize it.
-Tiles wrap to fit the window width. Tile order and sizes, the window's position and the side panel's width and
-visibility are saved.
+Canvas positions and panel sizes, the window's position, and the side panel's width and visibility
+are saved.
 ## Loot quest lookup
 
 ### Plane of Sky class quests
@@ -257,22 +210,18 @@ from the opportunities panel without assuming which items were consumed. Counts 
 stored per character in `quest-inventory.json`. Historical lines are deduplicated per log path and line
 number; replacing or moving a log can import it again as unconfirmed history.
 
-Automatic lookups run one at a time with a delay, cache results for seven days, and show errors explicitly.
-Wiki response processing and cache serialization/writes run off the UI thread. Historical loot is
-applied in short UI batches, and unchanged overlay rows are retained when lookup progress changes.
+Automatic lookups run one at a time, cache results for seven days, and show errors explicitly.
 The Quest opportunities toolbar puts sorting and filtering side by side, with a horizontal progress
 bar, checked/total and cached/queued/failed counts, and the current lookup text underneath. Failed
 attempts count as processed, not cached; use Retry lookups to retry them.
 Quest titles use accent-colored section headings. Clickable items sit beneath them in indented,
 translucent cards with bold item names and separate muted inventory details.
-Quest opportunities uses a visible vertical scrollbar and a recycling virtualized list: only
-visible/nearby rows create UI elements. Scrollbar dragging does not reorder the docked panel.
+Use the vertical scrollbar to browse quest opportunities without moving the panel.
 Use **Retry lookups** after a network failure. Only item names are sent to EQLWiki.
 
 For a manual lookup, open **Settings > Loot quests** and select an inventory grid row to load its
 quest references automatically. **Look up quests** repeats the selected row's lookup, and **Item wiki page**
-opens that same item's page. This uses EQLWiki's public MediaWiki API to find quest-category pages that link to
-or transclude the item's page, including redirects. Select a result and click **Open selected quest**.
+opens that same item's page. Select a result and click **Open selected quest**.
 References may describe requirements, rewards, or other mentions; check the linked quest before selling
 an item. No results means no linked quest pages were found, not that the item has no quest use.
 
@@ -367,7 +316,7 @@ The **Spell durations** grid shows learned values. Type a number of seconds in *
 duration; clear it to go back to the learned value. Until a spell has a duration, its timer counts up
 and is marked "(learning)".
 
-## Files
+## Saved data and backups
 
 Settings are stored in `%AppData%\EqLogOverlay\`:
 
@@ -375,11 +324,17 @@ Settings are stored in `%AppData%\EqLogOverlay\`:
 - `spell-durations.json`: learned samples and overrides
 - `spawn-timers.json`: respawn samples, overrides, tracked mobs and the last kill/sighting per zone, so countdowns keep running across restarts and new log files
 - `motes.json`: all-time mote totals per character and mote drops/kills per zone and mob
+- `quest-inventory.json`: quest inventory counts and completions per character
+- `quest-lookups.json`: cached item quest references
+- `sky-quests.json`: cached Plane of Sky quest catalog
 
-Everything is saved every ~10 seconds, on exit and on Windows logoff/shutdown. Writes go to a temp file first, so a crash can't leave a half-written file.
+Tracking data is saved periodically, on exit, and on Windows logoff/shutdown.
+To back up your data, close the app and copy the entire `%AppData%\EqLogOverlay` folder.
+To restore a backup, close the app before replacing the folder's contents.
+Application updates do not remove this folder.
 
-## Projects
+## Developer documentation
 
-- `src\EqLog.Core`: log parsing, file tailing, trackers, and `LogEngine`
-- `src\EqLog.Overlay`: WPF overlay app
-- `tests\EqLog.Core.Tests`: xUnit tests (`dotnet test`)
+- [Building, testing, and coding conventions](docs/DEVELOPMENT.md)
+- [Architecture and implementation details](docs/ARCHITECTURE.md)
+- [Packaging, signing, and publishing releases](docs/RELEASING.md)
