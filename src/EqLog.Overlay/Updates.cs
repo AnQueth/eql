@@ -21,6 +21,7 @@ public partial class MainWindow
         string version = typeof(App).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
             .InformationalVersion.Split('+')[0] ?? "unknown";
         AppVersionText.Text = $"EverQuest Log Overlay {version}";
+        _dock.Title = $"EverQuest Log Overlay - v{version}";
         CheckUpdatesBox.IsChecked = _settings.CheckForUpdatesOnStartup;
         DownloadUpdatesBox.IsChecked = _settings.AutomaticallyDownloadUpdates;
         try
