@@ -6,6 +6,34 @@ small borderless, always-on-top overlay windows over the game.
 Track damage, healing, loot, spell and spawn timers, quest ingredients, chat, and custom alerts.
 Use floating overlays over the game or arrange panels in the main window on another monitor.
 
+## Dashboard preview
+
+![Docked dashboard showing combat stats, loot, motes, NPC encounter history, Sky quests, quest opportunities, and inventory.](docs/images/docked-dashboard.png)
+
+An example Plane of Sky dashboard with the settings panel hidden. Each tile can be moved,
+resized, or detached with **Pop out**. **Auto-arrange** is off by default, so you can keep a
+custom layout like this without other panels shifting around.
+
+Highlights from the screenshot:
+
+- **Combat and session stats:** DPS and damage share, incoming damage by attacker/spell,
+  character loadout and level, zone/session time, kills, deaths, and XP gains.
+- **Loot and [Motes](#motes):** grouped recent drops, coin looted and auto-sold totals,
+  clickable **[Quest]** markers, and per-tier session, all-time, and owned mote counts.
+- **[NPC compendium](#npc-compendium):** search by name and zone, then browse **Overview**,
+  **Spell resists**, or **Encounters**. Encounter cards show your average DPS, other attackers'
+  damage, incoming damage, and a per-spell breakdown for each recorded fight.
+- **[Sky quest tracker](#plane-of-sky-class-quests):** class-filtered quests with rewards,
+  quest givers, required dialogue, HAVE/NEED item counts, drop sources, and a watched-quest list.
+- **[Inventory & loot quests](#inventory--loot-quests-overlay):** compare owned, carried,
+  bank, hoard, and depot counts; open item/quest wiki pages; mark quests complete or reopen them;
+  and find upgrade-rank duplicates in **Ready to merge**.
+- **[Quest opportunities](#loot-quest-lookup):** sort or search items and quest references,
+  watch lookup progress and cache/queue totals, and compare inventory locations with historical
+  loot. Historical loot is unconfirmed, not proof that you still own an item.
+- **[Spawn timers](#spawn-timers):** countdowns for mobs you choose to track in the current
+  zone. The screenshot shows the empty state before any mobs are selected.
+
 ## Installation
 
 1. Download **EqLogOverlay-win-Setup.exe** from the [latest stable release](https://github.com/AnQueth/eql/releases/latest).
@@ -164,6 +192,9 @@ as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels r
 | NPC compendium | Search saved NPCs by name/zone; browse wiki stats, per-spell resists, encounter history and average DPS |
 | Spawn Timers | Respawn countdowns for the named mobs you track in the current zone (see below) |
 | Motes | Motes of Potential looted per tier (session and all time), motes/hr, recent drops, drop rates here (see below) |
+| Sky quest tracker | Plane of Sky class quests, rewards, required items, drop sources, and watched quests |
+| Inventory & loot quests | Owned counts by storage location, item/quest wiki links, quest completion, and upgrade-rank merge candidates |
+| Quest opportunities | Searchable item-to-quest references with inventory counts and lookup progress |
 
 - **Lock all overlays** (or **Ctrl+Shift+L**): when locked, overlays are click-through so they don't block the game.
   When unlocked they have a gold border; drag to move and drag the edges to resize.
