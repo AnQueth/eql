@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%">
+      <stop offset="0%" stop-color="#2b3f66"/>
+      <stop offset="55%" stop-color="#1a2440"/>
+      <stop offset="100%" stop-color="#0d1222"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f3d27a"/>
+      <stop offset="50%" stop-color="#c9992e"/>
+      <stop offset="100%" stop-color="#8a651a"/>
+    </linearGradient>
+    <linearGradient id="parchment" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f4e6c3"/>
+      <stop offset="100%" stop-color="#d9c08c"/>
+    </linearGradient>
+    <linearGradient id="wood" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7a5230"/>
+      <stop offset="50%" stop-color="#5a3b22"/>
+      <stop offset="100%" stop-color="#452c18"/>
+    </linearGradient>
+    <radialGradient id="orb" cx="38%" cy="32%" r="80%">
+      <stop offset="0%" stop-color="#d8fbff"/>
+      <stop offset="40%" stop-color="#5fd4f0"/>
+      <stop offset="100%" stop-color="#1a7fb5"/>
+    </radialGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- badge background -->
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#bg)"/>
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="none" stroke="url(#gold)" stroke-width="10"/>
+  <rect x="22" y="22" width="212" height="212" rx="40" fill="none" stroke="#f3d27a" stroke-width="2" opacity="0.35"/>
+
+  <!-- scroll -->
+  <g>
+    <!-- scroll body -->
+    <path d="M74 64 Q68 64 68 74 L68 182 Q68 192 78 192 L178 192 Q188 192 188 182 L188 74 Q188 64 182 64 Z"
+          fill="url(#parchment)" stroke="#8a6a35" stroke-width="4"/>
+    <!-- top roll -->
+    <rect x="58" y="52" width="140" height="22" rx="11" fill="#e9d6a8" stroke="#8a6a35" stroke-width="4"/>
+    <circle cx="62" cy="63" r="8" fill="#c9ab6e" stroke="#8a6a35" stroke-width="3"/>
+    <circle cx="194" cy="63" r="8" fill="#c9ab6e" stroke="#8a6a35" stroke-width="3"/>
+    <!-- bottom roll -->
+    <rect x="58" y="182" width="140" height="22" rx="11" fill="#e9d6a8" stroke="#8a6a35" stroke-width="4"/>
+    <circle cx="62" cy="193" r="8" fill="#c9ab6e" stroke="#8a6a35" stroke-width="3"/>
+    <circle cx="194" cy="193" r="8" fill="#c9ab6e" stroke="#8a6a35" stroke-width="3"/>
+
+    <!-- glowing log lines -->
+    <g stroke-linecap="round" filter="url(#glow)">
+      <path d="M84 96 L172 96"  stroke="#1f8f8a" stroke-width="9"/>
+      <path d="M84 118 L150 118" stroke="#b03a2e" stroke-width="9"/>
+      <path d="M84 140 L166 140" stroke="#1f8f8a" stroke-width="9"/>
+      <path d="M84 162 L138 162" stroke="#c9992e" stroke-width="9"/>
+    </g>
+  </g>
+
+  <!-- staff crossing in front, bottom-left butt to top-right orb -->
+  <g transform="rotate(45 128 128)">
+    <!-- shaft -->
+    <path d="M123 62 L121 206 Q121 213 128 213 Q135 213 135 206 L133 62 Z"
+          fill="url(#wood)" stroke="#3a2513" stroke-width="2.5"/>
+    <!-- wrapped grip detail -->
+    <path d="M121 150 L135 156 M121 162 L135 168 M121 174 L135 180" stroke="#3a2513" stroke-width="2.5"/>
+    <!-- iron ferrule at butt -->
+    <rect x="119" y="203" width="18" height="10" rx="4" fill="#76879c" stroke="#55606e" stroke-width="2"/>
+    <!-- gnarled prongs cradling the orb -->
+    <path d="M123 64 Q106 54 108 34 Q112 46 122 50 Z" fill="url(#wood)" stroke="#3a2513" stroke-width="2.5"/>
+    <path d="M133 64 Q150 54 148 34 Q144 46 134 50 Z" fill="url(#wood)" stroke="#3a2513" stroke-width="2.5"/>
+    <!-- glowing orb -->
+    <circle cx="128" cy="40" r="17" fill="url(#orb)" stroke="#8fe3ff" stroke-width="2.5" filter="url(#glow)"/>
+    <circle cx="123" cy="34" r="5" fill="#eafcff" opacity="0.9"/>
+    <!-- gold collar below orb -->
+    <rect x="119" y="56" width="18" height="9" rx="4" fill="url(#gold)" stroke="#6e5114" stroke-width="2"/>
+  </g>
+</svg>
