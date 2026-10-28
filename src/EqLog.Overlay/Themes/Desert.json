@@ -1,0 +1,19 @@
+{
+  "Name": "Desert Sand",
+  "Colors": {
+    "NightBackground": "#EEE5D6",
+    "NightSurface": "#FAF4E8",
+    "NightRaised": "#E3D4BC",
+    "NightBorder": "#A08B6C",
+    "NightText": "#3A2C1D",
+    "NightMuted": "#65513A",
+    "Pumpkin": "#865021",
+    "Hover": "#DFCCAD",
+    "Pressed": "#CEB58F",
+    "Selection": "#D8BE94",
+    "Alternate": "#EFE2CD",
+    "GridLine": "#C9B89C",
+    "ScrollThumb": "#98805D",
+    "AccentText": "#FFFFFF"
+  }
+}

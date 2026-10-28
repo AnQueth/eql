@@ -1,0 +1,19 @@
+{
+  "Name": "Royal Amethyst",
+  "Colors": {
+    "NightBackground": "#161326",
+    "NightSurface": "#211C37",
+    "NightRaised": "#30284A",
+    "NightBorder": "#63527D",
+    "NightText": "#F3EDFF",
+    "NightMuted": "#C2B2DB",
+    "Pumpkin": "#C5A3FF",
+    "Hover": "#44365F",
+    "Pressed": "#574374",
+    "Selection": "#503B75",
+    "Alternate": "#29223F",
+    "GridLine": "#44365F",
+    "ScrollThumb": "#806A9E",
+    "AccentText": "#241A37"
+  }
+}

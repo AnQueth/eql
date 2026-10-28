@@ -1,0 +1,19 @@
+{
+  "Name": "Arctic Frost",
+  "Colors": {
+    "NightBackground": "#EAF2F8",
+    "NightSurface": "#F7FAFD",
+    "NightRaised": "#DAE6F0",
+    "NightBorder": "#8A9FAF",
+    "NightText": "#162F43",
+    "NightMuted": "#425E73",
+    "Pumpkin": "#155F84",
+    "Hover": "#CFDFEB",
+    "Pressed": "#B8CEDF",
+    "Selection": "#B9D7ED",
+    "Alternate": "#E5EFF6",
+    "GridLine": "#C0D0DC",
+    "ScrollThumb": "#758FA3",
+    "AccentText": "#FFFFFF"
+  }
+}

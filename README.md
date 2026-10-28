@@ -79,8 +79,10 @@ persists it across restarts. **Export JSON...** writes an importable theme file 
 the active theme. **Reset draft** discards edits and reloads the last selected/applied palette;
 choosing a different theme also replaces the draft. Invalid colors are reported and block apply/export.
 
-Use **Settings → Appearance → Theme** to switch between **Halloween** (the default), **Midnight Ocean**, and
-**Enchanted Forest**, or choose **Import JSON...** for a custom palette. Changes apply immediately
+Use **Settings → Appearance → Theme** to switch between **Halloween** (the default), **Midnight Ocean**,
+**Enchanted Forest**, **Crimson Ember** (warm red), **Royal Amethyst** (purple),
+**Arctic Frost** (light blue), and **Desert Sand** (light sand), or choose **Import JSON...** for a
+custom palette. Changes apply immediately
 and the complete selected palette is saved in `%AppData%\EqLogOverlay\settings.json`; the original
 import file is not needed on subsequent starts. Importing another file with the same name is allowed.
 Invalid JSON, missing colors, and invalid color values are reported without replacing your theme.
@@ -125,6 +127,10 @@ narrower window or settings-panel splitter just adds a scrollbar. Drag near any 
 Each panel's canvas position and bottom-right-grip size are saved independently of its floating
 window position and size.
 Newly docked panels without saved positions are placed in available space automatically.
+**Auto-arrange** in the dock window's top bar is off by default: panels stay exactly where you
+drag and resize them (they may overlap and never reflow on window or splitter resizes).
+Tick it to re-pack the current layout and enable automatic rearranging. The choice is saved
+across restarts.
 Buttons, filters, and scrollbars remain interactive even when floating overlays are locked.
 
 The **Loot** overlay selector offers **Recent drops**, **Grouped: most recent**, and

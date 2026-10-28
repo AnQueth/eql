@@ -92,20 +92,43 @@ public sealed class DockWindow : Window
         };
         _sideToggle.Click += (_, _) => SetSidePanelOpen(_sideToggle.IsChecked == true);
 
+        var autoArrange = new CheckBox
+        {
+            Content = "Auto-arrange",
+            IsChecked = settings.AutoArrange,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 10, 0),
+            ToolTip = "Automatically rearrange docked panels to fill empty space. Untick so panels only move when you drag or resize them.",
+        };
+        autoArrange.SetResourceReference(ForegroundProperty, "NightText");
+
         var bar = new DockPanel { Margin = new Thickness(8, 6, 8, 2) };
         DockPanel.SetDock(_sideToggle, Dock.Left);
         DockPanel.SetDock(topmost, Dock.Right);
+        DockPanel.SetDock(autoArrange, Dock.Right);
         DockPanel.SetDock(_notice, Dock.Left);
         bar.Children.Add(_sideToggle);
         bar.Children.Add(_notice);
         bar.Children.Add(topmost);
+        bar.Children.Add(autoArrange);
         var dragHint = new TextBlock
         {
-            Text = "Drag panels to reorder them; panels reflow to fill empty space.",
+            Text = DragHintText(settings.AutoArrange),
             VerticalAlignment = VerticalAlignment.Center,
         };
         dragHint.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
         bar.Children.Add(dragHint);
+        autoArrange.Click += (_, _) =>
+        {
+            Settings.AutoArrange = autoArrange.IsChecked == true;
+            dragHint.Text = DragHintText(Settings.AutoArrange);
+            if (Settings.AutoArrange)
+            {
+                // Re-pack the current layout now that automatic rearranging is back on.
+                _anchorKey = null;
+                CompactLayout();
+            }
+        };
 
         _empty = new TextBlock
         {
@@ -434,9 +457,29 @@ public sealed class DockWindow : Window
         {
             return;
         }
+
+        if (!Settings.AutoArrange)
+        {
+            // Manual mode: respect the user's placement; just remember it and keep the canvas sized.
+            PersistPositions();
+            UpdateCanvasSize();
+            return;
+        }
+
         var bounds = _byKey.Values.ToDictionary(t => t,
             t => new Rect(Canvas.GetLeft(t), Canvas.GetTop(t), t.Width, t.Height));
         ApplyLayout(bounds, _anchorKey, persist: true);
+    }
+
+    /// <summary>Saves every tile's current canvas position into its placement without moving anything.</summary>
+    private void PersistPositions()
+    {
+        foreach (var tile in _byKey.Values)
+        {
+            var placement = _placements[(string)tile.Tag];
+            placement.DockLeft = Canvas.GetLeft(tile);
+            placement.DockTop = Canvas.GetTop(tile);
+        }
     }
 
     /// <summary>Packs <paramref name="bounds"/> around the anchor and moves the tiles; returns the anchor's final rect.</summary>
@@ -571,8 +614,9 @@ public sealed class DockWindow : Window
 
         var target = new Point(Math.Max(CanvasMargin, pointer.X - _dragOffset.X),
             Math.Max(CanvasMargin, pointer.Y - _dragOffset.Y));
-        if (_draggedKey is null || _dragOrigins is null || !_byKey.TryGetValue(_draggedKey, out var dragged))
+        if (!Settings.AutoArrange || _draggedKey is null || _dragOrigins is null || !_byKey.TryGetValue(_draggedKey, out var dragged))
         {
+            // Manual mode (or no reflow data): the panel lands exactly where the user drops it.
             Canvas.SetLeft(_dropPreview, target.X);
             Canvas.SetTop(_dropPreview, target.Y);
             UpdateCanvasSize();
@@ -651,6 +695,13 @@ public sealed class DockWindow : Window
     private void UpdateEmpty()
     {
         _empty.Visibility = _byKey.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private static string DragHintText(bool autoArrange)
+    {
+        return autoArrange
+            ? "Drag panels to reorder them; panels reflow to fill empty space."
+            : "Drag panels to move them; panels stay exactly where you put them.";
     }
 
     private static Thumb MakeGrip()

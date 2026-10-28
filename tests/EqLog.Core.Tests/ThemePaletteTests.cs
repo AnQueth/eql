@@ -8,6 +8,10 @@ public class ThemePaletteTests
     [InlineData("Halloween.json", "Halloween")]
     [InlineData("Midnight.json", "Midnight Ocean")]
     [InlineData("Forest.json", "Enchanted Forest")]
+    [InlineData("Crimson.json", "Crimson Ember")]
+    [InlineData("Amethyst.json", "Royal Amethyst")]
+    [InlineData("Arctic.json", "Arctic Frost")]
+    [InlineData("Desert.json", "Desert Sand")]
     public void Parse_BundledTheme_ContainsCompletePalette(string file, string name)
     {
         var theme = ThemePalette.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Themes", file)));

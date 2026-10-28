@@ -1,0 +1,19 @@
+{
+  "Name": "Crimson Ember",
+  "Colors": {
+    "NightBackground": "#1D1015",
+    "NightSurface": "#2A1920",
+    "NightRaised": "#3D242D",
+    "NightBorder": "#75505A",
+    "NightText": "#FFF0EA",
+    "NightMuted": "#D6B2B4",
+    "Pumpkin": "#FF9278",
+    "Hover": "#51303B",
+    "Pressed": "#663B46",
+    "Selection": "#693943",
+    "Alternate": "#331E26",
+    "GridLine": "#51303B",
+    "ScrollThumb": "#9B6672",
+    "AccentText": "#281319"
+  }
+}

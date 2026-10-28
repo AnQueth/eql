@@ -123,6 +123,12 @@ public sealed class DockWindowSettings
         get; set;
     }
 
+    /// <summary>
+    /// Automatically rearrange docked panels (reflow to fill empty space). When false, panels move only when
+    /// the user drags or resizes them.
+    /// </summary>
+    public bool AutoArrange { get; set; }
+
     /// <summary>Tile order by overlay key.</summary>
     public List<string> Order { get; set; } = [];
 
