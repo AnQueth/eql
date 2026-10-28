@@ -86,6 +86,74 @@ public class InventoryExportTests
     }
 
     [Fact]
+    public void NumbersRepeatedWornSlotsByOrderIncludingEmptyOnes()
+    {
+        var items = InventoryExport.Parse(string.Join("\n",
+            "Location\tName\tID\tCount\tSlots",
+            "Any Slot\tCharm Thing\t1\t1\t0",
+            "Ear\tEmpty\t0\t0\t0",
+            "Ear-Slot7\tEmpty\t0\t0\t0",
+            "Head\tHelm +2\t2\t1\t0",
+            "Ear\tHoop +3\t3\t1\t0",
+            "Ear-Slot8\tHoop Aug (Exaltation)\t4\t1\t0",
+            "Wrist\tBracer +9\t5\t1\t0",
+            "Wrist\tBracer +1\t5\t1\t0"));
+
+        var descriptions = InventoryExport.DescribeAll(items);
+        string Where(string name)
+        {
+            return descriptions[items.ToList().FindIndex(i => i.Name == name)];
+        }
+
+        Assert.Equal("Worn Any Slot, equipment slot 0", Where("Charm Thing"));
+        Assert.Equal("Worn Head, equipment slot 2", Where("Helm +2"));
+        Assert.Equal("Worn Ear, equipment slot 4", Where("Hoop +3"));
+        Assert.Equal("Worn Ear, equipment slot 4, augment slot 8 of Hoop +3", Where("Hoop Aug (Exaltation)"));
+        Assert.Equal("Worn Wrist, equipment slot 9", Where("Bracer +9"));
+        Assert.Equal("Worn Wrist, equipment slot 10", Where("Bracer +1"));
+    }
+
+    [Fact]
+    public void GroupsUpgradeRanksReadyToMergeWithDetailedLocations()
+    {
+        var items = InventoryExport.Parse(string.Join("\n",
+            "Location\tName\tID\tCount\tSlots",
+            "Wrist\tBracelet of Quiescence +9\t12806\t1\t11",
+            "General 4\tSpacious Rucksack\t100\t1\t40",
+            "General 4-Slot5\tBracelet of Quiescence\t12806\t1\t11",
+            "General 4-Slot6\tBracelet of Quiescence +4\t12806\t1\t11",
+            "General 4-Slot7\tBerries\t200\t20\t0",
+            "General 4-Slot8\tBerries\t200\t20\t0",
+            "Bank10\tStorage Trunk\t101\t1\t50",
+            "Bank10-Slot3\tBone-Clasped Girdle +4\t300\t1\t11",
+            "Bank10-Slot3-Slot7\tGirdle Aug +2 (Exaltation)\t301\t1\t11",
+            "Bank2\tBone-Clasped Girdle +1\t300\t1\t11",
+            "SharedBank1\tBone-Clasped Girdle\t300\t1\t11",
+            "Hoard 12\tBone-Clasped Girdle +8\t300\t1\t11",
+            "Personal-Depot3\tLone Item +2\t400\t1\t0",
+            "",
+            "KeyRing\tName\tID\t",
+            "Equipment\tLone Item\t400"));
+
+        var groups = InventoryExport.MergeGroups(items);
+
+        Assert.Equal(["Bone-Clasped Girdle", "Bracelet of Quiescence"], groups.Select(g => g.BaseName));
+        var girdle = groups[0];
+        Assert.Equal([8, 4, 1, 0], girdle.Items.Select(i => i.Rank));
+        Assert.Equal("Dragon's Hoard slot 12", girdle.Items[0].Where);
+        Assert.Equal("Bank slot 10 (Storage Trunk), bag slot 3", girdle.Items[1].Where);
+        Assert.Equal("Bank slot 2", girdle.Items[2].Where);
+        Assert.Equal("Shared bank slot 1", girdle.Items[3].Where);
+        var bracelet = groups[1];
+        Assert.Equal(3, bracelet.Total);
+        Assert.Equal("Worn Wrist, equipment slot 9", bracelet.Items[0].Where);
+        Assert.Equal("Inventory slot 4 (Spacious Rucksack), bag slot 6", bracelet.Items[1].Where);
+        Assert.Equal("Inventory slot 4 (Spacious Rucksack), bag slot 5", bracelet.Items[2].Where);
+        Assert.Equal(("Bracelet of Quiescence", 4), InventoryExport.SplitRank("Bracelet of Quiescence +4"));
+        Assert.Equal(("Berries", 0), InventoryExport.SplitRank("Berries"));
+    }
+
+    [Fact]
     public void ResolvesMatchingCharacterAndServerAboveLogs()
     {
         Assert.Equal(@"C:\EverQuest\Quethrosar_qeynos-Inventory.txt",

@@ -416,7 +416,7 @@ public partial class MainWindow
         }
         if (!compact)
         {
-            rows.Add(new("Labels describe observed single-target direct spells, not guaranteed immunity. " +
+            rows.Add(new("Labels describe observed single-target direct spells and DoT casts (first tick = landed), not guaranteed immunity. " +
                 "Hits below 90% of learned normal damage count as estimated partial resists. " +
                 "Critical/modified hits and hits followed by a logged death within 3 seconds are excluded. " +
                 "Buffs and other mitigation can affect estimates. Same-name mobs in this zone are combined.",

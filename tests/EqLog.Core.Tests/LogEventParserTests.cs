@@ -93,6 +93,18 @@ public class LogEventParserTests
     }
 
     [Theory]
+    [InlineData("Jonekab has taken 351 damage by Envenomed Bolt.", "Jonekab", "Envenomed Bolt")]
+    [InlineData("Zasanab has taken 80 damage by Bond of Death.", "Zasanab", "Bond of Death")]
+    public void ParsesDotWithoutNamedCaster(string msg, string target, string spell)
+    {
+        var e = Assert.IsType<DamageEvent>(P(msg));
+        Assert.Equal(DamageKind.DamageOverTime, e.Kind);
+        Assert.Equal("Unknown", e.Attacker);
+        Assert.Equal(target, e.Target);
+        Assert.Equal(spell, e.Source);
+    }
+
+    [Theory]
     [InlineData("A ravenous zombie is burned by YOUR flames for 5 points of non-melee damage.", "You", "A ravenous zombie", 5)]
     [InlineData("YOU are pierced by a spiroc banisher's thorns for 20 points of non-melee damage!", "A spiroc banisher", "You", 20)]
     public void ParsesDamageShield(string msg, string attacker, string target, long amount)

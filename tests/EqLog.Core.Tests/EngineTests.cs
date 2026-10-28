@@ -75,6 +75,71 @@ public class EngineTests
     }
 
     [Fact]
+    public void OpeningDebuffsCastBeforeEngagingAreClearedOnKill()
+    {
+        var store = new SpellDurationStore();
+        store.SetOverride("Tashania V", 660);
+        store.SetOverride("Shiftless Deeds X", 150);
+        var engine = new LogEngine(store);
+        engine.ProcessLines([
+            L(0, "You begin casting Tashania V."),
+            L(2, "You begin casting Shiftless Deeds X."),
+            L(4, "You begin casting Envenomed Bolt X."),
+            L(5, "You hit a thunder spirit princess for 59 points of poison damage by Envenomed Bolt X."),
+        ]);
+
+        var timers = engine.Snapshot(T0.AddSeconds(6)).Timers;
+        Assert.Equal(2, timers.Count);
+        Assert.All(timers, t => Assert.Equal("A thunder spirit princess", t.Target));
+
+        engine.ProcessLines([L(40, "You have slain a thunder spirit princess!")]);
+        Assert.Empty(engine.Snapshot(T0.AddSeconds(43)).Timers);
+    }
+
+    [Fact]
+    public void UntrackedSpellDoesNotShowTimerButStillLearns()
+    {
+        var store = new SpellDurationStore();
+        store.SetOverride("Tashania V", 660);
+        store.SetTracked("Tashania IV", false);
+        var engine = new LogEngine(store);
+        engine.ProcessLines([
+            L(0, "You slash an azarack for 10 points of damage."),
+            L(1, "You begin casting Tashania V."),
+            L(20, "You begin casting Malise X."),
+            L(80, "Your Malise X spell has worn off of an azarack."),
+        ]);
+
+        Assert.DoesNotContain(engine.Snapshot(T0.AddSeconds(25)).Timers, t => t.Spell.StartsWith("Tashania", StringComparison.Ordinal));
+
+        store.SetTracked("Malise X", false);
+        Assert.Empty(engine.Snapshot(T0.AddSeconds(81)).Timers);
+        engine.ProcessLines([L(200, "Your Malise X spell has worn off of an azarack.")]);
+        Assert.Empty(engine.Snapshot(T0.AddSeconds(201)).Timers);
+        Assert.Contains(store.List(), d => d.Spell == "Malise X" && !d.Tracked && d.Samples > 0);
+    }
+
+    [Fact]
+    public async Task UntrackedSpellsPersist()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"eql-durations-{Guid.NewGuid():N}.json");
+        try
+        {
+            var store = new SpellDurationStore();
+            store.SetTracked("Tashania V", false);
+            await store.SaveAsync(path);
+
+            var loaded = await SpellDurationStore.LoadAsync(path);
+            Assert.False(loaded.IsTracked("Tashania V"));
+            Assert.True(loaded.IsTracked("Malise X"));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void InterruptedCastDoesNotStartTimer()
     {
         var store = new SpellDurationStore();

@@ -456,6 +456,20 @@ public partial class MainWindow
                         $"{counts.LegacyLandings:N0} earlier landings have no damage values; partial damage cannot be checked retrospectively.";
                 }
             }
+            else if (metadata?.DamageOverTime == true)
+            {
+                long total = counts.DotLanded + counts.DotResisted;
+                result = total == 0
+                    ? $"{school} DoT  /  no assessed casts yet"
+                    : $"{school} DoT  /  {100m * counts.DotResisted / total:0.#}% resisted ({counts.DotResisted}/{total})";
+                evidence =
+                [
+                    ("Casts landed", $"{counts.DotLanded:N0}"),
+                    ("Casts resisted", $"{counts.DotResisted:N0}"),
+                    ("All resists", $"{counts.FullResists:N0}"),
+                ];
+                explanation = metadata.AssessmentNote ?? "";
+            }
             else
             {
                 result = $"{school}  /  {metadata?.TargetType ?? "Wiki details pending"}";
@@ -466,7 +480,8 @@ public partial class MainWindow
         }
         rows.Add(new("About damage ratings", Details:
             "Only verified single-target instant damage (including lifetaps) receives a full/partial rating. " +
-            "Area waves and DoT ticks are not reliable cast-success denominators. " +
+            "Single-target DoTs count once per cast: landed when its first tick hits, or resisted; ticks from a DoT already running are not counted. " +
+            "Area waves are not reliable cast-success denominators. " +
             "Reduced-damage ratings are estimates; critical/modified and recent finishing hits are excluded. " +
             "Missing school, insufficient baseline, and unsupported spell shape are not NPC immunity.", Stacked: true));
         if (!string.IsNullOrEmpty(_npcWikiStatus))

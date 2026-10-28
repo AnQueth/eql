@@ -233,8 +233,14 @@ Five color-coded rows show **Magic, Fire, Cold, Poison, and Disease**:
   this window), finishing blows cannot be identified reliably. Very recent buffered hits may be
   omitted if the app closes before they can be checked.
   Previously saved landed counts contain no damage amounts and cannot be reclassified retroactively.
-- Resists of DoTs, debuffs, area spells, and other spells appear as separate counts with an **unknown rate**.
-  DoT ticks and guessed landings are not counted as successful casts. Spells with missing or
+- Single-target **damage-over-time** spells (wiki duration spells with a per-tick hit point
+  decrease, such as Bond of Death, Envenomed Bolt, Dark Soul and Ignite Blood) also count
+  toward their school. DoTs land fully or are fully resisted, so each cast counts once per mob:
+  **landed** when its first tick from you hits after the cast, or **resisted**. Ticks from a DoT
+  already running on that mob when you recast are skipped, and interrupted or fizzled casts
+  don't count. DoT outcomes are tracked separately, so the log history you already have is counted once on the next launch without double-counting earlier resists.
+- Resists of debuffs, area spells, and other spells appear as separate counts with an **unknown rate**.
+  Later DoT ticks and guessed landings are not counted as successful casts. Spells with missing or
   unrecognized wiki resistance types remain unclassified rather than being assumed Magic.
 
 Observed labels are **not exact NPC resistance values or guaranteed immunity**. Your level, debuffs, spell modifiers,
@@ -355,7 +361,7 @@ not satisfy requirements. Items may count toward multiple quests (they are not r
 compares the combined requirement against what you own), and owning every item does not verify faction or
 other prerequisites. Refresh the inventory export after turn-ins to update counts.
 Collection entries count as owned, with an explicit turn-in-availability warning. The editable
-Owned column in Loot quests still represents non-collection counts; Sky adds the separate Collection
+Owned column in the Inventory & loot quests overlay still represents non-collection counts; Sky adds the separate Collection
 column when evaluating ownership.
 
 ### Inventory export monitoring
@@ -363,8 +369,24 @@ column when evaluating ownership.
 The app checks for `<Character>_<server>-Inventory.txt` in the **parent of the Logs folder** every two
 seconds. For `Logs\eqlog_Quethrosar_qeynos.txt`, it reads `Quethrosar_qeynos-Inventory.txt` beside
 the Logs folder. Generate/update the export with **`/outputfile inventory`** in game.
-The inventory status in **Settings > Loot quests** shows the expected path, last import, and errors.
+The inventory status in the **Inventory & loot quests** overlay shows the expected path, last import, and errors.
 No inventory file is uploaded.
+
+### Inventory & loot quests overlay
+
+Turn it on under **Settings > General > Overlays** (it docks by default and can float like any other
+panel; unlock a floating copy to type in it). It has two tabs:
+
+- **Items & quests**: the inventory grid (editable Owned plus Carried, Bank, Hoard, Depot, Other,
+  Collection and Installed counts), quest lookups, item wiki pages, and Complete / reopen.
+- **Ready to merge**: items you hold more than once at different `+N` ranks, grouped by name without the
+  `+N`. Each copy shows its rank, quantity and exact location, for example
+  `Worn Wrist, equipment slot 9`, `Inventory slot 4 (Spacious Rucksack), bag slot 6`,
+  `Bank slot 10 (Storage Trunk), bag slot 8`, `Shared bank slot 1`, `Dragon's Hoard slot 12` or
+  `Tradeskill depot slot 3`. Plain copies count as `+0`. Two copies that were never upgraded are not
+  listed, because they look like stackable items. Collections and installed augments are left out.
+  Repeated worn slots (ears, wrists, rings, Any Slot) are numbered by their order in the export.
+  The filter box matches item names and locations.
 
 After the file stops changing, a successful import replaces the character's owned counts, including
 carried/equipped and bank/shared-bank items. All nonempty entries are imported, including the
@@ -383,7 +405,7 @@ Use its sort selector for **Recent items** (latest recorded loot first, inventor
 all their linked items for context. Clear the box to show everything. Sort and filter persist across restarts.
 These controls work docked or in an unlocked floating panel.
 It docks by default and can also float. Historical loot is imported as **unconfirmed**, not owned.
-In **Settings > Loot quests**, edit **Owned** to confirm your inventory. Newly observed loot increases
+In the **Inventory & loot quests** overlay, edit **Owned** to confirm your inventory. Newly observed loot increases
 owned counts; correct them manually after sales, banking, depot transfers or turn-ins. Auto-sold and
 depot loot are excluded. Select a quest reference to mark it complete (or reopen it); completion hides it
 from the opportunities panel without assuming which items were consumed. Counts and completions are
@@ -400,7 +422,7 @@ translucent cards with bold item names and separate muted inventory details.
 Use the vertical scrollbar to browse quest opportunities without moving the panel.
 Use **Retry lookups** after a network failure. Only item names are sent to EQLWiki.
 
-For a manual lookup, open **Settings > Loot quests** and select an inventory grid row to load its
+For a manual lookup, open the **Inventory & loot quests** overlay and select an inventory grid row to load its
 quest references automatically. **Look up quests** repeats the selected row's lookup, and **Item wiki page**
 opens that same item's page. Select a result and click **Open selected quest**.
 References may describe requirements, rewards, or other mentions; check the linked quest before selling
@@ -411,7 +433,7 @@ ready-to-turn-in checklist; hover the explanation beneath the progress text for 
 **Click item names to open their EQLWiki pages** in Loot, Quest opportunities, inventory,
 Sky rewards/runes/requirements, and Motes (including tier summaries and recent drops).
 Numeric upgrades are removed from wiki page names; Sky's displayed aliases retain their actual wiki targets.
-In an overlay, **right-click > Look up quest references** opens the Loot quests tab, selects its
+In an overlay, **right-click > Look up quest references** opens the Inventory & loot quests overlay, selects its
 inventory row, scrolls to it, and starts its lookup. Matching ignores numeric upgrades.
 Items not yet in the inventory grid are added as zero-owned lookup candidates; looking up someone else's
 loot never adds ownership. Quickly changing selection cannot replace the latest item's results with an older response.
@@ -536,14 +558,15 @@ effect landing and its "worn off" message. Mez and charm often break early, so t
 
 The **Spell durations** grid shows learned values. Type a number of seconds in *Override* to fix a
 duration; clear it to go back to the learned value. Until a spell has a duration, its timer counts up
-and is marked "(learning)".
+and is marked "(learning)". Uncheck *Track* to hide a spell's timers (every rank of it); its
+duration is still learned.
 
 ## Saved data and backups
 
 Settings are stored in `%AppData%\EqLogOverlay\`:
 
 - `settings.json`: log path, overlay positions/visibility/docking, docked window layout, opacity, font, chat channels, alert triggers
-- `spell-durations.json`: learned samples and overrides
+- `spell-durations.json`: learned samples, overrides and untracked spells
 - `spawn-timers.json`: respawn samples, overrides, tracked mobs and the last kill/sighting per zone, so countdowns keep running across restarts and new log files
 - `motes.json`: all-time mote totals per character and mote drops/kills per zone and mob
 - `mob-resistances.json`: resistance observations by zone/mob, replay watermarks, and cached EQLWiki NPC data

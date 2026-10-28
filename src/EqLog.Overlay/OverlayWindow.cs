@@ -86,12 +86,13 @@ public sealed class OverlayWindow : Window
         }
 
         int always = NativeMethods.WS_EX_TOOLWINDOW | NativeMethods.WS_EX_LAYERED;
-        if (_locked || Panel.Key != "npcs")
+        bool typing = Panel.Key is "npcs" or "inventory";
+        if (_locked || !typing)
         {
             always |= NativeMethods.WS_EX_NOACTIVATE;
         }
         int remove = _locked ? 0 : NativeMethods.WS_EX_TRANSPARENT;
-        if (!_locked && Panel.Key == "npcs")
+        if (!_locked && typing)
         {
             remove |= NativeMethods.WS_EX_NOACTIVATE;
         }

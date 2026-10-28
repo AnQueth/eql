@@ -28,6 +28,7 @@ public sealed record SpellTimerSnapshot(
 public sealed class SpellTimerTracker(SpellDurationStore store)
 {
     private static readonly TimeSpan LandingWindow = TimeSpan.FromSeconds(12);
+    private static readonly TimeSpan AdoptWindow = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan EndedDisplayTime = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ExpiredGrace = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan UnknownDurationLimit = TimeSpan.FromMinutes(30);
@@ -49,7 +50,7 @@ public sealed class SpellTimerTracker(SpellDurationStore store)
         Prune(e.Time);
         _lastCast = (e.Spell, e.Time);
         _lastCastOf[e.Spell] = e.Time;
-        if (Store.IsKnown(e.Spell))
+        if (Store.IsKnown(e.Spell) && Store.IsTracked(e.Spell))
         {
             _pending = new Pending(e.Spell, e.Time);
         }
@@ -92,6 +93,11 @@ public sealed class SpellTimerTracker(SpellDurationStore store)
             return;
         }
 
+        if (!string.Equals(_lastEngaged, e.Target, StringComparison.OrdinalIgnoreCase))
+        {
+            AdoptUnknownTargets(e.Target, e.Time);
+        }
+
         _lastEngaged = e.Target;
         if (e.Source is null)
         {
@@ -127,6 +133,16 @@ public sealed class SpellTimerTracker(SpellDurationStore store)
         if (start is DateTime s && e.Time - s >= MinLearn && e.Time - s <= MaxLearn)
         {
             Store.AddSample(e.Spell, (e.Time - s).TotalSeconds, e.Time);
+        }
+
+        if (!Store.IsTracked(e.Spell))
+        {
+            if (timer is not null)
+            {
+                _timers.Remove(timer);
+            }
+
+            return;
         }
 
         if (timer is null)
@@ -174,6 +190,7 @@ public sealed class SpellTimerTracker(SpellDurationStore store)
         FinalizePending(now, force: false);
         Prune(now);
         return _timers
+            .Where(t => Store.IsTracked(t.Spell))
             .Select(t =>
             {
                 double? duration = Store.GetDuration(t.Spell);
@@ -210,6 +227,21 @@ public sealed class SpellTimerTracker(SpellDurationStore store)
             // No landing message seen; assume it landed on whatever we were last fighting.
             Start(p.Spell, _lastEngaged ?? UnknownTarget, p.Time, confirmed: false, charm: false);
             _pending = null;
+        }
+    }
+
+    /// <summary>
+    /// Casts made before you damaged anything (e.g. opening debuffs) were guessed onto <see cref="UnknownTarget"/>;
+    /// attribute recent ones to the first mob you engage so its death clears them.
+    /// </summary>
+    private void AdoptUnknownTargets(string target, DateTime now)
+    {
+        foreach (var t in _timers.Where(t => !t.TargetConfirmed && t.State == TimerState.Running && t.Target == UnknownTarget && now - t.Start <= AdoptWindow).ToList())
+        {
+            if (!_timers.Any(o => o != t && SameTimer(o, t.Spell, target)))
+            {
+                t.Target = target;
+            }
         }
     }
 

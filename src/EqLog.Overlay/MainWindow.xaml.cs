@@ -20,6 +20,8 @@ namespace EqLog.Overlay;
 
 public sealed class DurationRow
 {
+    public bool Tracked { get; set; } = true;
+
     public required string Spell
     {
         get; init;
@@ -227,6 +229,10 @@ public partial class MainWindow : Window
             if (def.Key == "npcs")
             {
                 ConfigureNpcToolbar(panel);
+            }
+            if (def.Key == "inventory")
+            {
+                ConfigureInventoryOverlay(panel);
             }
 
             if (def.Key == "loot")
@@ -476,7 +482,7 @@ public partial class MainWindow : Window
 
     private static OverlayPlacement DefaultPlacement(OverlayDefinition def, int index, Rect work)
     {
-        if (def.Key is "npcs" or "wiki")
+        if (def.Key is "npcs" or "wiki" or "inventory")
         {
             return new OverlayPlacement
             {
@@ -829,6 +835,7 @@ public partial class MainWindow : Window
                 "sky" => SkyOverlayContent(),
                 "mobinfo" => MobInfoContent(),
                 "npcs" => NpcCompendiumContent(),
+                "inventory" => new("Inventory & loot quests", _characterName, []),
                 _ => def.Render(snap, _engine, view),
             };
             _overlays[def.Key].Panel.Update(content.Title, content.Subtitle, content.Rows, content.TitleLink);
@@ -941,7 +948,7 @@ public partial class MainWindow : Window
         }
 
         var list = _engine.SpellDurations();
-        string signature = string.Join('|', list.Select(d => $"{d.Spell}:{d.Samples}:{d.LearnedSeconds:F0}:{d.OverrideSeconds}"));
+        string signature = string.Join('|', list.Select(d => $"{d.Spell}:{d.Samples}:{d.LearnedSeconds:F0}:{d.OverrideSeconds}:{d.Tracked}"));
         if (signature == _durationsSignature)
         {
             return;
@@ -953,11 +960,22 @@ public partial class MainWindow : Window
         {
             _durationRows.Add(new DurationRow
             {
+                Tracked = d.Tracked,
                 Spell = d.Spell,
                 Learned = d.LearnedSeconds is double s ? OverlayPresenters.Clock(s) : "-",
                 Samples = d.Samples,
                 Override = d.OverrideSeconds?.ToString("0.#", CultureInfo.CurrentCulture) ?? "",
             });
+        }
+    }
+
+    private void DurationTrack_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox { DataContext: DurationRow row } box)
+        {
+            _engine.SetSpellTracked(row.Spell, box.IsChecked == true);
+            _durationsSignature = "";
+            _ = SaveQuietlyAsync(_engine.SaveSpellDurationsAsync(AppSettings.DurationsPath));
         }
     }
 

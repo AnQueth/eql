@@ -551,9 +551,9 @@ public sealed class WikiRepositoryTests
                 ? Page(null) : SpellPage());
         }));
         var store = new MobResistanceStore();
-        store.SetSpell(new("Fresh", ResistanceType.Fire, "Fire", DateTime.UtcNow, true, "Single", "Instant", 1));
+        store.SetSpell(new("Fresh", ResistanceType.Fire, "Fire", DateTime.UtcNow, true, "Single", "Instant", SpellResistanceInfo.CurrentMetadataVersion));
         store.SetSpell(new("Old", ResistanceType.Fire, "Fire", DateTime.UtcNow, true));
-        store.SetSpell(new("Expired", ResistanceType.Fire, "Fire", DateTime.UtcNow.AddDays(-8), true, "Single", "Instant", 1));
+        store.SetSpell(new("Expired", ResistanceType.Fire, "Fire", DateTime.UtcNow.AddDays(-8), true, "Single", "Instant", SpellResistanceInfo.CurrentMetadataVersion));
         await using var repository = new WikiRepository(http, store, () => Task.CompletedTask, TimeSpan.Zero);
         await repository.GetSpellAsync("Fresh", WikiPriority.Interactive, false, default);
         Assert.Equal(0, requests);

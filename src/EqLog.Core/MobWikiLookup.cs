@@ -57,8 +57,14 @@ public sealed class MobWikiLookup(HttpClient http)
             (string.Equals(targetType, "Single", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(targetType, "Lifetap", StringComparison.OrdinalIgnoreCase)) &&
             page.Value.Text.Contains("Decrease Hitpoints", StringComparison.OrdinalIgnoreCase);
+        bool damageOverTime = page is not null && duration is not null &&
+            !string.Equals(duration, "Instant", StringComparison.OrdinalIgnoreCase) &&
+            (string.Equals(targetType, "Single", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(targetType, "Lifetap", StringComparison.OrdinalIgnoreCase)) &&
+            Regex.IsMatch(page.Value.Text, @"Decrease (Current )?Hit ?Points[^\n]*per tick", RegexOptions.IgnoreCase,
+                TimeSpan.FromSeconds(1));
         return new(spell, type, detail, DateTime.UtcNow, singleTargetDirectDamage, targetType, duration,
-            SpellResistanceInfo.CurrentMetadataVersion, Found: page is not null);
+            SpellResistanceInfo.CurrentMetadataVersion, Found: page is not null, DamageOverTime: damageOverTime);
     }
 
     public static MobWikiInfo ParseMob(string title, string text, DateTime checkedUtc)

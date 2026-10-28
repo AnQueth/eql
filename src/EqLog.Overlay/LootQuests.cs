@@ -250,7 +250,7 @@ public partial class MainWindow
             Minimum = 0,
             Maximum = 1,
             Margin = new Thickness(0, 10, 0, 5),
-            ToolTip = "Completed checks, including failed attempts. Failed items can be retried from Loot quests.",
+            ToolTip = "Completed checks, including failed attempts. Failed items can be retried from the Inventory & loot quests overlay.",
         };
         toolbar.Children.Add(_questProgressBar);
         _questProgressText = new ContentControl();
@@ -520,9 +520,7 @@ public partial class MainWindow
 
     private async Task LookupLootItemAsync(string item)
     {
-        _dock.SetSidePanelOpen(true);
-        Tabs.SelectedItem = LootQuestsTab;
-        ShowDock();
+        ShowInventoryOverlay(InventoryItemsTab);
         var selected = _questInventory.Items.FirstOrDefault(i =>
             i.Character.Equals(_characterName, StringComparison.OrdinalIgnoreCase) && ItemNames.Comparer.Equals(i.Item, item));
         if (selected is null)

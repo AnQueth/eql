@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace EqLog.Core.Tracking;
 
-public sealed record SpellDurationInfo(string Spell, double? LearnedSeconds, int Samples, double? OverrideSeconds);
+public sealed record SpellDurationInfo(string Spell, double? LearnedSeconds, int Samples, double? OverrideSeconds, bool Tracked = true);
 
 /// <summary>
 /// Spell durations learned by measuring the time between casting a spell and seeing
@@ -15,6 +15,7 @@ public sealed class SpellDurationStore : ISnapshotStore<SpellDurationStore.Dto>
 
     private readonly Dictionary<string, List<Sample>> _samples = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, double> _overrides = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _untracked = new(StringComparer.OrdinalIgnoreCase);
 
     public bool IsDirty
     {
@@ -65,6 +66,21 @@ public sealed class SpellDurationStore : ISnapshotStore<SpellDurationStore.Dto>
         IsDirty = true;
     }
 
+    public void SetTracked(string spell, bool tracked)
+    {
+        bool changed = tracked ? _untracked.Remove(spell) : _untracked.Add(spell);
+        if (changed)
+        {
+            IsDirty = true;
+        }
+    }
+
+    /// <summary>False when the user unchecked this spell (or another rank of it); durations are still learned.</summary>
+    public bool IsTracked(string spell)
+    {
+        return !_untracked.Contains(spell) && SpellNames.FindByBase(_untracked, spell) is null;
+    }
+
     /// <summary>True when the spell (or another rank of it) has a learned or overridden duration.</summary>
     public bool IsKnown(string spell)
     {
@@ -96,13 +112,14 @@ public sealed class SpellDurationStore : ISnapshotStore<SpellDurationStore.Dto>
 
     public IReadOnlyList<SpellDurationInfo> List()
     {
-        return _samples.Keys.Union(_overrides.Keys, StringComparer.OrdinalIgnoreCase)
+        return _samples.Keys.Union(_overrides.Keys, StringComparer.OrdinalIgnoreCase).Union(_untracked, StringComparer.OrdinalIgnoreCase)
             .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
             .Select(k => new SpellDurationInfo(
                 k,
                 _samples.TryGetValue(k, out var s) && s.Count > 0 ? Estimate(s) : null,
                 _samples.TryGetValue(k, out var s2) ? s2.Count : 0,
-                _overrides.TryGetValue(k, out var o) ? o : null))
+                _overrides.TryGetValue(k, out var o) ? o : null,
+                !_untracked.Contains(k)))
             .ToList();
     }
 
@@ -136,6 +153,8 @@ public sealed class SpellDurationStore : ISnapshotStore<SpellDurationStore.Dto>
                 {
                     store._overrides[kv.Key] = kv.Value;
                 }
+
+                store._untracked.UnionWith(dto.Untracked ?? []);
             }
         }
         catch (JsonException)
@@ -165,6 +184,7 @@ public sealed class SpellDurationStore : ISnapshotStore<SpellDurationStore.Dto>
         {
             Samples = _samples.ToDictionary(kv => kv.Key, kv => kv.Value.ToList(), StringComparer.OrdinalIgnoreCase),
             Overrides = new(_overrides, StringComparer.OrdinalIgnoreCase),
+            Untracked = _untracked.Order(StringComparer.OrdinalIgnoreCase).ToList(),
         };
         IsDirty = false;
         return dto;
@@ -183,6 +203,11 @@ public sealed class SpellDurationStore : ISnapshotStore<SpellDurationStore.Dto>
         }
 
         public Dictionary<string, double>? Overrides
+        {
+            get; set;
+        }
+
+        public List<string>? Untracked
         {
             get; set;
         }

@@ -56,6 +56,13 @@ Historical loot is deduplicated by log path and line number. Moving or replacing
 reimport history as unconfirmed loot. New loot after the inventory export time is added without
 double-counting loot represented in the export.
 
+The former Loot quests settings tab is hosted in the `inventory` overlay: at startup
+`ConfigureInventoryOverlay` moves the XAML content (`LootQuestsContent`, with its event handlers)
+into the overlay through `OverlayPanel.SetBody`, beside a Ready to merge tab. The last parsed export
+rows are kept in memory. `InventoryExport.MergeGroups` groups loose rows by name without `+N`, and
+location text is built from the export path. Worn slot numbers are assigned in `Parse` before empty
+rows are skipped, because repeated roots (Ear, Wrist, Fingers, Any Slot) are only distinguished by order.
+
 Item comparisons remove numeric upgrade modifiers wherever they occur, collapse whitespace,
 and ignore case. Displays retain original names. The same normalization is used by loot totals,
 inventory grouping, Sky requirements, searches, wiki links, and cache keys.
@@ -81,7 +88,11 @@ The same overlay instance is reused, and switching logs cancels lookups and clea
 
 `MobResistanceTracker` records explicit personal targeted resists and confirmed direct damage
 matching the current uninterrupted cast within 20 seconds, once per cast/target name.
-It does not infer a target from /consider, count DoT ticks, or guess landing messages.
+It does not infer a target from /consider, count every DoT tick, or guess landing messages.
+`DotLandingDetector` adds one DoT outcome per cast and target: the first personal tick of a spell
+cast within 30 seconds (it tracks recent casts per base spell, since chain-casting replaces the
+current cast before the first tick), or a resist. Targets the spell ticked on within 8 seconds before
+the cast are skipped as ambiguous. These are stored as separate `DotLanded`/`DotResisted` counts.
 Outcomes are buffered for three seconds so a subsequent kill can remove the latest candidate
 damage hit on that target before it enters the baseline or denominator. This works across input
 batches and with kills credited to others. Single-word death lines omitted by the general parser
@@ -97,8 +108,9 @@ after a log is truncated. A moved log is a different source. Same-name NPCs are 
 pages may fall back to their base spell page for resistance school and instant-damage metadata,
 not inferred from names or damage colors. Only explicit NPC template resistance fields become
 wiki stats. Missing values and unresistable/unknown spell schools are not assigned to Magic.
-The rate denominator includes only wiki-confirmed single-target instant-damage spell outcomes
-(target types `Single` or `Lifetap`, instant duration, and a decrease-hitpoints effect); other
+The rate denominator includes wiki-confirmed single-target instant-damage spell outcomes
+(target types `Single` or `Lifetap`, instant duration, and a decrease-hitpoints effect) and
+single-target damage-over-time cast outcomes (non-instant duration with a per-tick hit point decrease); other
 classified resists remain separate counts without a fabricated success denominator.
 Spell metadata retains target type, duration and a parser version. Old cache entries refresh on
 observation or selection even inside the seven-day TTL so corrected lifetap classification applies to existing

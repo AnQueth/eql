@@ -28,6 +28,7 @@ public partial class MainWindow
                 InventoryStatus.Text = $"Waiting for {path}. Create/update it in game with /outputfile inventory.";
                 _inventoryObserved = null;
                 _inventoryLoaded = null;
+                SetInventoryRows(character, []);
                 return;
             }
             if (_inventoryLoaded == stamp)
@@ -56,6 +57,7 @@ public partial class MainWindow
             _questInventory.ApplyExport(character, items, stamp.Written);
             _questDirty = true;
             _inventoryLoaded = stamp;
+            SetInventoryRows(character, items);
             QuestOwnedGrid.Items.Refresh();
             var unknown = InventoryExport.UnknownLocations(items);
             string sections = unknown.Count == 0

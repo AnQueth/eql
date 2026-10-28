@@ -355,6 +355,14 @@ public sealed class LogEngine
         }
     }
 
+    public void SetSpellTracked(string spell, bool tracked)
+    {
+        lock (_gate)
+        {
+            _timers.Store.SetTracked(spell, tracked);
+        }
+    }
+
     public Task SaveSpellDurationsAsync(string path, bool onlyIfDirty = true, CancellationToken ct = default)
     {
         return SnapshotStore.SaveAsync(_timers.Store, _gate, path, onlyIfDirty, ct);

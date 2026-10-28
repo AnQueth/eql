@@ -2,13 +2,14 @@ using EqLog.Core.Parsing;
 
 namespace EqLog.Core.Tracking;
 
-/// <summary>Counts explicit personal resists and confirmed cast outcomes; never treats each DoT tick as a cast.</summary>
+/// <summary>Counts explicit personal resists and confirmed cast outcomes; a DoT counts once per cast, never per tick.</summary>
 public sealed class MobResistanceTracker(MobResistanceStore store, string logIdentity)
 {
     private string _zone = "(unknown zone)";
     private CastBeginEvent? _cast;
     private readonly HashSet<string> _outcomes = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<PendingOutcome> _pending = [];
+    private readonly DotLandingDetector _dots = new();
     private static readonly TimeSpan DeathWindow = TimeSpan.FromSeconds(3);
 
     public string CharacterName { get; set; } = "";
@@ -50,27 +51,36 @@ public sealed class MobResistanceTracker(MobResistanceStore store, string logIde
                 _zone = zone.Zone;
                 _cast = null;
                 _outcomes.Clear();
+                _dots.Clear();
                 break;
             case LoginEvent:
             case LevelEvent:
                 _cast = null;
                 _outcomes.Clear();
+                _dots.Clear();
                 break;
             case WhoLoadoutEvent when _castProfile != (DamageProfile ?? CharacterName):
                 _cast = null;
                 _outcomes.Clear();
+                _dots.Clear();
                 break;
             case CastBeginEvent cast:
                 _cast = cast;
                 _castProfile = DamageProfile ?? CharacterName;
                 _outcomes.Clear();
+                _dots.OnCast(cast);
                 break;
-            case CastInterruptedEvent:
+            case CastInterruptedEvent interrupted:
+                _cast = null;
+                _dots.OnCastFailed(interrupted.Spell);
+                break;
             case CastFizzleEvent:
                 _cast = null;
+                _dots.OnCastFailed(null);
                 break;
             case SpellResistedEvent { Target: not null } resist when resist.Target != Names.You:
-                _pending.Add(new(line, _zone, resist.Target, resist.Spell, resist.Time, true, null, CharacterName));
+                _pending.Add(new(line, _zone, resist.Target, resist.Spell, resist.Time, true, null, CharacterName,
+                    _dots.OnResisted(resist)));
                 if (_cast is not null && SpellNames.SameBase(_cast.Spell, resist.Spell))
                 {
                     _outcomes.Add(resist.Target);
@@ -79,6 +89,12 @@ public sealed class MobResistanceTracker(MobResistanceStore store, string logIde
             case DamageEvent { Attacker: Names.You, Source: not null } damage
                 when damage.Target != Names.You && damage.Kind == DamageKind.DirectSpell:
                 Landed(damage, line);
+                break;
+            case DamageEvent { Kind: DamageKind.DamageOverTime } tick:
+                if (_dots.OnTick(tick) is string dotSpell && !string.IsNullOrWhiteSpace(_castProfile))
+                {
+                    _pending.Add(new(line, _zone, tick.Target, dotSpell, tick.Time, false, null, _castProfile, true));
+                }
                 break;
         }
     }
@@ -90,7 +106,7 @@ public sealed class MobResistanceTracker(MobResistanceStore store, string logIde
             var outcome = _pending[0];
             _pending.RemoveAt(0);
             store.Record(logIdentity, outcome.Line, outcome.Zone, outcome.Target, outcome.Spell, outcome.Resisted,
-                outcome.Time, outcome.Character, outcome.Damage);
+                outcome.Time, outcome.Character, outcome.Damage, outcome.DamageOverTime);
         }
     }
 
@@ -106,5 +122,5 @@ public sealed class MobResistanceTracker(MobResistanceStore store, string logIde
     }
 
     private sealed record PendingOutcome(long Line, string Zone, string Target, string Spell, DateTime Time,
-        bool Resisted, long? Damage, string Character);
+        bool Resisted, long? Damage, string Character, bool DamageOverTime = false);
 }

@@ -141,6 +141,7 @@ public sealed class OverlayPanel : ContentControl
     private readonly Border _bevel;
     private readonly Grid _ornaments = new() { IsHitTestVisible = false };
     private readonly ContentControl _toolbar = new();
+    private readonly DockPanel _layout = new();
     private IReadOnlyList<OverlayRow> _current = [];
     private string? _titleLink;
     private bool _invalidateRows;
@@ -230,7 +231,7 @@ public sealed class OverlayPanel : ContentControl
         };
 
         _titleFrame = new Border { Child = header };
-        var layout = new DockPanel();
+        var layout = _layout;
         DockPanel.SetDock(_titleFrame, Dock.Top);
         layout.Children.Add(_titleFrame);
         DockPanel.SetDock(_toolbar, Dock.Top);
@@ -341,13 +342,29 @@ public sealed class OverlayPanel : ContentControl
         _toolbar.Content = toolbar;
     }
 
+    /// <summary>Replaces the row list with custom interactive content that fills the panel below the toolbar.</summary>
+    public void SetBody(UIElement body)
+    {
+        _layout.Children.Remove(_scroll);
+        if (_virtualList is not null)
+        {
+            _layout.Children.Remove(_virtualList);
+        }
+        _layout.Children.Add(body);
+    }
+
     internal static bool IsInteractive(DependencyObject? source)
     {
         while (source is not null)
         {
             if (source is System.Windows.Controls.Primitives.ButtonBase or
                 System.Windows.Controls.Primitives.TextBoxBase or
-                System.Windows.Controls.Primitives.ScrollBar or System.Windows.Controls.Primitives.Thumb or ComboBox or TabItem or Hyperlink)
+                System.Windows.Controls.Primitives.ScrollBar or System.Windows.Controls.Primitives.Thumb or ComboBox or TabItem or Hyperlink or
+                DataGrid or GridSplitter)
+            {
+                return true;
+            }
+            if (source is ListBox and not VirtualRowList)
             {
                 return true;
             }

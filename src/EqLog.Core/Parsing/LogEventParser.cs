@@ -212,7 +212,13 @@ public sealed partial class LogEventParser
                 string rest = dm.Groups["rest"].Value;
                 string attacker;
                 string spell;
-                if (rest.StartsWith("your ", StringComparison.Ordinal))
+                if (dm.Groups["via"].Value == "by")
+                {
+                    // "Pet has taken N damage by Spell." names no caster.
+                    attacker = Names.Unknown;
+                    spell = rest;
+                }
+                else if (rest.StartsWith("your ", StringComparison.Ordinal))
                 {
                     attacker = Names.You;
                     spell = rest[5..];
@@ -481,7 +487,7 @@ public sealed partial class LogEventParser
     [GeneratedRegex(@"^(?<a>.+?) hit (?<t>.+?) for (?<n>\d+) points? of (?:[\w-]+ )?damage by (?<s>.+?)\.(?: \((?<m>[^)]+)\))?$")]
     private static partial Regex SpellDamageRegex();
 
-    [GeneratedRegex(@"^(?<t>.+?) (?:has|have) taken (?<n>\d+) damage from (?<rest>.+?)\.(?: \((?<m>[^)]+)\))?$")]
+    [GeneratedRegex(@"^(?<t>.+?) (?:has|have) taken (?<n>\d+) damage (?<via>from|by) (?<rest>.+?)\.(?: \((?<m>[^)]+)\))?$")]
     private static partial Regex DotRegex();
 
     [GeneratedRegex(@"^(?<t>.+?) (?:is|are) \w+ by (?<a>.+?) \w+ for (?<n>\d+) points? of non-melee damage[.!](?: \((?<m>[^)]+)\))?$")]

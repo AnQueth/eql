@@ -68,6 +68,7 @@ public static class OverlayPresenters
         new("mobinfo", "Mob info", 540, 620, false, (_, _, _) => new("Mob info", null, [])),
         new("npcs", "NPC compendium", 620, 720, false, (_, _, _) => new("NPC compendium", null, [])),
         new("wiki", "Wiki activity", 480, 360, false, WikiActivity),
+        new("inventory", "Inventory & loot quests", 680, 620, false, (_, _, _) => new("Inventory & loot quests", null, [])),
     ];
 
     private const int MaxRequestRows = 15;

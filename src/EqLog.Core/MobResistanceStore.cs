@@ -13,9 +13,14 @@ public enum ResistanceType
     Disease,
 }
 
+/// <summary>
+/// Resisted counts every explicit resist. DotLanded/DotResisted are the assessed outcomes of damage-over-time casts
+/// (first tick after a cast, or its resist), kept apart so older resist-only history doesn't skew DoT rates.
+/// </summary>
 public sealed record SpellOutcome(string Spell, long Landed, long Resisted,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    Dictionary<string, Dictionary<long, long>>? DamageSamples = null);
+    Dictionary<string, Dictionary<long, long>>? DamageSamples = null,
+    long DotLanded = 0, long DotResisted = 0);
 public sealed record ResistanceObservation(ResistanceType Type, long Landed, long Resisted, long OtherResisted,
     long EstimatedPartial = 0, long UnassessedDamage = 0)
 {
@@ -66,9 +71,9 @@ public sealed record MobWikiStats(string? Race, string? ArmorClass, string? HpRe
     string? RunSpeed, string? RespawnTime, string? Location);
 public sealed record SpellResistanceInfo(string Spell, ResistanceType? Type, string? Detail, DateTime CheckedUtc,
     bool SingleTargetDirectDamage = false, string? TargetType = null, string? Duration = null, int MetadataVersion = 0,
-    bool Found = true)
+    bool Found = true, bool DamageOverTime = false)
 {
-    public const int CurrentMetadataVersion = 1;
+    public const int CurrentMetadataVersion = 2;
 
     [JsonIgnore]
     public bool NeedsRefresh
@@ -89,6 +94,10 @@ public sealed record SpellResistanceInfo(string Spell, ResistanceType? Type, str
             {
                 return null;
             }
+            if (DamageOverTime)
+            {
+                return "Damage-over-time spell: each cast counts once (its first tick landed, or it was resisted); ticks don't give a full/partial damage rating.";
+            }
             if (TargetType?.Contains("AE", StringComparison.OrdinalIgnoreCase) == true ||
                 TargetType?.Contains("Area", StringComparison.OrdinalIgnoreCase) == true)
             {
@@ -108,7 +117,8 @@ public sealed record SpellResistanceInfo(string Spell, ResistanceType? Type, str
 }
 public sealed record MobResistanceInfo(IReadOnlyList<ResistanceObservation> Observations, long Unclassified,
     MobWikiInfo? Wiki, IReadOnlyList<string> Spells);
-public sealed record RawSpellCounts(long FullResists, long LegacyLandings, long DamageHits);
+public sealed record RawSpellCounts(long FullResists, long LegacyLandings, long DamageHits,
+    long DotLanded = 0, long DotResisted = 0);
 public sealed record ResistanceWatermark(DateTime Time, long Line);
 
 /// <summary>Thread-safe persistent observations keyed by zone and mob name, not individual NPC instances.</summary>
@@ -165,19 +175,26 @@ public sealed class MobResistanceStore
         return MobKey(zone) + "\n" + MobKey(mob);
     }
 
-    /// <summary>Records one observed outcome once per log path/line, preventing replay from inflating counts.</summary>
+    /// <summary>
+    /// Records one observed outcome once per log path/line, preventing replay from inflating counts.
+    /// DoT outcomes have their own watermark, so history read before DoTs were assessed is counted once.
+    /// </summary>
     public void Record(string log, long line, string zone, string mob, string spell, bool resisted,
-        DateTime time = default, string? character = null, long? damage = null)
+        DateTime time = default, string? character = null, long? damage = null, bool damageOverTime = false)
     {
         lock (_gate)
         {
             string source = log.ToUpperInvariant();
-            var watermark = _data.Watermarks.GetValueOrDefault(source);
-            if (watermark is not null && (watermark.Time > time || (watermark.Time == time && watermark.Line >= line)))
+            bool counted = Advance(source, time, line);
+            bool dotCounted = damageOverTime && Advance(source + "\nDOT", time, line);
+            if (damageOverTime && !resisted)
+            {
+                counted = false;
+            }
+            if (!counted && !dotCounted)
             {
                 return;
             }
-            _data.Watermarks[source] = new(time, line);
             string key = Key(zone, mob);
             if (!_data.Mobs.TryGetValue(key, out var spells))
             {
@@ -188,10 +205,12 @@ public sealed class MobResistanceStore
             var previous = spells.GetValueOrDefault(spellKey) ?? new SpellOutcome(spell, 0, 0);
             spells[spellKey] = previous with
             {
-                Landed = previous.Landed + (resisted || damage is not null ? 0 : 1),
-                Resisted = previous.Resisted + (resisted ? 1 : 0),
+                Landed = previous.Landed + (counted && !resisted && damage is null ? 1 : 0),
+                Resisted = previous.Resisted + (counted && resisted ? 1 : 0),
+                DotLanded = previous.DotLanded + (dotCounted && !resisted ? 1 : 0),
+                DotResisted = previous.DotResisted + (dotCounted && resisted ? 1 : 0),
             };
-            if (damage is long amount && character is not null)
+            if (counted && damage is long amount && character is not null)
             {
                 var samples = previous.DamageSamples ?? [];
                 string characterKey = MobKey(character);
@@ -209,6 +228,17 @@ public sealed class MobResistanceStore
             }
             _version++;
         }
+    }
+
+    private bool Advance(string source, DateTime time, long line)
+    {
+        var watermark = _data.Watermarks.GetValueOrDefault(source);
+        if (watermark is not null && (watermark.Time > time || (watermark.Time == time && watermark.Line >= line)))
+        {
+            return false;
+        }
+        _data.Watermarks[source] = new(time, line);
+        return true;
     }
 
     public MobResistanceInfo Get(string zone, string mob, string? spellName = null)
@@ -249,12 +279,17 @@ public sealed class MobResistanceStore
                         }
                     }
                 }
-                return new ResistanceObservation(type, landed, comparable.Sum(s => s.Resisted) + partial,
-                    matching.Where(s => !_data.Spells[MobKey(s.Spell)].SingleTargetDirectDamage).Sum(s => s.Resisted),
-                    partial, unknown);
+                var dots = matching.Where(s => !_data.Spells[MobKey(s.Spell)].SingleTargetDirectDamage &&
+                    _data.Spells[MobKey(s.Spell)].DamageOverTime).ToArray();
+                landed += dots.Sum(s => s.DotLanded);
+                long other = matching.Where(s => !_data.Spells[MobKey(s.Spell)].SingleTargetDirectDamage).Sum(s => s.Resisted) -
+                    dots.Sum(s => Math.Min(s.DotResisted, s.Resisted));
+                return new ResistanceObservation(type, landed,
+                    comparable.Sum(s => s.Resisted) + partial + dots.Sum(s => s.DotResisted),
+                    other, partial, unknown);
             }).ToArray();
             long unclassified = spells.Where(s => _data.Spells.GetValueOrDefault(MobKey(s.Spell))?.Type is null)
-                .Sum(s => s.Landed + s.Resisted + (s.DamageSamples?.Values.Sum(h => h.Values.Sum()) ?? 0));
+                .Sum(s => s.Landed + s.Resisted + s.DotLanded + (s.DamageSamples?.Values.Sum(h => h.Values.Sum()) ?? 0));
             return new(observations, unclassified, _data.Wiki.GetValueOrDefault(MobKey(mob)),
                 spells.Select(s => s.Spell).ToArray());
         }
@@ -266,7 +301,8 @@ public sealed class MobResistanceStore
         {
             var outcome = _data.Mobs.GetValueOrDefault(Key(zone, mob))?.GetValueOrDefault(MobKey(spell));
             return new(outcome?.Resisted ?? 0, outcome?.Landed ?? 0,
-                outcome?.DamageSamples?.Values.Sum(h => h.Values.Sum()) ?? 0);
+                outcome?.DamageSamples?.Values.Sum(h => h.Values.Sum()) ?? 0,
+                outcome?.DotLanded ?? 0, outcome?.DotResisted ?? 0);
         }
     }
 

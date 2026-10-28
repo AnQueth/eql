@@ -473,6 +473,102 @@ public class MobResistanceTests
         Assert.Contains("titles=Conflagration|", requests[1]);
     }
 
+    [Theory]
+    [InlineData("Bond of Death X", "9 ticks", "{{SpellSlotRow | 3 | Decrease Hitpoints by 80 per tick }}", "Magic (-200)", ResistanceType.Magic)]
+    [InlineData("Envenomed Bolt X", "36 Sec", "{{SpellSlotRow | 2 | Decrease Current Hit Points by 41}}\n{{SpellSlotRow | 3 | Decrease Current Hit Points by 351 per Tick }}", "Poison (0)", ResistanceType.Poison)]
+    [InlineData("Dark Soul IV", "30 Sec", "{{SpellSlotRowSmart | 2 | Decrease Hitpoints between 96 and 140 per tick. }}", "Magic", ResistanceType.Magic)]
+    [InlineData("Ignite Blood IX", "42 Sec", "{{SpellSlotRow | 1 | Decrease Hitpoints by 56 per tick }}", "Fire (-100)", ResistanceType.Fire)]
+    public async Task Wiki_DamageOverTimeSpells_AreDurationSpellsWithResistType(string spell, string duration, string slots, string resist, ResistanceType type)
+    {
+        using var http = new HttpClient(new Handler(request =>
+        {
+            string query = Uri.UnescapeDataString(request.RequestUri!.Query);
+            return Page(query.Contains(spell, StringComparison.Ordinal) ? null :
+                $"{{{{Spellpage|\n| slots = \n\n{slots}\n\n| duration = {duration}\n| target_type = Single\n| spell_type = Detrimental\n| resist = {resist}\n}}}}");
+        }));
+        var info = await new MobWikiLookup(http).FindSpellAsync(spell);
+        Assert.True(info.Found);
+        Assert.Equal(type, info.Type);
+        Assert.Equal(resist, info.Detail);
+        Assert.Equal(duration, info.Duration);
+        Assert.False(info.SingleTargetDirectDamage);
+        Assert.True(info.DamageOverTime);
+        Assert.StartsWith("Damage-over-time spell", info.AssessmentNote);
+    }
+
+    [Fact]
+    public async Task Wiki_DurationDebuffWithoutDamage_IsNotDamageOverTime()
+    {
+        using var http = new HttpClient(new Handler(_ => Page(
+            "{{Spellpage|\n| slots = \n{{SpellSlotRow | 1 | Decrease Movement by 40% }}\n| duration = 2 Min\n| target_type = Single\n| resist = Magic\n}}")));
+        var info = await new MobWikiLookup(http).FindSpellAsync("Clinging Darkness");
+        Assert.False(info.DamageOverTime);
+        Assert.StartsWith("Duration spell", info.AssessmentNote);
+    }
+
+    [Fact]
+    public void Tracker_DotFirstTickAfterNextCast_CountsOneLandingUnderSchool()
+    {
+        var store = new MobResistanceStore();
+        store.SetSpell(new("Ignite Blood IX", ResistanceType.Fire, "Fire (-100)", T0, DamageOverTime: true));
+        store.SetSpell(new("Envenomed Bolt X", ResistanceType.Poison, "Poison (0)", T0, DamageOverTime: true));
+        var tracker = new MobResistanceTracker(store, "log") { CharacterName = "Me" };
+        tracker.OnEvent(new CastBeginEvent(T0, "Ignite Blood IX"), 1);
+        tracker.OnEvent(new CastBeginEvent(T0.AddSeconds(4), "Envenomed Bolt X"), 2);
+        tracker.OnEvent(new DamageEvent(T0.AddSeconds(6), Names.You, "A rat", 56, DamageKind.DamageOverTime, "Ignite Blood IX", null), 3);
+        tracker.OnEvent(new DamageEvent(T0.AddSeconds(12), Names.You, "A rat", 56, DamageKind.DamageOverTime, "Ignite Blood IX", null), 4);
+        tracker.OnEvent(new SpellResistedEvent(T0.AddSeconds(7), "A rat", "Envenomed Bolt X"), 5);
+        tracker.Advance(T0.AddSeconds(60));
+        var info = store.Get("(unknown zone)", "A rat");
+        var fire = info.Observations.Single(o => o.Type == ResistanceType.Fire);
+        var poison = info.Observations.Single(o => o.Type == ResistanceType.Poison);
+        Assert.Equal((1, 0, 0L), (fire.Landed, fire.Resisted, fire.OtherResisted));
+        Assert.Equal((0, 1, 0L), (poison.Landed, poison.Resisted, poison.OtherResisted));
+        Assert.Equal(new RawSpellCounts(1, 0, 0, 0, 1), store.GetRawSpellCounts("(unknown zone)", "A rat", "Envenomed Bolt X"));
+    }
+
+    [Fact]
+    public void Store_HistoryReadBeforeDotAssessment_BackfillsDotOutcomesOnceWithoutRecountingResists()
+    {
+        var store = new MobResistanceStore();
+        store.SetSpell(new("Ignite Blood IX", ResistanceType.Fire, "Fire", T0, DamageOverTime: true));
+        store.Record("log", 1, "Zone", "A rat", "Ignite Blood IX", true, T0);
+        store.Record("log", 9, "Zone", "A rat", "Conflagration", true, T0.AddMinutes(5));
+        for (int replay = 0; replay < 2; replay++)
+        {
+            store.Record("log", 1, "Zone", "A rat", "Ignite Blood IX", true, T0, damageOverTime: true);
+            store.Record("log", 2, "Zone", "A rat", "Ignite Blood IX", false, T0.AddMinutes(1), "Me", damageOverTime: true);
+        }
+        Assert.Equal(new RawSpellCounts(1, 0, 0, 1, 1), store.GetRawSpellCounts("Zone", "A rat", "Ignite Blood IX"));
+    }
+
+    [Fact]
+    public void Tracker_RecastOnTargetAlreadyTicking_IsNotCounted()
+    {
+        var store = new MobResistanceStore();
+        store.SetSpell(new("Ignite Blood IX", ResistanceType.Fire, "Fire", T0, DamageOverTime: true));
+        var tracker = new MobResistanceTracker(store, "log") { CharacterName = "Me" };
+        tracker.OnEvent(new DamageEvent(T0, Names.You, "A rat", 56, DamageKind.DamageOverTime, "Ignite Blood IX", null), 1);
+        tracker.OnEvent(new CastBeginEvent(T0.AddSeconds(2), "Ignite Blood IX"), 2);
+        tracker.OnEvent(new DamageEvent(T0.AddSeconds(6), Names.You, "A rat", 56, DamageKind.DamageOverTime, "Ignite Blood IX", null), 3);
+        tracker.OnEvent(new DamageEvent(T0.AddSeconds(7), "Someone", "A bat", 56, DamageKind.DamageOverTime, "Ignite Blood IX", null), 4);
+        tracker.Advance(T0.AddSeconds(60));
+        Assert.Empty(store.Get("(unknown zone)", "A rat").Spells);
+        Assert.Empty(store.Get("(unknown zone)", "A bat").Spells);
+    }
+
+    [Fact]
+    public void Tracker_InterruptedDot_DoesNotCountLaterTicks()
+    {
+        var store = new MobResistanceStore();
+        var tracker = new MobResistanceTracker(store, "log") { CharacterName = "Me" };
+        tracker.OnEvent(new CastBeginEvent(T0, "Ignite Blood IX"), 1);
+        tracker.OnEvent(new CastInterruptedEvent(T0.AddSeconds(1), "Ignite Blood IX"), 2);
+        tracker.OnEvent(new DamageEvent(T0.AddSeconds(6), Names.You, "A rat", 56, DamageKind.DamageOverTime, "Ignite Blood IX", null), 3);
+        tracker.Advance(T0.AddSeconds(60));
+        Assert.Empty(store.Get("(unknown zone)", "A rat").Spells);
+    }
+
     [Fact]
     public async Task Wiki_InstantLifetap_IsComparableAndReclassifiesExistingLandingsWithoutReplay()
     {

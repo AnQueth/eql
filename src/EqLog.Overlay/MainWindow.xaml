@@ -193,10 +193,10 @@
                     </DataGrid>
                 </DockPanel>
             </TabItem>
-            <TabItem x:Name="LootQuestsTab" Header="Loot quests">
-                <DockPanel Margin="6">
+            <!-- Hosted at runtime in the "Inventory & loot quests" overlay; the tab itself is removed on startup. -->
+            <TabItem x:Name="LootQuestsTab" Header="Loot quests" Visibility="Collapsed">
+                <DockPanel x:Name="LootQuestsContent" Margin="2">
                     <StackPanel DockPanel.Dock="Top">
-                        <TextBlock Text="LOOT &amp; QUESTS" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,8" />
                         <Expander Header="How inventory and ownership work" Foreground="{DynamicResource NightMuted}" Margin="0,0,0,8">
                             <TextBlock Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap" Margin="4,8"
                                        Text="All inventory sections and loot are looked up automatically on EQLWiki (only item names are sent). The export above Logs replaces counts when updated; run /outputfile inventory after sales or turn-ins. Collection and installed augment counts are shown separately, not assumed available for turn-ins. Newer loot adds to Owned; historical loot is unconfirmed. Quest references may include rewards." />
@@ -272,11 +272,18 @@
             <TabItem Header="Spell durations">
             <DockPanel Margin="4">
                 <TextBlock DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap"
-                           Text="Learned from 'worn off' messages; type an override in seconds. Timers start only for spells with a known duration. Clear an override to go back to the learned value." />
+                           Text="Learned from 'worn off' messages; type an override in seconds. Timers start only for checked spells with a known duration. Uncheck Track to hide a spell's timers (its duration is still learned). Clear an override to go back to the learned value." />
                 <DataGrid x:Name="DurationsGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
                           HeadersVisibility="Column" GridLinesVisibility="Horizontal"
                           CellEditEnding="Durations_CellEditEnding">
                     <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="Track" Width="46">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <CheckBox IsChecked="{Binding Tracked, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" Margin="0" Click="DurationTrack_Click" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                         <DataGridTextColumn Header="Spell" Binding="{Binding Spell}" IsReadOnly="True" Width="*" />
                         <DataGridTextColumn Header="Learned" Binding="{Binding Learned}" IsReadOnly="True" Width="80" />
                         <DataGridTextColumn Header="Samples" Binding="{Binding Samples}" IsReadOnly="True" Width="70" />
