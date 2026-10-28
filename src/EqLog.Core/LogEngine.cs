@@ -355,15 +355,9 @@ public sealed class LogEngine
         }
     }
 
-    public void SaveSpellDurations(string path, bool onlyIfDirty = true)
+    public Task SaveSpellDurationsAsync(string path, bool onlyIfDirty = true, CancellationToken ct = default)
     {
-        lock (_gate)
-        {
-            if (!onlyIfDirty || _timers.Store.IsDirty)
-            {
-                _timers.Store.Save(path);
-            }
-        }
+        return SnapshotStore.SaveAsync(_timers.Store, _gate, path, onlyIfDirty, ct);
     }
     public IReadOnlyList<SpawnCandidate> SpawnCandidates()
     {
@@ -408,15 +402,9 @@ public sealed class LogEngine
         }
     }
 
-    public void SaveSpawns(string path, bool onlyIfDirty = true)
+    public Task SaveSpawnsAsync(string path, bool onlyIfDirty = true, CancellationToken ct = default)
     {
-        lock (_gate)
-        {
-            if (!onlyIfDirty || _spawns.Store.IsDirty)
-            {
-                _spawns.Store.Save(path);
-            }
-        }
+        return SnapshotStore.SaveAsync(_spawns.Store, _gate, path, onlyIfDirty, ct);
     }
 
     private string MoteCharacter
@@ -427,14 +415,8 @@ public sealed class LogEngine
         }
     }
 
-    public void SaveMotes(string path, bool onlyIfDirty = true)
+    public Task SaveMotesAsync(string path, bool onlyIfDirty = true, CancellationToken ct = default)
     {
-        lock (_gate)
-        {
-            if (!onlyIfDirty || _motes.Store.IsDirty)
-            {
-                _motes.Store.Save(path);
-            }
-        }
+        return SnapshotStore.SaveAsync(_motes.Store, _gate, path, onlyIfDirty, ct);
     }
 }

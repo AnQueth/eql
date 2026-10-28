@@ -4,7 +4,7 @@
         Title="EverQuest Log Overlay" Height="720" Width="680" MinWidth="480" MinHeight="420"
         Background="{DynamicResource NightBackground}" Foreground="{DynamicResource NightText}" FontSize="13">
     <DockPanel x:Name="SettingsRoot" Margin="10">
-        <TabControl x:Name="Tabs" TabStripPlacement="Top" SelectionChanged="SkyTab_Selected">
+        <TabControl x:Name="Tabs" TabStripPlacement="Top">
             <TabItem Header="General">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="8">
@@ -15,7 +15,9 @@
         <GroupBox Header="Log file" DockPanel.Dock="Top">
             <StackPanel>
                 <DockPanel>
-                    <Button Content="Browse..." DockPanel.Dock="Right" Margin="6,0,0,0" Click="Browse_Click" />
+                    <Button Content="Browse..." DockPanel.Dock="Right" Margin="6,0,0,0" Click="Browse_Click" ToolTip="Pick a single eqlog file" />
+                    <Button x:Name="ChooseFolderButton" Content="Choose folder..." DockPanel.Dock="Right" Margin="6,0,0,0" Click="ChooseFolder_Click"
+                            ToolTip="Pick your EverQuest Logs folder (or the EverQuest install folder); the newest eqlog file in it is used" />
                     <TextBox x:Name="LogPathBox" IsReadOnly="True" VerticalContentAlignment="Center" />
                 </DockPanel>
                 <CheckBox x:Name="FollowNewestBox" Content="Switch automatically to the newest eqlog file in this folder (character changes)" Margin="0,6,0,0" Click="FollowNewest_Click" />
@@ -169,7 +171,18 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Mob" Binding="{Binding Mob}" IsReadOnly="True" Width="*" />
+                            <DataGridTemplateColumn Header="Mob" IsReadOnly="True" Width="*" SortMemberPath="Mob">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock TextTrimming="CharacterEllipsis" VerticalAlignment="Center">
+                                            <Hyperlink Tag="{Binding Mob}" Click="NpcWikiLink_Click"
+                                                       Foreground="{DynamicResource Pumpkin}" ToolTip="Open mob on EQLWiki">
+                                                <Run Text="{Binding Mob, Mode=OneWay}" />
+                                            </Hyperlink>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                             <DataGridTextColumn Header="Kills" Binding="{Binding Kills}" IsReadOnly="True" Width="45" />
                             <DataGridTextColumn Header="Last killed" Binding="{Binding LastKilled}" IsReadOnly="True" Width="80" />
                             <DataGridTextColumn Header="Learned" Binding="{Binding Learned}" IsReadOnly="True" Width="70" />
@@ -229,6 +242,9 @@
                                 <DataGridTextColumn Header="Owned" Binding="{Binding Owned}" Width="60" />
                                 <DataGridTextColumn Header="Carried" Binding="{Binding Carried}" IsReadOnly="True" />
                                 <DataGridTextColumn Header="Bank" Binding="{Binding Bank}" IsReadOnly="True" />
+                                <DataGridTextColumn Header="Hoard" Binding="{Binding Hoard}" IsReadOnly="True" />
+                                <DataGridTextColumn Header="Depot" Binding="{Binding Depot}" IsReadOnly="True" />
+                                <DataGridTextColumn Header="Other" Binding="{Binding OtherStorage}" IsReadOnly="True" />
                                 <DataGridTextColumn Header="Collection" Binding="{Binding Collection}" IsReadOnly="True" MinWidth="90" />
                                 <DataGridTextColumn Header="Installed" Binding="{Binding Installed}" IsReadOnly="True" MinWidth="80" />
                             </DataGrid.Columns>
@@ -237,28 +253,20 @@
                                       Background="{DynamicResource NightBorder}" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
                                       ToolTip="Drag to resize the inventory and quest lists" />
                         <TextBlock Grid.Row="3" Text="QUEST REFERENCES" Foreground="{DynamicResource NightMuted}" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,8" />
-                        <ListBox x:Name="QuestResults" Grid.Row="4" DisplayMemberPath="Title"
-                                 ToolTip="Select a quest, then choose Open selected quest. History is unconfirmed loot; Owned is editable. Carried includes equipped items." />
+                        <ListBox x:Name="QuestResults" Grid.Row="4" HorizontalContentAlignment="Stretch"
+                                 ToolTip="Click a quest name to open it on EQLWiki, or select a row for Complete / reopen. History is unconfirmed loot; Owned is editable. Carried includes equipped items.">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock TextTrimming="CharacterEllipsis">
+                                        <Hyperlink Tag="{Binding Url}" Click="UrlWikiLink_Click"
+                                                   Foreground="{DynamicResource Pumpkin}" ToolTip="Open quest on EQLWiki">
+                                            <Run Text="{Binding Title, Mode=OneWay}" />
+                                        </Hyperlink>
+                                    </TextBlock>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
                     </Grid>
-                </DockPanel>
-            </TabItem>
-            <TabItem x:Name="SkyTab" Header="Plane of Sky">
-                <DockPanel Margin="8">
-                    <StackPanel DockPanel.Dock="Top">
-                        <TextBlock Text="PLANE OF SKY" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" />
-                        <TextBlock Text="Class tests • rewards • runes • quest items" Foreground="{DynamicResource NightMuted}" Margin="0,2,0,8" />
-                        <TextBlock Text="Sky owned counts include carried/equipped, bank, collection items, and newer loot. Collection turn-in availability is unverified; installed augmentations and historical loot do not count as available. Shared items are not reserved per quest. Refresh /outputfile inventory after turn-ins. All items owned does not verify faction or other prerequisites."
-                                   Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap" Margin="0,0,0,8" />
-                        <DockPanel>
-                            <Button x:Name="SkyRefreshButton" Content="Refresh" DockPanel.Dock="Right" Click="SkyRefresh_Click" />
-                            <Button Content="Wiki" DockPanel.Dock="Right" Click="SkySource_Click" />
-                            <ComboBox x:Name="SkyClassBox" SelectionChanged="SkyClass_Changed" MinWidth="130" />
-                        </DockPanel>
-                        <TextBlock x:Name="SkyStatus" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap" Margin="0,6" />
-                    </StackPanel>
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <StackPanel x:Name="SkyCards" />
-                    </ScrollViewer>
                 </DockPanel>
             </TabItem>
             <TabItem Header="Spell durations">

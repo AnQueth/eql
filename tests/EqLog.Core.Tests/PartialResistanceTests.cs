@@ -154,23 +154,25 @@ public class PartialResistanceTests
     }
 
     [Fact]
-    public void Store_DamageHistoryAndBaseline_PersistAcrossRestart()
+    public async Task Store_DamageHistoryAndBaseline_PersistAcrossRestart()
     {
-        string path = Path.GetTempFileName();
+        string folder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(folder, "mob-resistances.json");
+        Directory.CreateDirectory(folder);
         try
         {
             var store = CreateStore();
             Learn(store, "Tester", "Conflagration X", 1000);
             store.Record("trial", 1, "Sky", "Target", "Conflagration X", false, T0, "Tester", 500);
-            store.Save(path);
-            var loaded = MobResistanceStore.Load(path);
+            await store.SaveAsync(path);
+            var loaded = await MobResistanceStore.LoadAsync(path);
             loaded.Record("trial", 1, "Sky", "Target", "Conflagration X", false, T0, "Tester", 500);
             Assert.Equal(1, Fire(loaded).EstimatedPartial);
             Assert.Equal(3, Fire(loaded).Landed);
         }
         finally
         {
-            File.Delete(path);
+            Directory.Delete(folder, recursive: true);
         }
     }
 

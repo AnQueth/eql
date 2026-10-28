@@ -8,7 +8,7 @@ public sealed class WikiRepository : IAsyncDisposable
     private readonly Dictionary<string, QuestLookupResult> _quests = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _retryAfter = new(StringComparer.OrdinalIgnoreCase);
     private readonly MobResistanceStore _mobs;
-    private readonly Action _saveMobs;
+    private readonly Func<Task> _saveMobs;
     private readonly CancellationTokenSource _stop = new();
     private readonly WikiRequestScheduler _scheduler;
     private readonly HttpClient _client;
@@ -40,7 +40,7 @@ public sealed class WikiRepository : IAsyncDisposable
         }
     }
 
-    public WikiRepository(HttpClient http, MobResistanceStore mobs, Action saveMobs,
+    public WikiRepository(HttpClient http, MobResistanceStore mobs, Func<Task> saveMobs,
         TimeSpan? interval = null, TimeSpan? maximumWait = null)
     {
         _mobs = mobs;
@@ -66,7 +66,7 @@ public sealed class WikiRepository : IAsyncDisposable
             }
             var result = await new MobWikiLookup(_client).FindMobAsync(mob, ct).ConfigureAwait(false);
             _mobs.SetWiki(mob, result);
-            _saveMobs();
+            await _saveMobs().ConfigureAwait(false);
             return result;
         }, token);
     }
@@ -87,7 +87,7 @@ public sealed class WikiRepository : IAsyncDisposable
             }
             var result = await new MobWikiLookup(_client).FindSpellAsync(spell, ct).ConfigureAwait(false);
             _mobs.SetSpell(result);
-            _saveMobs();
+            await _saveMobs().ConfigureAwait(false);
             return result;
         }, token);
     }
@@ -136,7 +136,7 @@ public sealed class WikiRepository : IAsyncDisposable
             var ct = operation.Cancellation.Token;
             lock (_gate)
             {
-                if (!operation.Force && _sky is not null && _sky.Quests.Count > 0 &&
+                if (!operation.Force && _sky is not null && _sky.Quests.Count > 0 && _sky.DropSources is not null &&
                     _sky.Quests.All(q => q.Requirements is not null && q.RuneLinks is not null && q.ItemLinks is not null) &&
                     DateTime.UtcNow - _sky.CheckedUtc < TimeSpan.FromDays(1))
                 {
@@ -186,7 +186,7 @@ public sealed class WikiRepository : IAsyncDisposable
         {
             await GetSpellAsync(spell, WikiPriority.Background, false, _stop.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (_stop.IsCancellationRequested)
+        catch (OperationCanceledException) when (_disposed)
         {
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or UnauthorizedAccessException or
@@ -251,19 +251,36 @@ public sealed class WikiRepository : IAsyncDisposable
         _context.Value = operation.Context;
         try
         {
-            operation.Cancellation.Token.ThrowIfCancellationRequested();
-            var result = await fetch(operation).ConfigureAwait(false);
-            _scheduler.RecordCompletion(key, operation.CacheHit);
-            operation.Completion.TrySetResult(result!);
-        }
-        catch (OperationCanceledException ex)
-        {
-            operation.Completion.TrySetCanceled(ex.CancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _scheduler.RecordFailure(key, ex);
-            operation.Completion.TrySetException(ex);
+            if (operation.Cancellation.IsCancellationRequested)
+            {
+                operation.Completion.TrySetCanceled(operation.Cancellation.Token);
+                return;
+            }
+            // Inspect the outcome instead of rethrowing, so cancellation does not raise another exception here.
+            var fetching = fetch(operation);
+            await ((Task)fetching).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            if (fetching.IsCompletedSuccessfully)
+            {
+                _scheduler.RecordCompletion(key, operation.CacheHit);
+                operation.Completion.TrySetResult(fetching.Result!);
+            }
+            else if (fetching.IsCanceled)
+            {
+                operation.Completion.TrySetCanceled(operation.Cancellation.Token);
+            }
+            else
+            {
+                var error = fetching.Exception!.InnerException ?? fetching.Exception;
+                if (error is OperationCanceledException canceled)
+                {
+                    operation.Completion.TrySetCanceled(canceled.CancellationToken);
+                }
+                else
+                {
+                    _scheduler.RecordFailure(key, error);
+                    operation.Completion.TrySetException(error);
+                }
+            }
         }
         finally
         {
@@ -285,7 +302,7 @@ public sealed class WikiRepository : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        Task[] workers;
+        Operation[] operations;
         lock (_gate)
         {
             if (_disposed)
@@ -293,11 +310,21 @@ public sealed class WikiRepository : IAsyncDisposable
                 return;
             }
             _disposed = true;
-            workers = _operations.Values.Select(o => o.Worker).ToArray();
+            operations = _operations.Values.ToArray();
         }
-        await _stop.CancelAsync().ConfigureAwait(false);
-        await Task.WhenAll(workers).ConfigureAwait(false);
+        // Release callers immediately. Queued and in-flight HTTP is abandoned rather than canceled, because a
+        // cancellation would be rethrown through every lookup layer for each pending request.
+        foreach (var operation in operations)
+        {
+            operation.Completion.TrySetCanceled();
+        }
         await _scheduler.DisposeAsync().ConfigureAwait(false);
+        await _stop.CancelAsync().ConfigureAwait(false);
+        foreach (var operation in operations)
+        {
+            // Abandoned work never resumes, so only finish workers that are parsing or saving.
+            await Task.WhenAny(operation.Worker, operation.Context.Abandoned).ConfigureAwait(false);
+        }
         _client.Dispose();
     }
 

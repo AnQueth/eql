@@ -22,15 +22,14 @@ public partial class MainWindow
         _inventoryReading = true;
         try
         {
-            var file = new FileInfo(path);
-            if (!file.Exists)
+            // File metadata has no async API; keep it off the UI thread.
+            if (await Task.Run(() => Stamp(path)) is not { } stamp)
             {
                 InventoryStatus.Text = $"Waiting for {path}. Create/update it in game with /outputfile inventory.";
                 _inventoryObserved = null;
                 _inventoryLoaded = null;
                 return;
             }
-            var stamp = (Path: path, Size: file.Length, Written: file.LastWriteTimeUtc);
             if (_inventoryLoaded == stamp)
             {
                 return;
@@ -44,8 +43,7 @@ public partial class MainWindow
             }
             string text = await File.ReadAllTextAsync(path, _wikiCts.Token);
             var items = InventoryExport.Parse(text);
-            file.Refresh();
-            if (!file.Exists || file.Length != stamp.Size || file.LastWriteTimeUtc != stamp.Written || _currentFile != log)
+            if (await Task.Run(() => Stamp(path)) != stamp || _currentFile != log)
             {
                 return;
             }
@@ -59,10 +57,14 @@ public partial class MainWindow
             _questDirty = true;
             _inventoryLoaded = stamp;
             QuestOwnedGrid.Items.Refresh();
+            var unknown = InventoryExport.UnknownLocations(items);
+            string sections = unknown.Count == 0
+                ? "All sections imported."
+                : $"Unrecognised locations counted as Other: {string.Join(", ", unknown)}.";
             InventoryStatus.Text = $"Inventory updated {stamp.Written.ToLocalTime():g}: {items.Count:N0} nonempty entries; " +
                 $"{items.Count(i => i.Collection):N0} collection entries, {items.Count(i => i.Installed):N0} installed augment entries. " +
-                $"All sections imported. Monitoring {path}";
-            SaveQuestInventory();
+                $"{sections} Monitoring {path}";
+            await SaveQuestInventoryAsync();
         }
         catch (OperationCanceledException) when (_wikiCts.IsCancellationRequested) { }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException)
@@ -73,5 +75,11 @@ public partial class MainWindow
         {
             _inventoryReading = false;
         }
+    }
+
+    private static (string Path, long Size, DateTime Written)? Stamp(string path)
+    {
+        var file = new FileInfo(path);
+        return file.Exists ? (path, file.Length, file.LastWriteTimeUtc) : null;
     }
 }

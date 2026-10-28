@@ -33,8 +33,12 @@ public sealed class DockWindow : Window
     private const string PanelDragFormat = "EqLogOverlay.DockPanel";
     private Border? _dropPreview;
     private string? _draggedKey;
+    private Dictionary<Grid, Rect>? _dragOrigins;
+    private Point? _lastPreviewTarget;
     private bool _dropCommitted;
     private Vector _dragOffset;
+    private string? _anchorKey;
+    private bool _splitterDragging;
 
     public DockWindow(DockWindowSettings settings)
     {
@@ -94,7 +98,7 @@ public sealed class DockWindow : Window
         bar.Children.Add(topmost);
         var dragHint = new TextBlock
         {
-            Text = "Drag panels anywhere; resizing moves overlapping panels into nearby clear space.",
+            Text = "Drag panels to reorder them; panels reflow to fill empty space.",
             VerticalAlignment = VerticalAlignment.Center,
         };
         dragHint.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
@@ -120,8 +124,16 @@ public sealed class DockWindow : Window
         var canvasArea = new Grid { Children = { tilesArea, _empty } };
         _empty.IsHitTestVisible = false;
         _empty.VerticalAlignment = VerticalAlignment.Top;
-        tilesArea.SizeChanged += (_, _) => UpdateCanvasSize();
-        tilesArea.DragOver += (_, e) =>
+        tilesArea.SizeChanged += (_, e) =>
+        {
+            // The settings splitter only resizes the viewport; panels keep their places and scroll instead.
+            if (e.WidthChanged && _dropPreview is null && !_splitterDragging)
+            {
+                CompactLayout();
+            }
+            UpdateCanvasSize();
+        };
+        tilesArea.PreviewDragOver += (_, e) =>
         {
             bool valid = e.Data.GetData(PanelDragFormat) is string key && key == _draggedKey;
             e.Effects = valid
@@ -151,7 +163,7 @@ public sealed class DockWindow : Window
             }
             e.Handled = true;
         };
-        tilesArea.Drop += (_, e) =>
+        tilesArea.PreviewDrop += (_, e) =>
         {
             if (e.Data.GetData(PanelDragFormat) is string source && source == _draggedKey)
             {
@@ -169,6 +181,18 @@ public sealed class DockWindow : Window
             ToolTip = "Drag to resize the settings panel",
         };
         _splitter.SetResourceReference(BackgroundProperty, "NightBorder");
+        _splitter.DragStarted += (_, _) =>
+        {
+            _splitterDragging = true;
+        };
+        _splitter.DragCompleted += (_, _) =>
+        {
+            // Layout passes for the final width run before this flag is cleared.
+            Dispatcher.BeginInvoke(() =>
+            {
+                _splitterDragging = false;
+            }, System.Windows.Threading.DispatcherPriority.Background);
+        };
 
         var body = new Grid();
         body.ColumnDefinitions.Add(_sideColumn);
@@ -274,17 +298,15 @@ public sealed class DockWindow : Window
         var grip = MakeGrip();
         grip.DragDelta += (_, e) =>
         {
-            double previousWidth = tile.Width;
-            double previousHeight = tile.Height;
             tile.Width = Math.Max(MinTileWidth, tile.Width + e.HorizontalChange);
             tile.Height = Math.Max(MinTileHeight, tile.Height + e.VerticalChange);
             placement.DockWidth = tile.Width;
             placement.DockHeight = tile.Height;
-            CloseResizeGaps(tile, previousWidth, previousHeight);
-            ResolveResizeOverlaps(tile);
-            UpdateCanvasSize();
+            _anchorKey = panel.Key;
+            CompactLayout();
+            ScrollIntoView(tile);
         };
-        grip.DragCompleted += (_, _) => UpdateCanvasSize();
+        grip.DragCompleted += (_, _) => CompactLayout();
         tile.Children.Add(grip);
 
         tile.PreviewMouseLeftButtonDown += (_, e) =>
@@ -304,6 +326,9 @@ public sealed class DockWindow : Window
                 _dragStart = null;
                 _draggedKey = panel.Key;
                 _dropCommitted = false;
+                _lastPreviewTarget = null;
+                _dragOrigins = _byKey.Values.ToDictionary(t => t,
+                    t => new Rect(Canvas.GetLeft(t), Canvas.GetTop(t), t.Width, t.Height));
                 _dragOffset = start - tile.TranslatePoint(new Point(), this);
                 _dropPreview = new Border
                 {
@@ -338,7 +363,7 @@ public sealed class DockWindow : Window
                 }
                 finally
                 {
-                    FinishPanelDrag(tile, placement);
+                    FinishPanelDrag(tile);
                 }
             }
         };
@@ -348,7 +373,7 @@ public sealed class DockWindow : Window
         _tiles.Children.Add(tile);
         BringToFront(tile);
         UpdateEmpty();
-        UpdateCanvasSize();
+        CompactLayout();
     }
 
     public void RemovePanel(string key)
@@ -358,8 +383,12 @@ public sealed class DockWindow : Window
             _placements.Remove(key);
             tile.Children.Clear();
             _tiles.Children.Remove(tile);
+            if (_anchorKey == key)
+            {
+                _anchorKey = null;
+            }
             UpdateEmpty();
-            UpdateCanvasSize();
+            CompactLayout();
         }
     }
 
@@ -374,120 +403,133 @@ public sealed class DockWindow : Window
         Panel.SetZIndex(tile, index);
     }
 
-    private void CloseResizeGaps(Grid resized, double previousWidth, double previousHeight)
+    private const double TileGap = 8;
+    private const double CanvasMargin = 4;
+
+    private double AvailableWidth()
     {
-        var original = _byKey.Values.ToDictionary(t => t,
-            t => new Rect(Canvas.GetLeft(t), Canvas.GetTop(t), t.Width, t.Height));
-        original[resized] = new Rect(Canvas.GetLeft(resized), Canvas.GetTop(resized),
-            previousWidth, previousHeight);
-        PullNeighbors(horizontal: true, resized.Width - previousWidth);
-        PullNeighbors(horizontal: false, resized.Height - previousHeight);
-
-        void PullNeighbors(bool horizontal, double change)
-        {
-            if (change >= 0)
-            {
-                return;
-            }
-
-            var connected = new HashSet<Grid> { resized };
-            var queue = new Queue<Grid>();
-            queue.Enqueue(resized);
-            while (queue.TryDequeue(out var current))
-            {
-                var source = original[current];
-                foreach (var (candidate, bounds) in original)
-                {
-                    if (connected.Contains(candidate))
-                    {
-                        continue;
-                    }
-
-                    double gap = horizontal ? bounds.Left - source.Right : bounds.Top - source.Bottom;
-                    bool sharesSpan = horizontal
-                        ? bounds.Top < source.Bottom && bounds.Bottom > source.Top
-                        : bounds.Left < source.Right && bounds.Right > source.Left;
-                    if (gap >= -0.5 && gap <= 8.5 && sharesSpan)
-                    {
-                        connected.Add(candidate);
-                        queue.Enqueue(candidate);
-                    }
-                }
-            }
-
-            foreach (var neighbor in connected.Where(t => t != resized))
-            {
-                var placement = _placements[(string)neighbor.Tag];
-                if (horizontal)
-                {
-                    double left = Math.Max(4, Canvas.GetLeft(neighbor) + change);
-                    Canvas.SetLeft(neighbor, left);
-                    placement.DockLeft = left;
-                }
-                else
-                {
-                    double top = Math.Max(4, Canvas.GetTop(neighbor) + change);
-                    Canvas.SetTop(neighbor, top);
-                    placement.DockTop = top;
-                }
-            }
-        }
+        return _tilesArea.ViewportWidth > 0 ? _tilesArea.ViewportWidth :
+            Math.Max(MinTileWidth, Width - (Settings.SidePanelOpen ? _sideColumn.Width.Value : 0) - 40);
     }
 
-    private void ResolveResizeOverlaps(Grid resized)
+    /// <summary>
+    /// Reflows the docked panels with vertical "gravity": every panel keeps its column (left edge), panels the
+    /// anchor (the panel most recently dropped or resized, which stays exactly where the user put it) would cover
+    /// are pushed down below it, and every panel then floats straight up into any empty space above it.
+    /// Panels that are not displaced and have nothing empty above them never move.
+    /// </summary>
+    private void CompactLayout()
     {
-        const double gap = 8;
-        Rect Bounds(Grid tile)
+        if (_byKey.Count == 0)
         {
-            return new Rect(Canvas.GetLeft(tile), Canvas.GetTop(tile), tile.Width, tile.Height);
+            return;
+        }
+        var bounds = _byKey.Values.ToDictionary(t => t,
+            t => new Rect(Canvas.GetLeft(t), Canvas.GetTop(t), t.Width, t.Height));
+        ApplyLayout(bounds, _anchorKey, persist: true);
+    }
+
+    /// <summary>Packs <paramref name="bounds"/> around the anchor and moves the tiles; returns the anchor's final rect.</summary>
+    private Rect? ApplyLayout(Dictionary<Grid, Rect> bounds, string? anchorKey, bool persist)
+    {
+        (string, Rect)? anchor = null;
+        if (anchorKey is not null && _byKey.TryGetValue(anchorKey, out var pinned))
+        {
+            var rect = bounds[pinned];
+            rect.X = Math.Max(CanvasMargin, rect.X);
+            rect.Y = Math.Max(CanvasMargin, rect.Y);
+            bounds[pinned] = rect;
+            anchor = (anchorKey, rect);
         }
 
-        bool Overlaps(Rect first, Rect second)
-        {
-            return first.Left < second.Right + gap && first.Right + gap > second.Left &&
-                first.Top < second.Bottom + gap && first.Bottom + gap > second.Top;
-        }
+        var order = bounds.Keys
+            .OrderBy(t => bounds[t].Top)
+            .ThenBy(t => bounds[t].Left)
+            .ThenBy(t => (string)t.Tag, StringComparer.Ordinal)
+            .Select(t => ((string)t.Tag, bounds[t]))
+            .ToList();
+        var placed = Pack(order, anchor);
 
-        var anchor = Bounds(resized);
-        var placed = new List<Rect> { anchor };
-        // Keep unaffected neighbors in place before finding space for displaced panels.
-        var others = _byKey.Values.Where(t => t != resized)
-            .OrderBy(t => Overlaps(Bounds(t), anchor)).ToArray();
-        foreach (var tile in others)
+        foreach (var tile in _byKey.Values)
         {
-            var original = Bounds(tile);
-            if (!placed.Any(r => Overlaps(original, r)))
+            var rect = placed[(string)tile.Tag];
+            if (Canvas.GetLeft(tile) != rect.Left || Canvas.GetTop(tile) != rect.Top)
             {
-                placed.Add(original);
+                Canvas.SetLeft(tile, rect.Left);
+                Canvas.SetTop(tile, rect.Top);
+            }
+            if (persist)
+            {
+                var placement = _placements[(string)tile.Tag];
+                placement.DockLeft = rect.Left;
+                placement.DockTop = rect.Top;
+            }
+        }
+        UpdateCanvasSize();
+        return anchor?.Item2;
+    }
+    /// <summary>Gravity compaction; see <see cref="CompactLayout"/>. Panels never move sideways; wide layouts scroll.</summary>
+    internal static Dictionary<string, Rect> Pack(IReadOnlyList<(string Key, Rect Bounds)> order,
+        (string Key, Rect Bounds)? anchor)
+    {
+        static bool Overlaps(Rect first, Rect second)
+        {
+            return first.Left < second.Right + TileGap && first.Right + TileGap > second.Left &&
+                first.Top < second.Bottom + TileGap && first.Bottom + TileGap > second.Top;
+        }
+
+        var result = new Dictionary<string, Rect>();
+        var placed = new List<Rect>();
+        if (anchor is { } pin)
+        {
+            result[pin.Key] = pin.Bounds;
+            placed.Add(pin.Bounds);
+        }
+
+        foreach (var (key, bounds) in order)
+        {
+            if (result.ContainsKey(key))
+            {
                 continue;
             }
 
-            var xs = placed.SelectMany(r => new[] { r.Left - tile.Width - gap, r.Right + gap })
-                .Append(original.Left).Append(4).Where(x => x >= 4).Distinct().ToArray();
-            var ys = placed.SelectMany(r => new[] { r.Top - tile.Height - gap, r.Bottom + gap })
-                .Append(original.Top).Append(4).Where(y => y >= 4).Distinct().ToArray();
-            var destination = (from x in xs
-                               from y in ys
-                               let candidate = new Rect(x, y, tile.Width, tile.Height)
-                               where !placed.Any(r => Overlaps(candidate, r))
-                               orderby (x - original.Left) * (x - original.Left) +
-                                   (y - original.Top) * (y - original.Top), y, x
-                               select candidate).First();
-            Canvas.SetLeft(tile, destination.Left);
-            Canvas.SetTop(tile, destination.Top);
-            var placement = _placements[(string)tile.Tag];
-            placement.DockLeft = destination.Left;
-            placement.DockTop = destination.Top;
-            placed.Add(destination);
-        }
-    }
+            var rect = bounds;
+            rect.X = Math.Max(CanvasMargin, rect.X);
+            rect.Y = Math.Max(CanvasMargin, rect.Y);
 
+            // Float up until something in the same column (that started above) blocks it.
+            var column = rect;
+            rect.Y = placed
+                .Where(r => r.Left < column.Right + TileGap && r.Right + TileGap > column.Left && r.Top <= column.Top)
+                .Select(r => r.Bottom + TileGap)
+                .Append(CanvasMargin)
+                .Max();
+
+            // Then push down past anything it still covers (e.g. the anchor dropped on top of it).
+            bool moved = true;
+            while (moved)
+            {
+                moved = false;
+                foreach (var blocker in placed)
+                {
+                    if (Overlaps(rect, blocker))
+                    {
+                        rect.Y = blocker.Bottom + TileGap;
+                        moved = true;
+                    }
+                }
+            }
+
+            result[key] = rect;
+            placed.Add(rect);
+        }
+        return result;
+    }
     private Point FindEmptyPosition(double width, double height)
     {
         var bounds = _byKey.Values.Select(t =>
             new Rect(Canvas.GetLeft(t), Canvas.GetTop(t), t.Width + 8, t.Height + 8)).ToArray();
-        double available = _tilesArea.ViewportWidth > 0 ? _tilesArea.ViewportWidth :
-            Math.Max(MinTileWidth, Width - (Settings.SidePanelOpen ? _sideColumn.Width.Value : 0) - 40);
+        double available = AvailableWidth();
         var xs = bounds.Select(r => r.Right).Append(4).Distinct().Order().ToArray();
         var ys = bounds.Select(r => r.Bottom).Append(4).Distinct().Order();
         foreach (double y in ys)
@@ -517,12 +559,31 @@ public sealed class DockWindow : Window
             return;
         }
 
-        Canvas.SetLeft(_dropPreview, Math.Max(4, pointer.X - _dragOffset.X));
-        Canvas.SetTop(_dropPreview, Math.Max(4, pointer.Y - _dragOffset.Y));
+        var target = new Point(Math.Max(CanvasMargin, pointer.X - _dragOffset.X),
+            Math.Max(CanvasMargin, pointer.Y - _dragOffset.Y));
+        if (_draggedKey is null || _dragOrigins is null || !_byKey.TryGetValue(_draggedKey, out var dragged))
+        {
+            Canvas.SetLeft(_dropPreview, target.X);
+            Canvas.SetTop(_dropPreview, target.Y);
+            UpdateCanvasSize();
+            return;
+        }
+        if (_lastPreviewTarget == target)
+        {
+            return;
+        }
+        _lastPreviewTarget = target;
+
+        // Live preview: reflow from the pre-drag layout as if the panel were dropped here.
+        var bounds = _dragOrigins.ToDictionary(o => o.Key, o => o.Value);
+        bounds[dragged] = new Rect(target, bounds[dragged].Size);
+        var landed = ApplyLayout(bounds, _draggedKey, persist: false) ?? bounds[dragged];
+        Canvas.SetLeft(_dropPreview, landed.Left);
+        Canvas.SetTop(_dropPreview, landed.Top);
         UpdateCanvasSize();
     }
 
-    private void FinishPanelDrag(Grid tile, OverlayPlacement placement)
+    private void FinishPanelDrag(Grid tile)
     {
         if (_dropPreview is null)
         {
@@ -531,16 +592,41 @@ public sealed class DockWindow : Window
 
         if (_dropCommitted)
         {
-            placement.DockLeft = Canvas.GetLeft(_dropPreview);
-            placement.DockTop = Canvas.GetTop(_dropPreview);
-            Canvas.SetLeft(tile, placement.DockLeft.Value);
-            Canvas.SetTop(tile, placement.DockTop.Value);
+            Canvas.SetLeft(tile, Canvas.GetLeft(_dropPreview));
+            Canvas.SetTop(tile, Canvas.GetTop(_dropPreview));
+            _anchorKey = (string)tile.Tag;
+        }
+        else if (_dragOrigins is not null)
+        {
+            // Canceled: put every panel the preview moved back where it was.
+            foreach (var (other, rect) in _dragOrigins)
+            {
+                Canvas.SetLeft(other, rect.Left);
+                Canvas.SetTop(other, rect.Top);
+            }
         }
         _tiles.Children.Remove(_dropPreview);
         tile.Opacity = 1;
         _dropPreview = null;
         _draggedKey = null;
-        UpdateCanvasSize();
+        _dragOrigins = null;
+        _lastPreviewTarget = null;
+        CompactLayout();
+    }
+
+    /// <summary>Scrolls so a growing panel's bottom-right grip stays in view (the canvas extends instead of shifting panels).</summary>
+    private void ScrollIntoView(Grid tile)
+    {
+        double right = Canvas.GetLeft(tile) + tile.Width + CanvasMargin;
+        double bottom = Canvas.GetTop(tile) + tile.Height + CanvasMargin;
+        if (right > _tilesArea.HorizontalOffset + _tilesArea.ViewportWidth)
+        {
+            _tilesArea.ScrollToHorizontalOffset(right - _tilesArea.ViewportWidth);
+        }
+        if (bottom > _tilesArea.VerticalOffset + _tilesArea.ViewportHeight)
+        {
+            _tilesArea.ScrollToVerticalOffset(bottom - _tilesArea.ViewportHeight);
+        }
     }
 
     private void UpdateCanvasSize()

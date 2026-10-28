@@ -8,7 +8,7 @@ public sealed record SpellDurationInfo(string Spell, double? LearnedSeconds, int
 /// Spell durations learned by measuring the time between casting a spell and seeing
 /// "Your X spell has worn off of Y.", plus user overrides. Not thread-safe; the engine serializes access.
 /// </summary>
-public sealed class SpellDurationStore
+public sealed class SpellDurationStore : ISnapshotStore<SpellDurationStore.Dto>
 {
     private const int MaxSamples = 25;
     private const double Percentile = 0.8;
@@ -114,7 +114,7 @@ public sealed class SpellDurationStore
         return sorted[idx];
     }
 
-    public static SpellDurationStore Load(string path)
+    public static async Task<SpellDurationStore> LoadAsync(string path, CancellationToken ct = default)
     {
         var store = new SpellDurationStore();
         if (!File.Exists(path))
@@ -124,7 +124,7 @@ public sealed class SpellDurationStore
 
         try
         {
-            var dto = JsonSerializer.Deserialize<Dto>(File.ReadAllText(path));
+            var dto = await AtomicFile.ReadJsonAsync<Dto>(path, ct: ct).ConfigureAwait(false);
             if (dto is not null)
             {
                 foreach (var kv in dto.Samples ?? [])
@@ -146,15 +146,36 @@ public sealed class SpellDurationStore
         return store;
     }
 
-    public void Save(string path)
+    /// <summary>Saves without locking; use only when nothing else is changing the store.</summary>
+    public Task SaveAsync(string path, CancellationToken ct = default)
     {
-        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
-        var dto = new Dto { Samples = new(_samples), Overrides = new(_overrides) };
-        AtomicFile.WriteAllText(path, JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true }));
-        IsDirty = false;
+        return SnapshotStore.SaveAsync(this, null, path, onlyIfDirty: false, ct);
     }
 
-    private sealed class Dto
+    SemaphoreSlim ISnapshotStore<Dto>.SaveGate { get; } = new(1, 1);
+
+    Dto? ISnapshotStore<Dto>.TakeSnapshot(bool onlyIfDirty)
+    {
+        if (onlyIfDirty && !IsDirty)
+        {
+            return null;
+        }
+        // Samples are immutable records, so copying the lists is enough to detach the snapshot.
+        var dto = new Dto
+        {
+            Samples = _samples.ToDictionary(kv => kv.Key, kv => kv.Value.ToList(), StringComparer.OrdinalIgnoreCase),
+            Overrides = new(_overrides, StringComparer.OrdinalIgnoreCase),
+        };
+        IsDirty = false;
+        return dto;
+    }
+
+    void ISnapshotStore<Dto>.MarkDirty()
+    {
+        IsDirty = true;
+    }
+
+    internal sealed class Dto
     {
         public Dictionary<string, List<Sample>>? Samples
         {

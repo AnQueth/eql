@@ -175,7 +175,7 @@ public class EngineTests
     }
 
     [Fact]
-    public void ReReadingHistoryDoesNotDuplicateLearnedSamples()
+    public async Task ReReadingHistoryDoesNotDuplicateLearnedSamples()
     {
         string[] lines =
         [
@@ -194,8 +194,8 @@ public class EngineTests
         string path = Path.Combine(Path.GetTempPath(), $"durations_{Guid.NewGuid():N}.json");
         try
         {
-            store.Save(path);
-            var reloaded = SpellDurationStore.Load(path);
+            await store.SaveAsync(path);
+            var reloaded = await SpellDurationStore.LoadAsync(path);
             new LogEngine(reloaded).ProcessLines(lines);
 
             var info = Assert.Single(reloaded.List());

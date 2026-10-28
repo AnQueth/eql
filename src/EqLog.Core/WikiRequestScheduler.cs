@@ -15,6 +15,29 @@ internal sealed class WikiRequestContext(WikiPriority priority, string name = "W
 {
     public string Name { get; } = name;
     private int _priority = (int)priority;
+    private readonly TaskCompletionSource _abandoned = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>Completes when shutdown dropped this context's HTTP work; its requests will never complete.</summary>
+    public Task Abandoned
+    {
+        get
+        {
+            return _abandoned.Task;
+        }
+    }
+
+    public bool IsAbandoned
+    {
+        get
+        {
+            return _abandoned.Task.IsCompleted;
+        }
+    }
+
+    public void Abandon()
+    {
+        _abandoned.TrySetResult();
+    }
 
     public WikiPriority Priority
     {
@@ -147,24 +170,35 @@ internal sealed class WikiRequestScheduler : IAsyncDisposable
     public async Task<HttpResponseMessage> SendAsync(HttpRequestMessage message, WikiRequestContext context,
         CancellationToken token)
     {
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, _stop.Token);
         var activity = new Activity(Interlocked.Increment(ref _activitySequence), context,
             message.RequestUri?.ToString() ?? "");
         lock (_gate)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            _activities.Add(activity.Id, activity);
+            if (_disposed)
+            {
+                // Shutting down: never complete, so cancellation does not unwind through every caller layer.
+                context.Abandon();
+            }
+            else
+            {
+                _activities.Add(activity.Id, activity);
+            }
+        }
+        if (context.IsAbandoned)
+        {
+            return await new TaskCompletionSource<HttpResponseMessage>().Task.ConfigureAwait(false);
         }
         try
         {
             // Backoff happens outside the HTTP lane; every retry reenters the priority queue.
+            // Shutdown is not linked here: the lane abandons queued and in-flight work instead of canceling it.
             var response = await _retry.ExecuteAsync(ct => new ValueTask<HttpResponseMessage>(
-                SendAttemptAsync(message, context, activity, ct)), linked.Token).ConfigureAwait(false);
+                SendAttemptAsync(message, context, activity, ct)), token).ConfigureAwait(false);
             RecordEvent(context.Name, $"HTTP {(int)response.StatusCode} {response.ReasonPhrase} " +
                 $"(attempt {activity.Attempt}/4)", !response.IsSuccessStatusCode);
             return response;
         }
-        catch (OperationCanceledException) when (linked.IsCancellationRequested)
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             RecordEvent(context.Name, "Canceled", false);
             throw;
@@ -190,13 +224,26 @@ internal sealed class WikiRequestScheduler : IAsyncDisposable
         var request = new Request(message, context, activity, token, Interlocked.Increment(ref _sequence));
         lock (_gate)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            activity.State = "Queued / pacing";
-            activity.Attempt++;
-            _pending.Enqueue(request, ((int)context.Priority, request.Sequence));
-            _ready.Release();
+            if (_disposed)
+            {
+                // Shutting down: never complete, so cancellation does not unwind through every caller layer.
+                context.Abandon();
+            }
+            else
+            {
+                activity.State = "Queued / pacing";
+                activity.Attempt++;
+                _pending.Enqueue(request, ((int)context.Priority, request.Sequence));
+                _ready.Release();
+            }
         }
-        using var registration = token.Register(() => request.Completion.TrySetCanceled(token));
+        using var registration = token.Register(() =>
+        {
+            if (!context.IsAbandoned)
+            {
+                request.Completion.TrySetCanceled(token);
+            }
+        });
         return await request.Completion.Task.ConfigureAwait(false);
     }
 
@@ -207,12 +254,16 @@ internal sealed class WikiRequestScheduler : IAsyncDisposable
         {
             while (true)
             {
-                await _ready.WaitAsync(_stop.Token).ConfigureAwait(false);
+                await ((Task)_ready.WaitAsync(_stop.Token)).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
                 TimeSpan delay;
-                while ((delay = next - DateTime.UtcNow) > TimeSpan.Zero)
+                while (!_stop.IsCancellationRequested && (delay = next - DateTime.UtcNow) > TimeSpan.Zero)
                 {
                     await Task.Delay(delay < TimeSpan.FromMilliseconds(1) ? TimeSpan.FromMilliseconds(1) : delay,
-                        _stop.Token).ConfigureAwait(false);
+                        _stop.Token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+                }
+                if (_stop.IsCancellationRequested)
+                {
+                    break;
                 }
                 Request request;
                 bool servedFairness;
@@ -268,6 +319,10 @@ internal sealed class WikiRequestScheduler : IAsyncDisposable
                         response.Dispose();
                     }
                 }
+                catch (OperationCanceledException) when (_stop.IsCancellationRequested)
+                {
+                    request.Context.Abandon();
+                }
                 catch (OperationCanceledException) when (linked.IsCancellationRequested)
                 {
                     request.Completion.TrySetCanceled(linked.Token);
@@ -297,7 +352,7 @@ internal sealed class WikiRequestScheduler : IAsyncDisposable
             {
                 while (_pending.TryDequeue(out var pending, out _))
                 {
-                    pending.Completion.TrySetCanceled(_stop.Token);
+                    pending.Context.Abandon();
                 }
             }
         }

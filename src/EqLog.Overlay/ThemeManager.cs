@@ -15,9 +15,9 @@ public static class ThemeManager
         }
     }
 
-    public static ThemePalette Load(string path)
+    public static async Task<ThemePalette> LoadAsync(string path, CancellationToken ct = default)
     {
-        return ThemePalette.Parse(File.ReadAllText(path));
+        return ThemePalette.Parse(await File.ReadAllTextAsync(path, ct).ConfigureAwait(false));
     }
 
     public static void Apply(ThemePalette theme)

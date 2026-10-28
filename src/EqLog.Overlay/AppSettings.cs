@@ -75,6 +75,11 @@ public sealed class OverlayPlacement
     {
         get; set;
     }
+
+    public OverlayPlacement Clone()
+    {
+        return (OverlayPlacement)MemberwiseClone();
+    }
 }
 
 public sealed class DockWindowSettings
@@ -120,6 +125,13 @@ public sealed class DockWindowSettings
 
     /// <summary>Tile order by overlay key.</summary>
     public List<string> Order { get; set; } = [];
+
+    public DockWindowSettings Clone()
+    {
+        var copy = (DockWindowSettings)MemberwiseClone();
+        copy.Order = Order is null ? null! : [.. Order];
+        return copy;
+    }
 }
 
 public sealed class AppSettings
@@ -181,6 +193,14 @@ public sealed class AppSettings
         get; set;
     }
     public string SkyClass { get; set; } = "All classes";
+    public int SkyView
+    {
+        get; set;
+    }
+    public string SkyFilter { get; set; } = "";
+
+    /// <summary>Watched Plane of Sky quests as "Class|Quest name" keys; may span classes.</summary>
+    public List<string> SkyWatched { get; set; } = [];
     public bool QuestRecentFirst { get; set; } = true;
     public string QuestFilter { get; set; } = "";
     public int LootGrouping
@@ -205,13 +225,15 @@ public sealed class AppSettings
     /// <summary>Custom alerts. They fire only for lines written while the app is following the log, never for history.</summary>
     public List<AlertTrigger> Triggers { get; set; } = AlertTrigger.Defaults();
 
-    public static AppSettings Load()
+    public static async Task<AppSettings> LoadAsync(CancellationToken ct = default)
     {
         try
         {
             if (File.Exists(SettingsPath))
             {
-                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath), Json) ?? new AppSettings();
+                await using var stream = EqLog.Core.AtomicFile.OpenRead(SettingsPath);
+                return await JsonSerializer.DeserializeAsync<AppSettings>(stream, Json, ct).ConfigureAwait(false)
+                    ?? new AppSettings();
             }
         }
         catch (Exception ex) when (ex is JsonException or IOException)
@@ -222,17 +244,57 @@ public sealed class AppSettings
         return new AppSettings();
     }
 
-    private string? _lastSaved;
+    private byte[]? _lastSavedHash;
+    private long _saveSequence;
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
 
-    public void Save()
+    /// <summary>
+    /// Takes a detached snapshot now (call on the UI thread, which owns the settings), then streams it to disk
+    /// off the UI thread. Unchanged content is detected by hash, so neither the JSON nor the last save is kept in memory.
+    /// Writes are ordered; a save superseded by a newer one while waiting is skipped.
+    /// </summary>
+    public async Task SaveAsync(CancellationToken ct = default)
     {
-        string json = JsonSerializer.Serialize(this, Json);
-        if (json == _lastSaved && File.Exists(SettingsPath))
+        AppSettings snapshot = Snapshot();
+        long sequence = Interlocked.Increment(ref _saveSequence);
+        await _saveGate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
-            return;
-        }
+            if (sequence != Interlocked.Read(ref _saveSequence))
+            {
+                return;
+            }
 
-        EqLog.Core.AtomicFile.WriteAllText(SettingsPath, json);
-        _lastSaved = json;
+            byte[] hash = EqLog.Core.AtomicFile.HashJson(snapshot, Json);
+            if (_lastSavedHash is not null && hash.AsSpan().SequenceEqual(_lastSavedHash) && File.Exists(SettingsPath))
+            {
+                return;
+            }
+
+            await EqLog.Core.AtomicFile.WriteJsonAsync(SettingsPath, snapshot, Json, ct).ConfigureAwait(false);
+            _lastSavedHash = hash;
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Copy of the persisted object graph (collections and mutable children; strings are shared),
+    /// so serialization can stream on a worker thread while the UI keeps editing the live settings.
+    /// </summary>
+    internal AppSettings Snapshot()
+    {
+        var copy = (AppSettings)MemberwiseClone();
+        copy.SkyWatched = SkyWatched is null ? null! : [.. SkyWatched];
+        copy.Theme = Theme?.Clone();
+        copy.Overlays = Overlays is null
+            ? null!
+            : Overlays.ToDictionary(pair => pair.Key, pair => pair.Value?.Clone()!, Overlays.Comparer);
+        copy.DockWindow = DockWindow?.Clone()!;
+        copy.ChatChannels = ChatChannels is null ? null! : [.. ChatChannels];
+        copy.Triggers = Triggers is null ? null! : Triggers.Select(trigger => trigger?.Clone()!).ToList();
+        return copy;
     }
 }

@@ -22,7 +22,7 @@ public sealed class ThemeEditor : UserControl
     private ThemePalette? _original;
     private bool _loading;
 
-    public Func<ThemePalette, bool>? ApplyRequested
+    public Func<ThemePalette, Task<bool>>? ApplyRequested
     {
         get; set;
     }
@@ -156,7 +156,7 @@ public sealed class ThemeEditor : UserControl
         }
     }
 
-    private void Apply()
+    private async void Apply()
     {
         try
         {
@@ -165,7 +165,7 @@ public sealed class ThemeEditor : UserControl
             {
                 _status.Text = "Cannot apply: no theme handler is available.";
             }
-            else if (ApplyRequested(palette))
+            else if (await ApplyRequested(palette))
             {
                 LoadPalette(palette);
                 _status.Text = $"{palette.Name} applied and saved.";
@@ -181,7 +181,7 @@ public sealed class ThemeEditor : UserControl
         }
     }
 
-    private void Export()
+    private async void Export()
     {
         try
         {
@@ -199,7 +199,7 @@ public sealed class ThemeEditor : UserControl
                 return;
             }
 
-            AtomicFile.WriteAllText(dialog.FileName, JsonSerializer.Serialize(palette, new JsonSerializerOptions { WriteIndented = true }));
+            await AtomicFile.WriteJsonAsync(dialog.FileName, palette, new JsonSerializerOptions { WriteIndented = true });
             _status.Text = $"Exported {palette.Name} to {dialog.FileName}. Active theme unchanged.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or FormatException)

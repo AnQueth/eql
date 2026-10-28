@@ -5,7 +5,7 @@ using EqLog.Core.Tracking;
 
 namespace EqLog.Overlay;
 
-public sealed record OverlayContent(string Title, string? Subtitle, IReadOnlyList<OverlayRow> Rows);
+public sealed record OverlayContent(string Title, string? Subtitle, IReadOnlyList<OverlayRow> Rows, string? TitleLink = null);
 
 public sealed record OverlayDefinition(string Key, string Caption, double Width, double Height, bool AutoScroll, Func<EngineSnapshot, LogEngine, OverlayView, OverlayContent> Render);
 
@@ -70,6 +70,9 @@ public static class OverlayPresenters
         new("wiki", "Wiki activity", 480, 360, false, WikiActivity),
     ];
 
+    private const int MaxRequestRows = 15;
+    private const int MaxQueuedTooltipItems = 40;
+
     private static OverlayContent WikiActivity(EngineSnapshot _, LogEngine __, OverlayView view)
     {
         var activity = view.WikiActivity;
@@ -86,15 +89,22 @@ public static class OverlayPresenters
             rows.Add(new(quest.Status, Wrap: true, Foreground: quest.HasError ? Bad : Dim));
             if (quest.ActiveItem is not null)
             {
-                rows.Add(new(quest.ActiveItem, "Checking / saving"));
+                rows.Add(new(quest.ActiveItem, "Checking / saving", LootItem: quest.ActiveItem));
             }
         }
         rows.Add(new("HTTP requests", $"{activity.Requests.Count} pending / active", Foreground: Header, Bold: true));
-        foreach (var request in activity.Requests)
+        // Plain text rows (URL in the tooltip) keep the per-second elapsed refresh cheap; a table per request
+        // meant rebuilding a grid for every request every second.
+        foreach (var request in activity.Requests.Take(MaxRequestRows))
         {
             string priority = request.Priority == WikiPriority.RealTime ? "Real-time" : request.Priority.ToString();
-            rows.Add(new(request.Name, $"{priority} · {request.Attempt}/4",
-                Details: $"{request.State} | {(DateTime.UtcNow - request.StartedUtc).TotalSeconds:0}s\n{request.Url}"));
+            double elapsed = (DateTime.UtcNow - request.StartedUtc).TotalSeconds;
+            rows.Add(new(request.Name, $"{request.State} · {priority} · {request.Attempt}/4 · {elapsed:0}s",
+                ToolTip: request.Url));
+        }
+        if (activity.Requests.Count > MaxRequestRows)
+        {
+            rows.Add(new($"{activity.Requests.Count - MaxRequestRows:N0} more requests waiting", Foreground: Dim));
         }
         if (activity.Requests.Count == 0)
         {
@@ -113,19 +123,25 @@ public static class OverlayPresenters
                 Bold: true, QuestHeading: true));
             foreach (string item in backlog.Queued.Take(10))
             {
-                rows.Add(new(item, "Background", ToolTip: "Waiting for quest enrichment; may be served from cache without HTTP."));
+                rows.Add(new(item, "Background", LootItem: item));
             }
             if (backlog.Queued.Count > 10)
             {
-                rows.Add(new($"{backlog.Queued.Count - 10:N0} more waiting (hover to view)", Foreground: Dim,
-                    ToolTip: string.Join("\n", backlog.Queued.Skip(10))));
+                int hidden = backlog.Queued.Count - 10;
+                string tooltip = string.Join("\n", backlog.Queued.Skip(10).Take(MaxQueuedTooltipItems));
+                if (hidden > MaxQueuedTooltipItems)
+                {
+                    tooltip += $"\n… and {hidden - MaxQueuedTooltipItems:N0} more";
+                }
+                rows.Add(new($"{hidden:N0} more waiting (hover to view)", Foreground: Dim, ToolTip: tooltip));
             }
         }
         rows.Add(new("Recent activity / errors", Foreground: Header, Bold: true, QuestHeading: true));
         foreach (var entry in activity.Recent)
         {
             rows.Add(new($"{entry.TimeUtc.ToLocalTime():HH:mm:ss} {entry.Name}", entry.IsError ? "ERROR" : "",
-                Foreground: entry.IsError ? Bad : Dim, Details: entry.Message));
+                Foreground: entry.IsError ? Bad : Dim, Details: entry.IsError ? entry.Message : null,
+                ToolTip: entry.IsError ? null : entry.Message));
         }
         return new("Wiki activity", "Priority queue · paced HTTP · Polly retries", rows);
     }
@@ -188,7 +204,7 @@ public static class OverlayPresenters
             foreach (var r in m.ZoneRates.Take(10))
             {
                 string rate = r.DropRate is double d ? $"  {d:P0}" : "";
-                rows.Add(new(r.Mob, $"{r.Drops}/{r.Kills}{rate}"));
+                rows.Add(new(r.Mob, $"{r.Drops}/{r.Kills}{rate}", Link: QuestLookup.SearchUrl(r.Mob)));
             }
         }
 
@@ -207,23 +223,24 @@ public static class OverlayPresenters
         foreach (var t in ordered)
         {
             string source = t.UsesWiki ? " (wiki)" : "";
+            string link = QuestLookup.SearchUrl(t.Mob);
             switch (t.State)
             {
                 case SpawnState.Due:
-                    rows.Add(new(t.Mob, $"DUE +{Clock(-(t.RemainingSeconds ?? 0))}{source}", 1, WarnBar, Foreground: Warn, Bold: true));
+                    rows.Add(new(t.Mob, $"DUE +{Clock(-(t.RemainingSeconds ?? 0))}{source}", 1, WarnBar, Foreground: Warn, Bold: true, Link: link));
                     break;
                 case SpawnState.Dead when t.RemainingSeconds is double rem && t.RespawnSeconds is double r:
-                    rows.Add(new(t.Mob, Clock(rem) + source, 1 - (rem / r), rem <= 60 ? WarnBar : TimerBar));
+                    rows.Add(new(t.Mob, Clock(rem) + source, 1 - (rem / r), rem <= 60 ? WarnBar : TimerBar, Link: link));
                     break;
                 case SpawnState.Dead:
                     double ago = t.KilledAt is DateTime k ? (s.Now - k).TotalSeconds : 0;
-                    rows.Add(new(t.Mob, $"dead {Clock(ago)} (learning)", Foreground: Dim));
+                    rows.Add(new(t.Mob, $"dead {Clock(ago)} (learning)", Foreground: Dim, Link: link));
                     break;
                 case SpawnState.Up:
-                    rows.Add(new(t.Mob, $"up  seen {t.SeenAt:HH:mm}", Foreground: Good));
+                    rows.Add(new(t.Mob, $"up  seen {t.SeenAt:HH:mm}", Foreground: Good, Link: link));
                     break;
                 default:
-                    rows.Add(new(t.Mob, t.RespawnSeconds is double rs ? $"~{Clock(rs)}{source}" : "-", Foreground: Dim));
+                    rows.Add(new(t.Mob, t.RespawnSeconds is double rs ? $"~{Clock(rs)}{source}" : "-", Foreground: Dim, Link: link));
                     break;
             }
         }
@@ -292,7 +309,7 @@ public static class OverlayPresenters
                     $"{Short(a.Dps)} dps  {Short(a.Total)}  {a.Percent:0}%",
                     a.Percent / 100,
                     you ? YouBar : OtherBar,
-                    Bold: you, Breakdown: new(Who(a.Name), $"{f.Target} | {Clock(f.DurationSeconds)} fight | snapshot at click", "DPS", a.Abilities)));
+                    Bold: you, Breakdown: new(Who(a.Name), $"{f.Target} · {Clock(f.DurationSeconds)} fight · snapshot at click", "DPS", a.Abilities)));
             }
         }
 
@@ -308,7 +325,7 @@ public static class OverlayPresenters
         string? sub = f is null
             ? null
             : $"{Short(f.Total)} in {Clock(f.DurationSeconds)}  {Short(f.Dps)} dps  {(f.Killed ? "killed" : f.IsActive ? "active" : "ended")}";
-        return new(title, sub, rows);
+        return new(title, sub, rows, f is null ? null : QuestLookup.SearchUrl(f.Target));
     }
 
     private static AbilityBreakdown FightBreakdown(FightSnapshot fight)
@@ -318,7 +335,7 @@ public static class OverlayPresenters
                 fight.Total == 0 ? 0 : 100.0 * g.Sum(a => a.Total) / fight.Total,
                 g.Sum(a => a.Hits), g.Sum(a => a.Crits), g.Max(a => a.MaxHit), 0))
             .OrderByDescending(a => a.Total).ToArray();
-        return new(fight.Target, $"All attackers | {Clock(fight.DurationSeconds)} fight | snapshot at click", "DPS", abilities);
+        return new(fight.Target, $"All attackers · {Clock(fight.DurationSeconds)} fight · snapshot at click", "DPS", abilities);
     }
 
     private static OverlayContent Taken(EngineSnapshot s, LogEngine _, OverlayView __)
@@ -327,7 +344,7 @@ public static class OverlayPresenters
         var rows = new List<OverlayRow>();
         foreach (var a in d.EncounterByAttacker.Take(6))
         {
-            rows.Add(new(a.Name, $"{Short(a.Total)}  {a.Percent:0}%", a.Percent / 100, TakenBar));
+            rows.Add(new(a.Name, $"{Short(a.Total)}  {a.Percent:0}%", a.Percent / 100, TakenBar, Link: QuestLookup.SearchUrl(a.Name)));
         }
 
         rows.Add(new("Session", $"{Short(d.SessionTotal)}", Foreground: Header, Bold: true));
@@ -338,7 +355,7 @@ public static class OverlayPresenters
 
         foreach (var a in d.SessionByAttacker.Take(4))
         {
-            rows.Add(new(a.Name, $"{Short(a.Total)}  {a.Percent:0}%", Foreground: Dim));
+            rows.Add(new(a.Name, $"{Short(a.Total)}  {a.Percent:0}%", Foreground: Dim, Link: QuestLookup.SearchUrl(a.Name)));
         }
 
         string? sub = d.EncounterStart is null ? null : $"{Short(d.EncounterTotal)} in {Clock(d.EncounterSeconds)}  {Short(d.EncounterDtps)} dtps";
@@ -361,7 +378,7 @@ public static class OverlayPresenters
             foreach (var x in h.OutgoingByTarget.Take(4))
             {
                 rows.Add(new($"\u2192 {Who(x.Name)}", $"{Short(x.Total)}", Foreground: Dim,
-                    Breakdown: new(Who(x.Name), $"Your healing to this target | session {Clock(h.DurationSeconds)} | snapshot at click",
+                    Breakdown: new(Who(x.Name), $"Your healing to this target · session {Clock(h.DurationSeconds)} · snapshot at click",
                         "HPS", h.OutgoingTargetAbilities.GetValueOrDefault(x.Name) ?? [])));
             }
         }
@@ -370,7 +387,7 @@ public static class OverlayPresenters
         foreach (var x in h.IncomingByHealer.Take(5))
         {
             rows.Add(new(Who(x.Name), $"{Short(x.Total)}  {x.Percent:0}%", x.Percent / 100, HealBar,
-                Breakdown: new(Who(x.Name), $"Healing received by you | session {Clock(h.DurationSeconds)} | snapshot at click",
+                Breakdown: new(Who(x.Name), $"Healing received by you · session {Clock(h.DurationSeconds)} · snapshot at click",
                     "HPS", h.IncomingHealerAbilities.GetValueOrDefault(x.Name) ?? [])));
         }
 
@@ -380,7 +397,7 @@ public static class OverlayPresenters
             foreach (var healer in h.Healers)
             {
                 rows.Add(new(Who(healer.Name), Short(healer.Abilities.Sum(a => a.Total)),
-                    Breakdown: new(Who(healer.Name), $"All observed healing | session {Clock(h.DurationSeconds)} | snapshot at click",
+                    Breakdown: new(Who(healer.Name), $"All observed healing · session {Clock(h.DurationSeconds)} · snapshot at click",
                         "HPS", healer.Abilities)));
             }
         }
@@ -454,7 +471,9 @@ public static class OverlayPresenters
             rows.Add(new("Kills", $"{x.YourKills}  ({x.YourKills / hours:0}/hr)"));
         }
 
-        rows.Add(new("Deaths", x.Deaths == 0 ? "0" : $"{x.Deaths}  (last: {x.LastKilledBy})", Foreground: x.Deaths > 0 ? Warn : null));
+        rows.Add(new("Deaths", x.Deaths == 0 ? "0" : $"{x.Deaths}  (last: {x.LastKilledBy})", Foreground: x.Deaths > 0 ? Warn : null,
+            Link: x.Deaths > 0 && !string.IsNullOrWhiteSpace(x.LastKilledBy) ? QuestLookup.SearchUrl(x.LastKilledBy) : null,
+            ToolTip: x.Deaths > 0 ? $"Open {x.LastKilledBy} on EQLWiki" : null));
         rows.Add(new("XP gains", $"{x.ExperienceGains}  ({x.PartyExperienceGains} party)"));
         if (x.ExperiencePercent > 0)
         {
@@ -473,7 +492,7 @@ public static class OverlayPresenters
 
         foreach (var k in x.RecentKills.Take(5))
         {
-            rows.Add(new(k.Victim, k.Time.ToString("HH:mm:ss"), Foreground: Dim));
+            rows.Add(new(k.Victim, k.Time.ToString("HH:mm:ss"), Foreground: Dim, Link: QuestLookup.SearchUrl(k.Victim)));
         }
 
         return new(x.Zone ?? "Session", s.CharacterName.Length > 0 ? s.CharacterName : null, rows);

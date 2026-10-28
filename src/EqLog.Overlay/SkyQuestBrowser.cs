@@ -3,7 +3,6 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Documents;
 using System.Windows.Media;
 using EqLog.Core;
 
@@ -11,33 +10,32 @@ namespace EqLog.Overlay;
 
 public partial class MainWindow
 {
+    private const string AllSkyClasses = "All classes";
+    private const int SkyViewByClass = 0;
+    private const int SkyViewByDropper = 1;
+    private const int SkyViewWatching = 2;
+    private const int SkyViewNeed = 3;
+
+    private static readonly Brush SkyHave = FrozenBrush(Color.FromRgb(120, 230, 120));
+    private static readonly Brush SkyNeed = FrozenBrush(Color.FromRgb(255, 170, 60));
+    private static readonly Brush SkyDim = FrozenBrush(Color.FromRgb(170, 170, 180));
+
     private SkyQuestCatalog? _skyCatalog;
     private bool _skyLoading;
     private WikiPriority _skyLoadPriority;
     private bool _skyForceRefresh;
     private bool _skyOverlayLoadAttempted;
+    private string _skyStatus = "";
     private ComboBox? _skyOverlayClass;
-    private string _skyInventorySignature = "";
+    private OverlayContent? _skyContent;
+    private DateTime _skyNextRender;
+
     private static string SkyCachePath
     {
         get
         {
             return Path.Combine(AppSettings.Folder, "sky-quests.json");
         }
-    }
-
-    private async void SkyTab_Selected(object sender, RoutedEventArgs e)
-    {
-        if (e.Source == Tabs && SkyTab?.IsSelected == true &&
-            (_skyLoading || _skyCatalog is null || DateTime.UtcNow - _skyCatalog.CheckedUtc >= TimeSpan.FromDays(1)))
-        {
-            await LoadSkyQuestsAsync(false);
-        }
-    }
-
-    private async void SkyRefresh_Click(object sender, RoutedEventArgs e)
-    {
-        await LoadSkyQuestsAsync(true);
     }
 
     private async Task LoadSkyQuestsAsync(bool refresh, WikiPriority priority = WikiPriority.Interactive)
@@ -56,11 +54,11 @@ public partial class MainWindow
         _skyLoading = true;
         _skyLoadPriority = priority;
         _skyForceRefresh = refresh;
-        SkyRefreshButton.IsEnabled = false;
-        SkyStatus.Text = "Loading Plane of Sky class quests...";
+        _skyStatus = "Loading Plane of Sky class quests...";
+        _skyNextRender = default;
         try
         {
-            if (_skyCatalog is null && File.Exists(SkyCachePath))
+            if (_skyCatalog is null && await Task.Run(() => File.Exists(SkyCachePath)))
             {
                 try
                 {
@@ -73,11 +71,11 @@ public partial class MainWindow
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
                 {
-                    SkyStatus.Text = $"Sky cache could not be read: {ex.Message}. Fetching from EQLWiki...";
+                    _skyStatus = $"Sky cache could not be read: {ex.Message}. Fetching from EQLWiki...";
                 }
             }
 
-            if (_skyForceRefresh || _skyCatalog is null ||
+            if (_skyForceRefresh || _skyCatalog is null || _skyCatalog.DropSources is null ||
                 _skyCatalog.Quests.Any(q => q.Requirements is null || q.RuneLinks is null || q.ItemLinks is null) ||
                 DateTime.UtcNow - _skyCatalog.CheckedUtc >= TimeSpan.FromDays(1))
             {
@@ -86,78 +84,118 @@ public partial class MainWindow
                     _wikiRepository.SeedSky(_skyCatalog);
                 }
                 _skyCatalog = await _wikiRepository.GetSkyAsync(_skyLoadPriority, _skyForceRefresh, _wikiCts.Token);
-                AtomicFile.WriteAllText(SkyCachePath, JsonSerializer.Serialize(_skyCatalog));
+                await AtomicFile.WriteJsonAsync(SkyCachePath, _skyCatalog, ct: _wikiCts.Token);
             }
-            SkyStatus.Text = $"{_skyCatalog.Quests.Count} quests • EQLWiki • updated {_skyCatalog.CheckedUtc.ToLocalTime():g}";
+            _skyStatus = "";
         }
         catch (OperationCanceledException) when (_wikiCts.IsCancellationRequested) { }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or
             HttpRequestException or OperationCanceledException or InvalidOperationException or FormatException)
         {
-            SkyStatus.Text = $"Sky quest load failed: {ex.Message}" +
+            _skyStatus = $"Sky quest load failed: {ex.Message}" +
                 (_skyCatalog is null ? " Click Refresh to retry." : " Showing previously loaded data.");
         }
         finally
         {
-            if (_skyCatalog is not null)
+            if (_skyCatalog is not null && _skyOverlayClass is not null)
             {
-                string selected = SkyClassBox.SelectedItem as string ?? _settings.SkyClass;
-                SkyClassBox.ItemsSource = new[] { "All classes" }.Concat(_skyCatalog.Quests.Select(q => q.Class).Distinct().Order());
-                SkyClassBox.SelectedItem = SkyClassBox.Items.Contains(selected) ? selected : "All classes";
-                if (_skyOverlayClass is not null)
-                {
-                    _skyOverlayClass.ItemsSource = SkyClassBox.ItemsSource;
-                    _skyOverlayClass.SelectedItem = SkyClassBox.SelectedItem;
-                }
-                RenderSkyQuests();
+                string selected = _settings.SkyClass;
+                _skyOverlayClass.ItemsSource = new[] { AllSkyClasses }
+                    .Concat(_skyCatalog.Quests.Select(q => q.Class).Distinct().Order()).ToArray();
+                _skyOverlayClass.SelectedItem = _skyOverlayClass.Items.Contains(selected) ? selected : AllSkyClasses;
             }
             _skyLoading = false;
-            SkyRefreshButton.IsEnabled = true;
-        }
-    }
-
-    private void SkyClass_Changed(object sender, SelectionChangedEventArgs e)
-    {
-        if (SkyClassBox.SelectedItem is string selected)
-        {
-            _settings.SkyClass = selected;
-            if (_skyOverlayClass is not null && !Equals(_skyOverlayClass.SelectedItem, selected))
-            {
-                _skyOverlayClass.SelectedItem = selected;
-            }
-
-            RenderSkyQuests();
+            _skyNextRender = default;
         }
     }
 
     private void ConfigureSkyToolbar(OverlayPanel panel)
     {
-        var toolbar = new DockPanel { Margin = new Thickness(0, 5, 0, 5) };
-        var refresh = new Button { Content = "Refresh", Margin = new Thickness(6, 0, 0, 0) };
+        var bar = new StackPanel();
+        var searchRow = new DockPanel { Margin = new Thickness(0, 5, 0, 4) };
+        var refresh = new Button { Content = "Refresh", Margin = new Thickness(6, 0, 0, 0), ToolTip = "Reload quests and drop sources from EQLWiki" };
         refresh.Click += async (_, _) => await LoadSkyQuestsAsync(true);
+        var wiki = new Button { Content = "Wiki", Margin = new Thickness(6, 0, 0, 0), ToolTip = "Open the Plane of Sky page on EQLWiki" };
+        wiki.Click += (_, _) => OpenWiki(SkyQuests.SourceUrl);
         DockPanel.SetDock(refresh, Dock.Right);
-        toolbar.Children.Add(refresh);
+        DockPanel.SetDock(wiki, Dock.Right);
+        searchRow.Children.Add(refresh);
+        searchRow.Children.Add(wiki);
+        var search = new TextBox
+        {
+            Text = _settings.SkyFilter,
+            MinWidth = 100,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            ToolTip = "Search quests, rewards, items, and droppers. Unlock floating panels to type.",
+        };
+        search.TextChanged += (_, _) =>
+        {
+            _settings.SkyFilter = search.Text;
+            _skyNextRender = default;
+        };
+        searchRow.Children.Add(search);
+        bar.Children.Add(searchRow);
+
         _skyOverlayClass = new ComboBox
         {
-            ItemsSource = new[] { "All classes", _settings.SkyClass }.Distinct().ToArray(),
+            ItemsSource = new[] { AllSkyClasses, _settings.SkyClass }.Distinct().ToArray(),
             SelectedItem = _settings.SkyClass,
-            ToolTip = "Class filter shared with the Plane of Sky tab. Only quests with an owned ingredient appear.",
+            ToolTip = "Class filter for By class and By dropper. Watching shows every watched quest.",
         };
         _skyOverlayClass.SelectionChanged += (_, _) =>
         {
-            if (_skyOverlayClass.SelectedItem is not string selected)
+            if (_skyOverlayClass.SelectedItem is string selected)
             {
-                return;
-            }
-
-            _settings.SkyClass = selected;
-            if (SkyClassBox.Items.Contains(selected))
-            {
-                SkyClassBox.SelectedItem = selected;
+                _settings.SkyClass = selected;
+                _skyNextRender = default;
             }
         };
-        toolbar.Children.Add(_skyOverlayClass);
-        panel.SetToolbar(toolbar);
+        bar.Children.Add(_skyOverlayClass);
+
+        var views = new TabControl
+        {
+            Padding = new Thickness(0),
+            BorderThickness = new Thickness(0),
+            Margin = new Thickness(0, 4, 0, 4),
+        };
+        views.Items.Add(new TabItem { Header = "By class", Tag = SkyViewByClass });
+        views.Items.Add(new TabItem { Header = "By dropper", Tag = SkyViewByDropper });
+        views.Items.Add(new TabItem
+        {
+            Header = "Need",
+            Tag = SkyViewNeed,
+            ToolTip = "Only items you still need for the filtered quests, grouped by boss",
+        });
+        views.Items.Add(new TabItem { Header = "Watching", Tag = SkyViewWatching });
+        _settings.SkyView = Math.Clamp(_settings.SkyView, SkyViewByClass, SkyViewNeed);
+        views.SelectedItem = views.Items.Cast<TabItem>().First(t => (int)t.Tag == _settings.SkyView);
+        views.SelectionChanged += (_, e) =>
+        {
+            if (e.Source == views && views.SelectedItem is TabItem { Tag: int view })
+            {
+                _settings.SkyView = view;
+                _skyNextRender = default;
+            }
+        };
+        bar.Children.Add(views);
+        panel.SetToolbar(bar);
+        panel.WatchToggleRequested += ToggleSkyWatch;
+    }
+
+    private void ToggleSkyWatch(string key)
+    {
+        int index = _settings.SkyWatched.FindIndex(k => string.Equals(k, key, StringComparison.OrdinalIgnoreCase));
+        if (index >= 0)
+        {
+            _settings.SkyWatched.RemoveAt(index);
+        }
+        else
+        {
+            _settings.SkyWatched.Add(key);
+        }
+
+        SaveSettingsInBackground(error => _skyStatus = $"Could not save watched quests: {error}");
+        _skyNextRender = default;
     }
 
     private OverlayContent SkyOverlayContent()
@@ -167,237 +205,308 @@ public partial class MainWindow
             _skyOverlayLoadAttempted = true;
             _ = LoadSkyQuestsAsync(false, WikiPriority.Background);
         }
-        var rows = new List<OverlayRow>();
-        if (_skyCatalog is null)
-        {
-            rows.Add(new(_skyLoading ? "Loading Plane of Sky quests..." : SkyStatus.Text, Wrap: true));
-        }
-        else
-        {
-            foreach (var entry in SkyQuests.OwnedQuests(_skyCatalog, _questInventory, _characterName ?? "", _settings.SkyClass))
-            {
-                var quest = entry.Quest;
-                rows.Add(new(quest.Name, Bold: true, QuestHeading: true, Wrap: true));
-                rows.Add(new($"Give to: {quest.Giver}", Wrap: true));
-                rows.Add(new($"Reward: {quest.Reward}", Wrap: true, Bold: true, LootItem: quest.Reward));
-                if (_settings.SkyClass == "All classes")
-                {
-                    rows.Add(new($"Class: {quest.Class}"));
-                }
 
-                foreach (var item in entry.Progress)
-                {
-                    string note = item.Collection > 0 ? $" | Collection {item.Collection}: verify turn-in availability" : "";
-                    rows.Add(new(item.Item, $"{item.Owned} / {item.Required}", Wrap: true, LootItem: item.Item,
-                        Details: $"{(item.Satisfied ? "Have" : "Missing")} | Carried {item.Carried} | Bank {item.Bank}{note}"));
-                }
-            }
+        if (_skyContent is null || DateTime.Now >= _skyNextRender)
+        {
+            _skyContent = BuildSkyOverlayContent();
+            _skyNextRender = DateTime.Now.AddSeconds(1);
+        }
+        return _skyContent;
+    }
+
+    private OverlayContent BuildSkyOverlayContent()
+    {
+        var rows = new List<OverlayRow>();
+        if (_skyLoading)
+        {
+            rows.Add(new("Refreshing wiki data...", Wrap: true, Foreground: SkyDim));
+        }
+        else if (_skyStatus.Length > 0)
+        {
+            rows.Add(new(_skyStatus, Wrap: true, Foreground: SkyNeed));
+        }
+
+        if (_skyCatalog is not { } catalog)
+        {
             if (rows.Count == 0)
             {
-                rows.Add(new("No quests with owned ingredients for this class. Import inventory or loot a required item.", Wrap: true));
+                rows.Add(new("Loading Plane of Sky quests...", Wrap: true));
             }
-
-            if (_skyLoading)
-            {
-                rows.Insert(0, new("Refreshing wiki data...", Wrap: true));
-            }
-            else if (SkyStatus.Text.StartsWith("Sky quest load failed:", StringComparison.Ordinal))
-            {
-                rows.Insert(0, new(SkyStatus.Text, Wrap: true));
-            }
+            return new("Sky quest tracker", null, rows);
         }
-        return new("Sky quest tracker", $"{_settings.SkyClass} | {_characterName} | owned ingredients only", rows);
-    }
-    private void RenderSkyQuests()
-    {
-        if (_skyCatalog is null)
+
+        string character = _characterName ?? "";
+        string filter = _settings.SkyFilter;
+        var watched = _settings.SkyWatched.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var classQuests = catalog.Quests
+            .Where(q => _settings.SkyClass == AllSkyClasses || q.Class.Equals(_settings.SkyClass, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        string subtitle;
+        switch (_settings.SkyView)
         {
-            return;
+            case SkyViewByDropper:
+                subtitle = AddSkyDropperRows(rows, catalog, classQuests, filter, character, watched);
+                break;
+            case SkyViewWatching:
+                subtitle = AddSkyWatchRows(rows, catalog, filter, character, watched);
+                break;
+            case SkyViewNeed:
+                subtitle = AddSkyNeedRows(rows, catalog, classQuests, filter, character, watched);
+                break;
+            default:
+                subtitle = AddSkyClassRows(rows, catalog, classQuests, filter, character, watched);
+                break;
         }
 
-        SkyCards.Children.Clear();
-        string selected = SkyClassBox.SelectedItem as string ?? "All classes";
-        foreach (var group in _skyCatalog.Quests.Where(q => selected == "All classes" || q.Class == selected).GroupBy(q => q.Class))
+        if (character.Length > 0)
         {
-            SkyCards.Children.Add(new TextBlock
-            {
-                Text = group.Key.ToUpperInvariant(),
-                FontSize = 17,
-                FontWeight = FontWeights.Bold,
-                Foreground = (Brush)FindResource("Pumpkin"),
-                Margin = new Thickness(0, 18, 0, 10),
-            });
-            foreach (var quest in group)
-            {
-                var content = new StackPanel();
-                var title = new TextBlock { FontSize = 15, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap };
-                var link = new Hyperlink(new Run(quest.Name)) { Foreground = (Brush)FindResource("Pumpkin"), ToolTip = "Open this class's quest table on EQLWiki" };
-                link.Click += (_, _) => OpenSkyWiki(quest.Url);
-                title.Inlines.Add(link);
-                content.Children.Add(title);
-                AddSkyField(content, "Reward", quest.Reward, (Brush)FindResource("Pumpkin"), [new(quest.Reward, quest.Reward)]);
-                AddSkyField(content, "Quest giver", quest.Giver);
-                AddSkyField(content, "Say", quest.Phrase);
-                var progress = SkyQuests.Progress(quest, _questInventory, _characterName ?? "");
-                AddSkyField(content, "Required rune", quest.Rune, items: quest.RuneLinks ?? FallbackSkyLinks(quest.Rune));
-                AddSkyField(content, "Required items / drop sources", quest.Items, items: quest.ItemLinks ?? FallbackSkyLinks(quest.Items));
-                bool ready = progress.Count > 0 && progress.All(p => p.Satisfied);
-                AddSkyField(content, "Inventory progress",
-                    progress.Count == 0 ? "Requirements unavailable; refresh wiki data." :
-                    ready ? "All listed items owned (including bank and collections; verify turn-in availability)" :
-                    $"{progress.Count(p => p.Satisfied)} / {progress.Count} listed requirements owned",
-                    ready ? Brushes.LightGreen : Brushes.Orange);
-                foreach (var item in progress)
-                {
-                    var requirement = new StackPanel();
-                    var heading = new DockPanel();
-                    var count = new TextBlock
-                    {
-                        Text = $"{(item.Satisfied ? "HAVE" : "NEED")}  {item.Owned} / {item.Required}",
-                        Foreground = item.Satisfied ? Brushes.LightGreen : (Brush)FindResource("Pumpkin"),
-                        FontWeight = FontWeights.SemiBold,
-                        Margin = new Thickness(12, 0, 0, 0),
-                    };
-                    DockPanel.SetDock(count, Dock.Right);
-                    heading.Children.Add(count);
-                    var itemName = new TextBlock
-                    {
-                        TextWrapping = TextWrapping.Wrap,
-                        FontWeight = FontWeights.SemiBold,
-                        Foreground = (Brush)FindResource("NightText"),
-                    };
-                    itemName.Inlines.Add(ItemWikiLink(item.Item, item.Item));
-                    heading.Children.Add(itemName);
-                    requirement.Children.Add(heading);
-                    string detail = $"Carried / equipped {item.Carried}  |  Bank {item.Bank}";
-                    if (!item.Satisfied)
-                    {
-                        detail += $"  |  Missing {item.Required - item.Owned}";
-                    }
-
-                    if (item.Collection > 0)
-                    {
-                        detail += $"  |  Collection {item.Collection} (verify turn-in availability)";
-                    }
-
-                    if (item.Installed > 0)
-                    {
-                        detail += $"  |  Installed {item.Installed} (not loose)";
-                    }
-
-                    if (item.Historical > 0)
-                    {
-                        detail += $"  |  History {item.Historical} (unconfirmed)";
-                    }
-
-                    requirement.Children.Add(new TextBlock
-                    {
-                        Text = detail,
-                        TextWrapping = TextWrapping.Wrap,
-                        FontSize = 12,
-                        Foreground = (Brush)FindResource("NightMuted"),
-                        Margin = new Thickness(0, 5, 0, 0),
-                    });
-                    content.Children.Add(new Border
-                    {
-                        Child = requirement,
-                        Background = (Brush)FindResource("NightBackground"),
-                        CornerRadius = new CornerRadius(5),
-                        Padding = new Thickness(10),
-                        Margin = new Thickness(0, 8, 0, 0),
-                    });
-                }
-                SkyCards.Children.Add(new Border
-                {
-                    Child = content,
-                    Background = (Brush)FindResource("NightSurface"),
-                    BorderBrush = (Brush)FindResource("NightBorder"),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(8),
-                    Padding = new Thickness(16),
-                    Margin = new Thickness(0, 0, 0, 12),
-                });
-            }
+            subtitle += $" · {character}";
         }
+        return new("Sky quest tracker", subtitle, rows);
     }
 
-    private void RefreshSkyInventory()
+    private string AddSkyClassRows(List<OverlayRow> rows, SkyQuestCatalog catalog, IReadOnlyList<SkyQuest> classQuests,
+        string filter, string character, ISet<string> watched)
     {
-        if (SkyTab.IsSelected != true || _skyCatalog is null)
+        var quests = classQuests.Where(q => SkyQuests.Matches(q, filter, catalog)).ToArray();
+        var progress = SkyQuests.ProgressAll(quests, _questInventory, character);
+        foreach (var quest in quests)
         {
-            return;
+            AddSkyQuestRows(rows, catalog, quest, progress[quest], watched);
         }
 
-        string signature = (_characterName ?? "") + "|" + string.Join("|", _questInventory.Items
-            .Where(i => i.Character.Equals(_characterName, StringComparison.OrdinalIgnoreCase))
-            .Select(i => $"{i.Item}:{i.Owned}:{i.Carried}:{i.Bank}:{i.Historical}:{i.Collection}:{i.Installed}"));
-        if (signature == _skyInventorySignature)
+        if (quests.Length == 0)
         {
-            return;
+            rows.Add(new("No quests match the search.", Wrap: true, Foreground: SkyDim));
         }
-
-        _skyInventorySignature = signature;
-        RenderSkyQuests();
+        return $"{_settings.SkyClass} · {quests.Length} quests";
     }
 
-    private void AddSkyField(StackPanel parent, string label, string value, Brush? color = null,
-        IReadOnlyList<SkyItemLink>? items = null)
+    private void AddSkyQuestRows(List<OverlayRow> rows, SkyQuestCatalog catalog, SkyQuest quest,
+        IReadOnlyList<SkyRequirementProgress> progress, ISet<string> watched)
     {
-        var text = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = color ?? (Brush)FindResource("NightText"), Margin = new Thickness(0, 7, 0, 0) };
-        text.Inlines.Add(new Run(label + ": ") { FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("NightMuted") });
-        if (items is null)
+        string key = SkyQuests.Key(quest);
+        int have = progress.Count(p => p.Satisfied);
+        rows.Add(new(quest.Name, $"{have} / {progress.Count}", Bold: true, QuestHeading: true, Wrap: true,
+            Foreground: progress.Count > 0 && have == progress.Count ? SkyHave : null,
+            WatchKey: key, Watched: watched.Contains(key),
+            Link: quest.Url, ToolTip: $"Open the {quest.Class} tests on EQLWiki"));
+        var info = new List<(string Label, string Value)>
         {
-            text.Inlines.Add(new Run(value));
-        }
-        else
-        {
-            for (int i = 0; i < items.Count; i++)
-            {
-                if (i > 0)
-                {
-                    text.Inlines.Add(new LineBreak());
-                }
-                text.Inlines.Add(ItemWikiLink(items[i].Label, items[i].Item));
-            }
-        }
-        parent.Children.Add(text);
-    }
-
-    private static IReadOnlyList<SkyItemLink> FallbackSkyLinks(string value)
-    {
-        return value.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(line => new SkyItemLink(line.Trim(), line.Trim())).ToArray();
-    }
-
-    private Hyperlink ItemWikiLink(string label, string item)
-    {
-        var link = new Hyperlink(new Run(label))
-        {
-            ToolTip = $"Open {QuestLookup.ItemTitle(item)} on EQLWiki",
+            ("Reward", quest.Reward),
+            ("Quest giver", quest.Giver),
         };
-        link.SetResourceReference(TextElement.ForegroundProperty, "Pumpkin");
-        link.Click += (_, e) =>
+        if (!string.IsNullOrWhiteSpace(quest.Phrase))
         {
-            OpenSkyWiki(QuestLookup.PageUrl(QuestLookup.ItemTitle(item)));
-            e.Handled = true;
-        };
-        return link;
+            info.Add(("Say", $"\"{quest.Phrase}\""));
+        }
+        rows.Add(new("", Table: OverlayTable.Pairs(info).WithLinks(
+        [
+            (quest.Reward, QuestLookup.ItemUrl(quest.Reward)),
+            (quest.Giver, QuestLookup.SearchUrl(quest.Giver)),
+        ])));
+        foreach (var item in progress)
+        {
+            rows.Add(new(SkyQuests.Label(quest, item.Item), $"{(item.Satisfied ? "HAVE" : "NEED")} {item.Owned} / {item.Required}",
+                Wrap: true, LootItem: item.Item, Foreground: item.Satisfied ? SkyHave : SkyNeed,
+                Table: SkyItemTable(catalog, item)));
+        }
     }
 
-    private void SkySource_Click(object sender, RoutedEventArgs e)
+    private static OverlayTable SkyItemTable(SkyQuestCatalog catalog, SkyRequirementProgress item)
     {
-        OpenSkyWiki(SkyQuests.SourceUrl);
+        var droppedBy = catalog.DroppedBy(item.Item);
+        var pairs = new List<(string Label, string Value)>(
+            droppedBy.Count > 0 ? OverlayTable.Labeled("Dropped by", droppedBy) : [("Dropped by", "No specific mob listed")]);
+        if (item.Carried > 0)
+        {
+            pairs.Add(("Carried / equipped", $"{item.Carried}"));
+        }
+
+        if (item.Bank > 0)
+        {
+            pairs.Add(("Bank", $"{item.Bank}"));
+        }
+
+        if (item.Hoard > 0)
+        {
+            pairs.Add(("Dragon's Hoard", $"{item.Hoard}"));
+        }
+
+        if (item.Depot > 0)
+        {
+            pairs.Add(("Personal depot", $"{item.Depot}"));
+        }
+
+        if (item.OtherStorage > 0)
+        {
+            pairs.Add(("Other location", $"{item.OtherStorage}"));
+        }
+
+        if (item.Collection > 0)
+        {
+            pairs.Add(("Collection", $"{item.Collection} (verify turn-in)"));
+        }
+
+        if (item.Installed > 0)
+        {
+            pairs.Add(("Installed", $"{item.Installed} (not loose)"));
+        }
+
+        if (item.Historical > 0)
+        {
+            pairs.Add(("Looted", $"{item.Historical} (unconfirmed)"));
+        }
+        return OverlayTable.Pairs(pairs).WithLinks(droppedBy.Select(mob => (mob, QuestLookup.SearchUrl(mob))));
     }
 
-    private void OpenSkyWiki(string url)
+    /// <summary>"Needed for" table listing quest names that link to their wiki section; watched quests are starred.</summary>
+    private static OverlayTable SkyNeededFor(IEnumerable<SkyQuest> quests, ISet<string> watched)
     {
-        try
+        var list = quests.ToArray();
+        var duplicated = list.GroupBy(q => q.Name, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var links = new Dictionary<string, string>(StringComparer.Ordinal);
+        var names = new List<string>();
+        foreach (var quest in list)
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            // The same quest name can exist for several classes; show the class so each link is distinct.
+            string name = (watched.Contains(SkyQuests.Key(quest)) ? "\u2605 " : "") + quest.Name +
+                (duplicated.Contains(quest.Name) ? $" ({quest.Class})" : "");
+            names.Add(name);
+            links.TryAdd(name, quest.Url);
         }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        return OverlayTable.Pairs(OverlayTable.Labeled("Needed for", names)) with { Links = links };
+    }
+
+    private string AddSkyDropperRows(List<OverlayRow> rows, SkyQuestCatalog catalog, IReadOnlyList<SkyQuest> classQuests,
+        string filter, string character, ISet<string> watched)
+    {
+        var groups = SkyQuests.ByDropper(classQuests, catalog, filter);
+        var progress = SkyQuests.ProgressAll(classQuests, _questInventory, character);
+        foreach (var group in groups)
         {
-            SkyStatus.Text = $"Could not open browser: {ex.Message}";
+            bool known = group.Mob.Length > 0;
+            rows.Add(new(known ? group.Mob : "No specific mob listed", $"{group.Items.Count} item{(group.Items.Count == 1 ? "" : "s")}",
+                Bold: true, QuestHeading: true, Wrap: true, Link: known ? QuestLookup.SearchUrl(group.Mob) : null,
+                ToolTip: known ? $"Open {group.Mob} on EQLWiki" : "EQLWiki lists only the zone for these items (typically runes)."));
+            foreach (var item in group.Items)
+            {
+                int owned = progress[item.Quests[0]].First(p => ItemNames.Comparer.Equals(p.Item, item.Item)).Owned;
+                rows.Add(new(item.Label, $"Have {owned}", Wrap: true, LootItem: item.Item,
+                    Foreground: owned > 0 ? SkyHave : null,
+                    Table: SkyNeededFor(item.Quests, watched)));
+            }
         }
+
+        if (groups.Count == 0)
+        {
+            rows.Add(new("No items match the search.", Wrap: true, Foreground: SkyDim));
+        }
+        return $"{_settings.SkyClass} · {groups.Count(g => g.Mob.Length > 0)} droppers";
+    }
+
+    private string AddSkyWatchRows(List<OverlayRow> rows, SkyQuestCatalog catalog, string filter, string character, ISet<string> watched)
+    {
+        var quests = catalog.Quests.Where(q => watched.Contains(SkyQuests.Key(q))).ToArray();
+        if (quests.Length == 0)
+        {
+            rows.Add(new("No watched quests yet. Click the \u2606 next to a quest in By class to watch it; quests from any class can be watched together.",
+                Wrap: true, Foreground: SkyDim));
+            return "Watching 0 quests";
+        }
+
+        var progress = SkyQuests.ProgressAll(quests, _questInventory, character);
+        var shown = quests.Where(q => SkyQuests.Matches(q, filter, catalog)).ToArray();
+
+        var missing = new List<OverlayRow>();
+        AddSkyNeededRows(missing, SkyQuests.ByDropper(shown, catalog), progress, watched, bossHeadings: false);
+        if (missing.Count > 0)
+        {
+            rows.Add(new("Still needed - by dropper", Bold: true, QuestHeading: true));
+            rows.AddRange(missing);
+        }
+        else if (shown.Length > 0)
+        {
+            rows.Add(new("Every listed item for the watched quests is owned.", Wrap: true, Foreground: SkyHave));
+        }
+
+        foreach (var quest in shown)
+        {
+            AddSkyQuestRows(rows, catalog, quest, progress[quest], watched);
+        }
+
+        if (shown.Length == 0)
+        {
+            rows.Add(new("No watched quests match the search.", Wrap: true, Foreground: SkyDim));
+        }
+        return $"Watching {quests.Length} quest{(quests.Length == 1 ? "" : "s")}";
+    }
+
+    private string AddSkyNeedRows(List<OverlayRow> rows, SkyQuestCatalog catalog, IReadOnlyList<SkyQuest> classQuests,
+        string filter, string character, ISet<string> watched)
+    {
+        var progress = SkyQuests.ProgressAll(classQuests, _questInventory, character);
+        var (bosses, items) = AddSkyNeededRows(rows, SkyQuests.ByDropper(classQuests, catalog, filter), progress, watched, bossHeadings: true);
+        if (items == 0)
+        {
+            rows.Add(new(string.IsNullOrWhiteSpace(filter) ? "Nothing needed - every listed item is owned." : "No needed items match the search.",
+                Wrap: true, Foreground: string.IsNullOrWhiteSpace(filter) ? SkyHave : SkyDim));
+        }
+        return $"{_settings.SkyClass} · need {items} item{(items == 1 ? "" : "s")} from {bosses} boss{(bosses == 1 ? "" : "es")}";
+    }
+
+    /// <summary>
+    /// Adds boss rows followed by the items still missing from that boss. Items are not reserved per quest,
+    /// so the shortfall compares the combined requirement against what is owned.
+    /// </summary>
+    private static (int Bosses, int Items) AddSkyNeededRows(List<OverlayRow> rows, IReadOnlyList<SkyDropGroup> groups,
+        IReadOnlyDictionary<SkyQuest, IReadOnlyList<SkyRequirementProgress>> progress, ISet<string> watched, bool bossHeadings)
+    {
+        int bosses = 0;
+        int items = 0;
+        foreach (var group in groups)
+        {
+            var needed = new List<OverlayRow>();
+            foreach (var item in group.Items)
+            {
+                var entries = item.Quests.Select(q => progress[q].First(p => ItemNames.Comparer.Equals(p.Item, item.Item))).ToArray();
+                int required = entries.Sum(p => p.Required);
+                int owned = entries[0].Owned;
+                if (owned < required)
+                {
+                    needed.Add(new(item.Label, owned > 0 ? $"need {required - owned} (have {owned})" : $"need {required}",
+                        Wrap: true, LootItem: item.Item, Foreground: SkyNeed,
+                        Table: SkyNeededFor(item.Quests, watched)));
+                }
+            }
+
+            if (needed.Count == 0)
+            {
+                continue;
+            }
+
+            bool known = group.Mob.Length > 0;
+            if (known)
+            {
+                bosses++;
+            }
+
+            items += needed.Count;
+            rows.Add(new(known ? group.Mob : "No specific mob listed", bossHeadings ? $"{needed.Count} item{(needed.Count == 1 ? "" : "s")}" : "",
+                Bold: true, QuestHeading: bossHeadings, Wrap: true, Link: known ? QuestLookup.SearchUrl(group.Mob) : null,
+                ToolTip: known ? $"Open {group.Mob} on EQLWiki" : "EQLWiki lists only the zone for these items (typically runes)."));
+            rows.AddRange(needed);
+        }
+        return (bosses, items);
+    }
+
+    private static Brush FrozenBrush(Color color)
+    {
+        var brush = new SolidColorBrush(color);
+        brush.Freeze();
+        return brush;
     }
 }

@@ -39,7 +39,10 @@ public class LogTailerTests
 
             await gotAppended.Task.WaitAsync(TimeSpan.FromSeconds(5));
             cts.Cancel();
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
+            // Cancellation ends the tail loop; it normally returns instead of throwing.
+            await run.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(
+                ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
+            Assert.True(run.IsCompleted);
 
             Assert.Equal(
                 ["[Wed Oct 21 17:07:04 2026] line one", "[Wed Oct 21 17:07:05 2026] line two", "[Wed Oct 21 17:07:06 2026] line three", "[Wed Oct 21 17:07:07 2026] line four"],
@@ -57,5 +60,34 @@ public class LogTailerTests
         var info = LogFileLocator.Describe(@"C:\x\eqlog_Quethrosar_qeynos.txt");
         Assert.Equal("Quethrosar", info.CharacterName);
         Assert.Equal("qeynos", info.Server);
+    }
+
+    [Fact]
+    public void DetectsTheCandidateFolderWithTheNewestLog_AndResolvesAnInstallFolderToItsLogs()
+    {
+        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string legends = Path.Combine(root, "EverQuest Legends", "Logs");
+        string live = Path.Combine(root, "EverQuest", "Logs");
+        string empty = Path.Combine(root, "Empty");
+        try
+        {
+            Directory.CreateDirectory(legends);
+            Directory.CreateDirectory(live);
+            Directory.CreateDirectory(empty);
+            Assert.Null(LogFileLocator.DetectDirectory([empty, Path.Combine(root, "Missing")]));
+
+            File.WriteAllText(Path.Combine(legends, "eqlog_Old_server.txt"), "x");
+            File.SetLastWriteTime(Path.Combine(legends, "eqlog_Old_server.txt"), DateTime.Now.AddDays(-1));
+            File.WriteAllText(Path.Combine(live, "eqlog_New_server.txt"), "x");
+            Assert.Equal(live, LogFileLocator.DetectDirectory([empty, legends, live]));
+
+            Assert.Equal(live, LogFileLocator.ResolveChosenDirectory(Path.Combine(root, "EverQuest")));
+            Assert.Equal(live, LogFileLocator.ResolveChosenDirectory(live));
+            Assert.Equal(empty, LogFileLocator.ResolveChosenDirectory(empty));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 }

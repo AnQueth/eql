@@ -168,6 +168,24 @@
             <Setter Property="Background" Value="{DynamicResource NightSurface}" />
             <Setter Property="BorderBrush" Value="{DynamicResource NightBorder}" />
             <Setter Property="Padding" Value="8" />
+            <Setter Property="BorderThickness" Value="1" />
+            <!-- WrapPanel instead of the default TabPanel: wrapped tab rows keep their order when a tab is selected. -->
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <DockPanel KeyboardNavigation.TabNavigation="Local" SnapsToDevicePixels="True">
+                            <WrapPanel DockPanel.Dock="Top" IsItemsHost="True" Panel.ZIndex="1"
+                                       KeyboardNavigation.TabIndex="1" />
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}"
+                                    KeyboardNavigation.TabNavigation="Local" KeyboardNavigation.DirectionalNavigation="Contained"
+                                    KeyboardNavigation.TabIndex="2">
+                                <ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent" />
+                            </Border>
+                        </DockPanel>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style TargetType="TabItem" BasedOn="{StaticResource {x:Type Control}}">
             <Setter Property="Template">

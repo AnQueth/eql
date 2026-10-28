@@ -87,17 +87,17 @@ public partial class MainWindow
         }
     }
 
-    private void InitializeMobInfo()
+    private void InitializeMobInfo(StartupState state)
     {
-        try
+        if (state.MobResistances is { } mobs)
         {
-            _mobResistances = MobResistanceStore.Load(MobResistancePath);
+            _mobResistances = mobs;
             MobInfoStatusText.Text = "Only mob and spell names are sent to EQLWiki; no log files are uploaded.";
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        else
         {
             _mobSaveEnabled = false;
-            MobInfoStatusText.Text = $"Could not load mob data: {ex.Message}. Tracking this session only; the existing file will not be overwritten.";
+            MobInfoStatusText.Text = $"Could not load mob data: {state.MobResistancesError?.Message}. Tracking this session only; the existing file will not be overwritten.";
         }
         if (!double.IsFinite(_settings.MobInfoTimeoutSeconds) || _settings.MobInfoTimeoutSeconds < 0 ||
             _settings.MobInfoTimeoutSeconds > 120)
@@ -108,10 +108,7 @@ public partial class MainWindow
         MobTimeoutBox.Text = _settings.MobInfoTimeoutSeconds.ToString(CultureInfo.CurrentCulture);
         _wikiRepository = new WikiRepository(_wikiHttp, _mobResistances, () =>
         {
-            if (_mobSaveEnabled)
-            {
-                _mobResistances.Save(MobResistancePath);
-            }
+            return _mobSaveEnabled ? _mobResistances.SaveAsync(MobResistancePath) : Task.CompletedTask;
         });
         foreach (var quest in _questCache.Values)
         {
@@ -292,7 +289,7 @@ public partial class MainWindow
                 }
                 if (_mobSaveEnabled)
                 {
-                    _mobResistances.Save(MobResistancePath);
+                    await _mobResistances.SaveAsync(MobResistancePath, token);
                 }
                 var wikiInfo = _mobResistances.Get(zone, mob).Wiki;
                 return wikiInfo?.Found == true
@@ -345,17 +342,23 @@ public partial class MainWindow
         }
         if (info.Wiki is { Found: true } summary)
         {
-            rows.Add(new($"Wiki: {summary.Stats?.Race ?? "race ?"} | {summary.Class ?? "class ?"} | level {summary.Level ?? "?"}",
-                Wrap: true, Scale: 0.9));
-            rows.Add(new($"HP: {summary.HitPoints ?? "?"} | AC: {summary.Stats?.ArmorClass ?? "?"}",
-                Wrap: true, Bold: true));
+            var wikiStats = new List<(string Label, string Value)>
+            {
+                ("Race", summary.Stats?.Race ?? "?"),
+                ("Class", summary.Class ?? "?"),
+                ("Level", summary.Level ?? "?"),
+                ("HP", summary.HitPoints ?? "?"),
+                ("AC", summary.Stats?.ArmorClass ?? "?"),
+            };
             if (summary.Stats is { } combat)
             {
-                rows.Add(new($"Damage/hit: {combat.DamagePerHit ?? "?"} | Attacks/round: {combat.AttacksPerRound ?? "?"}",
-                    Wrap: true, Scale: 0.9));
-                rows.Add(new($"Attack speed: {combat.AttackSpeed ?? "?"} | HP regen: {combat.HpRegen ?? "?"} | Mana regen: {combat.ManaRegen ?? "?"}",
-                    Wrap: true, Scale: 0.9));
+                wikiStats.Add(("Damage/hit", combat.DamagePerHit ?? "?"));
+                wikiStats.Add(("Attacks/round", combat.AttacksPerRound ?? "?"));
+                wikiStats.Add(("Attack speed", combat.AttackSpeed ?? "?"));
+                wikiStats.Add(("HP regen", combat.HpRegen ?? "?"));
+                wikiStats.Add(("Mana regen", combat.ManaRegen ?? "?"));
             }
+            rows.Add(new("Wiki stats", Bold: true, Table: OverlayTable.Pairs(wikiStats, pairsPerRow: 2)));
         }
         if (info.Wiki is { Found: true, Special: not null } traits)
         {
@@ -378,9 +381,9 @@ public partial class MainWindow
         var wikiResists = info.Wiki?.Resistances;
         if (wikiResists is { Count: > 0 })
         {
-            rows.Add(new("Wiki resistance stats: " + string.Join(" | ",
+            rows.Add(new("Wiki resistance stats", Scale: 0.9, Table: OverlayTable.Columns(
                 Enum.GetValues<ResistanceType>().Where(wikiResists.ContainsKey)
-                    .Select(type => $"{type}: {wikiResists[type]}")), Wrap: true, Scale: 0.8));
+                    .Select(type => (type.ToString(), $"{wikiResists[type]}")))));
         }
         foreach (var observation in info.Observations.Where(o => o.OtherResisted > 0))
         {
@@ -400,10 +403,13 @@ public partial class MainWindow
         {
             if (stats.Stats is { } details)
             {
-                rows.Add(new($"Aggro radius: {details.AggroRadius ?? "?"} | Run speed: {details.RunSpeed ?? "?"}",
-                    Wrap: true, Scale: 0.85));
-                rows.Add(new($"Respawn: {details.RespawnTime ?? "?"} | Location: {details.Location ?? "?"}",
-                    Wrap: true, Scale: 0.85));
+                rows.Add(new("Wiki details", Scale: 0.9, Table: OverlayTable.Pairs(
+                [
+                    ("Aggro radius", details.AggroRadius ?? "?"),
+                    ("Run speed", details.RunSpeed ?? "?"),
+                    ("Respawn", details.RespawnTime ?? "?"),
+                    ("Location", details.Location ?? "?"),
+                ], pairsPerRow: 2)));
             }
             rows.Add(new($"Wiki checked {stats.CheckedUtc.ToLocalTime():d}; stats may differ for zone/rank variants.",
                 Wrap: true, Scale: 0.8));
@@ -422,26 +428,6 @@ public partial class MainWindow
             rows.Add(new("Persistent mob storage unavailable; this session is NOT being saved. See General.",
                 Wrap: true, Foreground: Brushes.Coral, Scale: 0.85));
         }
-        return new(mob, zone, rows);
-    }
-
-    private void SaveMobResistances(bool throwOnError)
-    {
-        if (!_mobSaveEnabled)
-        {
-            if (throwOnError)
-            {
-                throw new IOException("Mob data was not loaded successfully. The original file is protected from overwrites.");
-            }
-            return;
-        }
-        try
-        {
-            _mobResistances.Save(MobResistancePath);
-        }
-        catch (Exception ex) when (!throwOnError && (ex is IOException or UnauthorizedAccessException))
-        {
-            MobInfoStatusText.Text = $"Could not save mob resistances: {ex.Message}";
-        }
+        return new(mob, zone, rows, QuestLookup.SearchUrl(mob));
     }
 }

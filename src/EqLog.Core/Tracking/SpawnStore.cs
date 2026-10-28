@@ -20,7 +20,7 @@ public sealed record SpawnInfo(string Zone, string Mob, double? LearnedSeconds, 
 /// Zones are keyed by <see cref="BaseZone"/> so instance versions of a zone share what was learned.
 /// Not thread-safe; the engine serializes access.
 /// </summary>
-public sealed partial class SpawnStore
+public sealed partial class SpawnStore : ISnapshotStore<Dictionary<string, Dictionary<string, SpawnStore.Entry>>>
 {
     private const int MaxSamples = 30;
 
@@ -249,7 +249,7 @@ public sealed partial class SpawnStore
         return e;
     }
 
-    public static SpawnStore Load(string path)
+    public static async Task<SpawnStore> LoadAsync(string path, CancellationToken ct = default)
     {
         var store = new SpawnStore();
         if (!File.Exists(path))
@@ -259,7 +259,7 @@ public sealed partial class SpawnStore
 
         try
         {
-            var dto = JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, Entry>>>(File.ReadAllText(path));
+            var dto = await AtomicFile.ReadJsonAsync<Dictionary<string, Dictionary<string, Entry>>>(path, ct: ct).ConfigureAwait(false);
             foreach (var (zone, mobs) in dto ?? [])
             {
                 var map = new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
@@ -280,11 +280,37 @@ public sealed partial class SpawnStore
         return store;
     }
 
-    public void Save(string path)
+    /// <summary>Saves without locking; use only when nothing else is changing the store.</summary>
+    public Task SaveAsync(string path, CancellationToken ct = default)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        AtomicFile.WriteAllText(path, JsonSerializer.Serialize(_zones, new JsonSerializerOptions { WriteIndented = true }));
+        return SnapshotStore.SaveAsync(this, null, path, onlyIfDirty: false, ct);
+    }
+
+    SemaphoreSlim ISnapshotStore<Dictionary<string, Dictionary<string, Entry>>>.SaveGate { get; } = new(1, 1);
+
+    Dictionary<string, Dictionary<string, Entry>>? ISnapshotStore<Dictionary<string, Dictionary<string, Entry>>>.TakeSnapshot(bool onlyIfDirty)
+    {
+        if (onlyIfDirty && !IsDirty)
+        {
+            return null;
+        }
+        var snapshot = new Dictionary<string, Dictionary<string, Entry>>(_zones.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var (zone, mobs) in _zones)
+        {
+            var copy = new Dictionary<string, Entry>(mobs.Count, StringComparer.OrdinalIgnoreCase);
+            foreach (var (mob, entry) in mobs)
+            {
+                copy[mob] = entry.Clone();
+            }
+            snapshot[zone] = copy;
+        }
         IsDirty = false;
+        return snapshot;
+    }
+
+    void ISnapshotStore<Dictionary<string, Dictionary<string, Entry>>>.MarkDirty()
+    {
+        IsDirty = true;
     }
 
     public sealed class Entry
@@ -309,6 +335,14 @@ public sealed partial class SpawnStore
         public DateTime? LastSeen
         {
             get; set;
+        }
+
+        /// <summary>A copy that shares the immutable samples but not the list.</summary>
+        public Entry Clone()
+        {
+            var copy = (Entry)MemberwiseClone();
+            copy.Samples = [.. Samples];
+            return copy;
         }
     }
 

@@ -18,6 +18,14 @@ public class QuestLookupTests
     }
 
     [Fact]
+    public void WikiUrls_LinkItemsByPageAndNpcsBySearch()
+    {
+        Assert.Equal("https://eqlwiki.com/Nargon%27s_Staff", QuestLookup.ItemUrl("Nargon's Staff +10"));
+        Assert.Equal("https://eqlwiki.com/index.php?title=Special:Search&go=Go&search=a%20gnoll%20pup",
+            QuestLookup.SearchUrl(" a gnoll pup "));
+    }
+
+    [Fact]
     public async Task FindsQuestReferencesAcrossPagesAndTransclusionsWithoutDuplicates()
     {
         using var handler = new Responses(

@@ -37,13 +37,16 @@ or transclude the item's page, including redirects. References are not verified 
 Automatic lookups use the shared wiki repository's background priority and are cached for seven days. Wiki response processing
 and cache serialization/writes run off the UI thread; historical loot is applied in short UI batches.
 Selection versioning prevents older lookup responses from replacing the latest selected item's results.
-The Sky catalog has a separate one-day cache shared by the browser and compact overlay.
+The Sky catalog has a separate one-day cache used by the Sky quest tracker overlay (the only Sky UI).
 
 Structured item displays open normalized, escaped EQLWiki item URLs directly in the browser.
 `OverlayRow.LootItem` carries the raw item target separately from formatted labels; clicks
 raise `ItemWikiRequested`, while the context menu preserves `LootLookupRequested` for
 quest-reference navigation. This covers Loot, Quest opportunities, Sky rewards/ingredients
-and Mote tier/recent rows. Inventory cells and Sky browser fields use WPF hyperlinks.
+and Mote tier/recent rows. Inventory cells use WPF hyperlinks. Rows with `OverlayRow.WatchKey`
+render a star toggle that raises `WatchToggleRequested`; the Sky tracker uses it for its watch list.
+Filtering (`SkyQuests.Matches`), dropper grouping (`SkyQuests.ByDropper`) and batched progress
+(`SkyQuests.ProgressAll`) live in Core; the overlay rebuilds its rows at most once per second.
 Hyperlinks are excluded from overlay drag gestures; floating click-through locks are unchanged.
 Sky caches retain per-entry labels and actual item-page targets, preserving aliases, quantities
 and drop-source notes without including them in URLs. Older catalogs refresh to fill these
@@ -137,7 +140,7 @@ HTTP access are unrelated and do not enter this queue.
 All programmatic EQLWiki HTTP steps use one `WikiRequestScheduler` priority queue:
 
 - `RealTime` (0): live considers and their spell metadata.
-- `Interactive` (100): NPC/item selection, manual refreshes, and opening the Sky browser.
+- `Interactive` (100): NPC/item selection and manual refreshes (including Sky **Refresh**).
 - `Background` (200): discovered spells, automatic quest enrichment and automatic Sky loads.
 
 Numeric gaps permit adding priorities without changing the scheduler. Ties use HTTP enqueue
@@ -180,10 +183,12 @@ cache entries default to found). API/network failures do not produce negative ca
 The UI quest batch and progress paths share `QuestLookupResult.NeedsRefresh` with the repository.
 Sky caches retain their one-day TTL and existing files. Quest persistence has its own save-only gate,
 never a network lock; interacting with an automatically queued item can promote it.
-The Sky loading guard explicitly promotes an existing operation when the browser is opened.
-Application shutdown and restart-to-update cancel and join repository work before the final
-save; remaining spells are rediscovered on log replay. Repository continuations do not wait
-on the UI dispatcher during shutdown.
+The Sky loading guard explicitly promotes an existing operation when Refresh is clicked.
+Application shutdown and restart-to-update dispose the repository before canceling caller tokens:
+waiters are released immediately, queued and in-flight HTTP is abandoned (never completed) rather
+than canceled, so a cancellation is not rethrown through every lookup layer, and workers that are
+parsing or saving are joined before the final save; remaining spells are rediscovered on log
+replay. Repository continuations do not wait on the UI dispatcher during shutdown.
 
 ## Persistence
 
@@ -227,6 +232,39 @@ Parsed and unparsed log timestamps expire idle summaries. Snapshot-driven wall-c
 is gated until the tail reader catches up, preventing recent history from splitting according
 to dispatcher timing. Single-word death lines are interpreted only for an already active target.
 Moving a log is a new source; replacing/truncating it with older timestamps is not a new import.
+
+On disk the compendium is split so completed history is never held in memory or rewritten.
+`npc-compendium\index.json` holds the catalog, considers, watermarks, interned source paths and
+active/unflushed encounters. Finished encounters are appended once to per-NPC JSONL files in
+`npc-compendium\npcs\` (named deterministically from mob/zone plus a SHA-256 suffix, so a crash
+cannot orphan them). History lines reference sources by index and omit default values; IDs are
+rebuilt from source/start/line. Appends are written before the index; on load, unflushed
+encounters already present in history are dropped, a torn final line is skipped/repaired, and
+duplicate IDs keep the last copy. `GetAsync` reads one NPC's history through a small LRU cache
+(cache hits complete synchronously; a miss reads the JSONL file on the thread pool, and the NPC
+view renders briefly empty until it arrives).
+A legacy `npc-compendium.json` is migrated on first load and renamed to `.json.migrated`.
+
+All file IO is asynchronous and streamed. JSON stores use `AtomicFile.WriteJsonAsync/ReadJsonAsync`:
+compact, shared serializer options serialized straight into a temp file (no intermediate JSON
+string or byte array) and atomically moved. Each store exposes `LoadAsync`/`SaveAsync`; saves take a
+detached object snapshot under the store's lock (containers copied, immutable records and strings
+shared; never holding a lock across `await`), then stream it outside the lock behind a per-store
+`SemaphoreSlim` gate, so overlapping saves always leave the newest snapshot on disk. NPC history
+records are streamed onto the end of their `.jsonl` file one line at a time. `settings.json` follows
+the same pattern: `AppSettings.SaveAsync` snapshots the settings graph on the UI thread and streams
+it from a worker. Unchanged settings are skipped by comparing a SHA-256 of the snapshot
+(`AtomicFile.HashJson`, which streams the serializer into the hash), so the serialized document is
+never built or retained. File-system
+metadata probes from the UI (`File.Exists`, log discovery, `FileInfo`) go through `Task.Run`.
+
+Startup loads every store concurrently on the thread pool (`MainWindow.StartupState.LoadAsync`)
+before the window is built. Housekeeping calls `SaveAllInBackground` every few seconds (skipped
+while the previous save is still writing). Closing the dock cancels the close, awaits
+`ShutdownAsync` (stop the tailer, final `SaveAllAsync`) and then closes again. Windows logoff is
+the single exception: `SessionEnding` must be synchronous, so `SaveAllBlocking` waits (up to 15 s)
+on the saves running on the thread pool, which never resume on the dispatcher and so cannot
+deadlock.
 
 The `npcs` overlay has independent selection, cancellation, status and settings from `mobinfo`.
 Its persisted Overview/Spell resists/Encounters views separate reference data from spell cards

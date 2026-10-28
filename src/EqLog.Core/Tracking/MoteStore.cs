@@ -22,10 +22,8 @@ public sealed record MoteMobRate(string Mob, int Kills, int Drops, IReadOnlyList
 /// so reading the same log again on the next launch doesn't count anything twice.
 /// Not thread-safe; the engine serializes access.
 /// </summary>
-public sealed class MoteStore
+public sealed class MoteStore : ISnapshotStore<MoteStore.Data>
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
-
     private Data _data = new();
 
     public bool IsDirty
@@ -127,14 +125,14 @@ public sealed class MoteStore
         return m;
     }
 
-    public static MoteStore Load(string path)
+    public static async Task<MoteStore> LoadAsync(string path, CancellationToken ct = default)
     {
         var store = new MoteStore();
         try
         {
             if (File.Exists(path))
             {
-                var data = JsonSerializer.Deserialize<Data>(File.ReadAllText(path));
+                var data = await AtomicFile.ReadJsonAsync<Data>(path, ct: ct).ConfigureAwait(false);
                 if (data is not null)
                 {
                     store._data = Normalize(data);
@@ -149,14 +147,31 @@ public sealed class MoteStore
         return store;
     }
 
-    public void Save(string path)
+    /// <summary>Saves without locking; use only when nothing else is changing the store.</summary>
+    public Task SaveAsync(string path, CancellationToken ct = default)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        AtomicFile.WriteAllText(path, JsonSerializer.Serialize(_data, JsonOptions));
-        IsDirty = false;
+        return SnapshotStore.SaveAsync(this, null, path, onlyIfDirty: false, ct);
     }
 
-    // System.Text.Json creates case-sensitive dictionaries; rebuild them case-insensitive.
+    SemaphoreSlim ISnapshotStore<Data>.SaveGate { get; } = new(1, 1);
+
+    Data? ISnapshotStore<Data>.TakeSnapshot(bool onlyIfDirty)
+    {
+        if (onlyIfDirty && !IsDirty)
+        {
+            return null;
+        }
+        var snapshot = Normalize(_data);
+        IsDirty = false;
+        return snapshot;
+    }
+
+    void ISnapshotStore<Data>.MarkDirty()
+    {
+        IsDirty = true;
+    }
+
+    // Deep copy with case-insensitive dictionaries (System.Text.Json creates case-sensitive ones); also used for save snapshots.
     private static Data Normalize(Data d)
     {
         var result = new Data();
@@ -184,14 +199,14 @@ public sealed class MoteStore
         return result;
     }
 
-    private sealed class Data
+    internal sealed class Data
     {
         public Dictionary<string, CharacterData> Characters { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
         public Dictionary<string, Dictionary<string, MobData>> Zones { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
-    private sealed class CharacterData
+    internal sealed class CharacterData
     {
         public DateTime? Watermark
         {
@@ -206,7 +221,7 @@ public sealed class MoteStore
         public Dictionary<string, int> Tiers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
-    private sealed class MobData
+    internal sealed class MobData
     {
         public int Kills
         {

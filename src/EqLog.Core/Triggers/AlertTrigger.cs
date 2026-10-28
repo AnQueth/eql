@@ -29,6 +29,11 @@ public sealed class AlertTrigger
     /// <summary>A WPF color name or #RRGGBB value.</summary>
     public string Color { get; set; } = "#FF5A5A";
 
+    public AlertTrigger Clone()
+    {
+        return (AlertTrigger)MemberwiseClone();
+    }
+
     public static List<AlertTrigger> Defaults()
     {
         return [

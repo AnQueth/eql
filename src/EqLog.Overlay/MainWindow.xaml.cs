@@ -88,8 +88,8 @@ public partial class MainWindow : Window
     /// <summary>If the newest log line is older than this, we are viewing an old log and use log time as "now".</summary>
     private static readonly TimeSpan ReplayThreshold = TimeSpan.FromMinutes(30);
 
-    private readonly AppSettings _settings = AppSettings.Load();
-    private readonly SpellDurationStore _durations = SpellDurationStore.Load(AppSettings.DurationsPath);
+    private readonly AppSettings _settings;
+    private readonly SpellDurationStore _durations;
     private readonly Dictionary<string, OverlayWindow> _overlays = [];
     private readonly Dictionary<string, CheckBox> _overlayToggles = [];
     private readonly Dictionary<string, CheckBox> _dockToggles = [];
@@ -97,11 +97,13 @@ public partial class MainWindow : Window
     private DockWindow _dock = null!;
     private readonly HashSet<ChatChannel> _chatChannels;
     private readonly ObservableCollection<DurationRow> _durationRows = [];
-    private readonly SpawnStore _spawnStore = SpawnStore.Load(AppSettings.SpawnsPath);
-    private readonly MoteStore _moteStore = MoteStore.Load(AppSettings.MotesPath);
+    private readonly SpawnStore _spawnStore;
+    private readonly MoteStore _moteStore;
     private readonly ObservableCollection<SpawnRow> _spawnRows = [];
     private string _spawnsSignature = "";
     private readonly DispatcherTimer _renderTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
+    private static readonly TimeSpan WikiRenderInterval = TimeSpan.FromSeconds(1);
+    private DateTime _lastWikiRender;
     private readonly DispatcherTimer _houseTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly DispatcherTimer _gameTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private bool _gameVisible = true;
@@ -131,14 +133,18 @@ public partial class MainWindow : Window
     private string _durationsSignature = "";
     private int _houseTicks;
 
-    public MainWindow()
+    public MainWindow(StartupState state)
     {
+        _settings = state.Settings;
+        _durations = state.Durations;
+        _spawnStore = state.Spawns;
+        _moteStore = state.Motes;
         InitializeComponent();
-        InitializeThemes();
-        InitializeLootQuests();
-        InitializeQuestInventory();
-        InitializeMobInfo();
-        InitializeNpcCompendium();
+        InitializeThemes(state);
+        InitializeLootQuests(state);
+        InitializeQuestInventory(state);
+        InitializeMobInfo(state);
+        InitializeNpcCompendium(state);
         _chatChannels = [.. _settings.ChatChannels];
         DurationsGrid.ItemsSource = _durationRows;
         SpawnsGrid.ItemsSource = _spawnRows;
@@ -157,7 +163,7 @@ public partial class MainWindow : Window
         UpdateLockState();
         CreateChatToggles();
 
-        Application.Current.SessionEnding += (_, _) => SaveAll();
+        Application.Current.SessionEnding += (_, _) => SaveAllBlocking();
         _renderTimer.Tick += (_, _) => Render();
         _houseTimer.Tick += (_, _) => Housekeeping();
         _gameTimer.Tick += (_, _) => CheckGameVisible();
@@ -166,7 +172,7 @@ public partial class MainWindow : Window
         // app's main window. A hidden handle is still needed for the Ctrl+Shift+L hotkey.
         Content = null;
         _dock.SetSidePanel(SettingsRoot);
-        _dock.Closing += (_, _) => Shutdown();
+        _dock.Closing += Dock_Closing;
         _dock.Closed += (_, _) =>
         {
             Close();
@@ -237,6 +243,7 @@ public partial class MainWindow : Window
             }
             panel.LootLookupRequested += async item => await LookupLootItemAsync(item);
             panel.ItemWikiRequested += item => OpenWiki(QuestLookup.PageUrl(QuestLookup.ItemTitle(item)));
+            panel.LinkRequested += url => OpenWiki(url);
             panel.BreakdownRequested += breakdown => new AbilityBreakdownWindow(breakdown) { Owner = _dock }.Show();
             panel.DockToggleRequested += pnl =>
                 Dispatcher.BeginInvoke(() => SetDocked(pnl.Key, !_settings.Overlays[pnl.Key].Docked));
@@ -491,12 +498,13 @@ public partial class MainWindow : Window
                 Width = def.Width,
                 Height = def.Height,
                 Visible = true,
+                Docked = true,
             };
         }
 
         if (def.Key == "alerts")
         {
-            // Alerts go near the top middle of the screen, where they're hard to miss.
+            // Alerts float near the top middle of the screen, where they're hard to miss; docking would hide them.
             return new OverlayPlacement
             {
                 Left = work.Left + (work.Width - def.Width) / 2,
@@ -515,7 +523,7 @@ public partial class MainWindow : Window
             Width = def.Width,
             Height = def.Height,
             Visible = def.Key is "dps" or "taken" or "timers" or "session" or "chat" or "spawns" or "motes" or "quests",
-            Docked = def.Key == "quests",
+            Docked = true,
         };
     }
 
@@ -571,39 +579,95 @@ public partial class MainWindow : Window
     private async Task OpenInitialLogAsync()
     {
         string[] args = Environment.GetCommandLineArgs();
-        string? path = args.Skip(1).FirstOrDefault(File.Exists);
-        if (path is null && _settings.LogPath is { } saved && File.Exists(saved))
+        string? savedPath = _settings.LogPath;
+        string? savedDirectory = _settings.LogDirectory;
+        bool followNewest = _settings.FollowNewest;
+        // Probing the disk has no async API, so it runs on the thread pool.
+        string? path = await Task.Run(() => FindInitialLog(args, savedPath, savedDirectory, followNewest));
+
+        if (path is not null)
         {
-            path = saved;
+            await SwitchToAsync(path);
+            return;
+        }
+
+        if (savedDirectory is not null && await Task.Run(() => Directory.Exists(savedDirectory)))
+        {
+            ShowWaitingForLogs(savedDirectory);
+            return;
+        }
+
+        // First run (or the saved folder is gone) and no logs were found in the usual install folders.
+        StatusText.Text = "Couldn't find your EverQuest logs automatically. Choose your EverQuest Logs folder.";
+        await ChooseLogFolderAsync();
+    }
+
+    private void ShowWaitingForLogs(string directory)
+    {
+        StatusText.Text = $"Watching {directory} - no eqlog files yet. In game, type /log on; the log is picked up automatically.";
+        LogPathBox.Text = directory;
+    }
+
+    private async Task ChooseLogFolderAsync()
+    {
+        string? start = _settings.LogDirectory ?? (_currentFile is not null ? Path.GetDirectoryName(_currentFile) : null);
+        var dialog = new OpenFolderDialog
+        {
+            Title = "Choose your EverQuest Logs folder (or the EverQuest install folder)",
+            InitialDirectory = start is not null && await Task.Run(() => Directory.Exists(start)) ? start : null,
+        };
+        if (dialog.ShowDialog(_dock) != true)
+        {
+            if (_currentFile is null)
+            {
+                StatusText.Text = "No log folder chosen. Use \"Choose folder...\" to pick your EverQuest Logs folder, " +
+                                  "or Browse to pick a log file. (Turn on logging in game with /log on.)";
+            }
+            return;
+        }
+
+        string directory = await Task.Run(() => LogFileLocator.ResolveChosenDirectory(dialog.FolderName));
+        var newest = await Task.Run(() => LogFileLocator.FindNewest(directory));
+        _settings.LogDirectory = directory;
+        if (newest is null)
+        {
+            await StopTailingAsync();
+            _currentFile = null;
+            _settings.LogPath = null;
+            ShowWaitingForLogs(directory);
+            return;
+        }
+
+        await SwitchToAsync(newest.Path);
+    }
+
+    private static string? FindInitialLog(string[] args, string? savedPath, string? savedDirectory, bool followNewest)
+    {
+        string? path = args.Skip(1).FirstOrDefault(File.Exists);
+        if (path is null && savedPath is not null && File.Exists(savedPath))
+        {
+            path = savedPath;
         }
 
         // When following the newest log, prefer whatever is newest in the folder at startup.
-        if (path is null || _settings.FollowNewest)
+        if (path is null || followNewest)
         {
-            string dir = (path is not null ? Path.GetDirectoryName(path) : null) ?? _settings.LogDirectory ?? LogFileLocator.DefaultDirectory;
-            if (args.Length <= 1 && LogFileLocator.FindNewest(dir) is { } newest)
+            string? dir = (path is not null ? Path.GetDirectoryName(path) : null) ?? savedDirectory ?? LogFileLocator.DetectDirectory();
+            if (args.Length <= 1 && dir is not null && LogFileLocator.FindNewest(dir) is { } newest)
             {
                 path = newest.Path;
             }
         }
-
-        if (path is null)
-        {
-            StatusText.Text = $"No eqlog files found in {LogFileLocator.DefaultDirectory}. Use Browse to pick a log file. " +
-                              "(Turn on logging in game with /log on.)";
-            return;
-        }
-
-        await SwitchToAsync(path);
+        return path;
     }
 
     private async Task SwitchToAsync(string path)
     {
         await StopTailingAsync();
-        SaveNpcCompendium(throwOnError: false);
+        await SaveNpcCompendiumAsync(throwOnError: false);
         ResetMobInfo();
 
-        var info = LogFileLocator.Describe(path);
+        var info = await Task.Run(() => LogFileLocator.Describe(path));
         _engine = new LogEngine(_durations, _spawnStore, _moteStore, _mobResistances, Path.GetFullPath(path), _npcCompendium)
         {
             CharacterName = info.CharacterName,
@@ -734,10 +798,15 @@ public partial class MainWindow : Window
             _dock.Title = title;
         }
         PumpQuestLoot();
-        RefreshSkyInventory();
+        // Wiki activity only changes on a seconds scale; refreshing it every frame made the whole UI sluggish.
+        bool renderWiki = IsShowing("wiki") && real - _lastWikiRender >= WikiRenderInterval;
+        if (renderWiki)
+        {
+            _lastWikiRender = real;
+        }
         var view = new OverlayView(_chatChannels, UpdateAlerts(real), _settings.LootGrouping, _questInventory,
-            IsShowing("wiki") ? _wikiRepository.GetActivity() : null,
-            IsShowing("wiki") ? GetQuestWikiActivity() : null);
+            renderWiki ? _wikiRepository.GetActivity() : null,
+            renderWiki ? GetQuestWikiActivity() : null);
         if (LogLinesTab.IsSelected)
         {
             RefreshRawLines();
@@ -746,6 +815,10 @@ public partial class MainWindow : Window
         foreach (var def in OverlayPresenters.All)
         {
             if (!IsShowing(def.Key))
+            {
+                continue;
+            }
+            if (def.Key == "wiki" && !renderWiki)
             {
                 continue;
             }
@@ -758,7 +831,7 @@ public partial class MainWindow : Window
                 "npcs" => NpcCompendiumContent(),
                 _ => def.Render(snap, _engine, view),
             };
-            _overlays[def.Key].Panel.Update(content.Title, content.Subtitle, content.Rows);
+            _overlays[def.Key].Panel.Update(content.Title, content.Subtitle, content.Rows, content.TitleLink);
         }
 
         HistoryProgress.Value = p.TotalBytes > 0 ? (double)p.BytesRead / p.TotalBytes : 0;
@@ -810,27 +883,53 @@ public partial class MainWindow : Window
 
         if (_houseTicks % 5 == 0)
         {
-            SaveAll();
+            SaveAllInBackground();
         }
     }
 
-    private void CheckForNewerLog()
+    private bool _checkingNewerLog;
+
+    private async void CheckForNewerLog()
     {
-        if (!_settings.FollowNewest || _currentFile is null)
+        // While waiting in a chosen folder with no logs yet, the first log to appear is opened whatever FollowNewest says.
+        bool waiting = _currentFile is null && _settings.LogDirectory is not null;
+        if (_checkingNewerLog || (!waiting && (!_settings.FollowNewest || _currentFile is null)))
         {
             return;
         }
 
-        string? dir = Path.GetDirectoryName(_currentFile);
-        if (dir is null || LogFileLocator.FindNewest(dir) is not { } newest)
+        string? dir = waiting ? _settings.LogDirectory : Path.GetDirectoryName(_currentFile);
+        if (dir is null)
         {
             return;
         }
 
-        // Another character's log was written after we started reading this one: they logged in.
-        if (!string.Equals(newest.Path, _currentFile, StringComparison.OrdinalIgnoreCase) && newest.LastWriteTime > _followBaseline)
+        _checkingNewerLog = true;
+        try
         {
-            _ = SwitchToAsync(newest.Path);
+            var newest = await Task.Run(() => LogFileLocator.FindNewest(dir));
+            if (waiting)
+            {
+                if (newest is not null && _currentFile is null)
+                {
+                    await SwitchToAsync(newest.Path);
+                }
+            }
+            // Another character's log was written after we started reading this one: they logged in.
+            else if (newest is not null && _settings.FollowNewest && _currentFile is not null &&
+                !string.Equals(newest.Path, _currentFile, StringComparison.OrdinalIgnoreCase) &&
+                newest.LastWriteTime > _followBaseline)
+            {
+                await SwitchToAsync(newest.Path);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            StatusText.Text = $"Could not check for a newer log: {ex.Message}";
+        }
+        finally
+        {
+            _checkingNewerLog = false;
         }
     }
 
@@ -886,11 +985,14 @@ public partial class MainWindow : Window
         }
 
         _durationsSignature = "";
-        SaveDurations();
+        _ = SaveQuietlyAsync(_engine.SaveSpellDurationsAsync(AppSettings.DurationsPath));
     }
 
-    /// <summary>Saves window layout, settings and everything learned. Runs every few seconds, on close and on Windows logoff.</summary>
-    private void SaveAll(bool throwOnError = false)
+    private Task _periodicSave = Task.CompletedTask;
+    private bool _sessionEnding;
+
+    /// <summary>Copies window positions into the settings; must run on the UI thread before settings are serialized.</summary>
+    private void CaptureLayout()
     {
         foreach (var (key, w) in _overlays)
         {
@@ -907,34 +1009,112 @@ public partial class MainWindow : Window
         }
 
         _dock.SaveBounds();
-        try
-        {
-            _settings.Save();
-        }
-        catch (IOException) when (!throwOnError)
-        {
-        }
-
-        SaveDurations(throwOnError);
-        SaveSpawns(throwOnError);
-        SaveMotes(throwOnError);
-        SaveQuestInventory(throwOnError);
-        SaveMobResistances(throwOnError);
-        SaveNpcCompendium(throwOnError);
     }
 
-    private void SaveDurations(bool throwOnError = false)
+    /// <summary>
+    /// Starts every save. Each store snapshots its data when started and writes asynchronously; stores order their
+    /// own writes, so overlapping saves never put older data on disk last. <c>Report</c> runs on the UI thread
+    /// with the error message, or null on success.
+    /// </summary>
+    private List<(Task Task, Action<string?>? Report)> StartSaves()
     {
-        try
+        var saves = new List<(Task Task, Action<string?>? Report)>
         {
-            _engine.SaveSpellDurations(AppSettings.DurationsPath);
+            (_settings.SaveAsync(), null),
+            (_engine.SaveSpellDurationsAsync(AppSettings.DurationsPath), null),
+            (_engine.SaveSpawnsAsync(AppSettings.SpawnsPath), null),
+            (_engine.SaveMotesAsync(AppSettings.MotesPath), null),
+            (StartQuestInventorySave(), error =>
+            {
+                if (error is not null)
+                {
+                    _questDirty = true;
+                    QuestLookupStatus.Text = $"Could not save quest inventory: {error}";
+                }
+            }),
+        };
+        if (_mobSaveEnabled)
+        {
+            saves.Add((_mobResistances.SaveAsync(MobResistancePath), error =>
+            {
+                if (error is not null)
+                {
+                    MobInfoStatusText.Text = $"Could not save mob resistances: {error}";
+                }
+            }));
         }
-        catch (IOException) when (!throwOnError)
+        if (_npcSaveEnabled)
         {
-            // Try again on the next save.
+            saves.Add((_npcCompendium.SaveAsync(NpcCompendiumFolder), error =>
+            {
+                _npcStorageError = error is null ? null : $"NPC compendium save failed: {error}";
+                if (_npcStorageError is not null)
+                {
+                    MobInfoStatusText.Text = _npcStorageError;
+                }
+            }));
+        }
+        return saves;
+    }
+
+    /// <summary>Saves window layout, settings and everything learned. Runs every few seconds, on close and before updating.</summary>
+    /// <param name="throwOnError">Fail on the first save error, or when a store is protected because it failed to load.</param>
+    private async Task SaveAllAsync(bool throwOnError = false)
+    {
+        CaptureLayout();
+        foreach (var (task, report) in StartSaves())
+        {
+            try
+            {
+                await task;
+                report?.Invoke(null);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                report?.Invoke(ex.Message);
+                if (throwOnError)
+                {
+                    throw;
+                }
+            }
+        }
+        if (throwOnError && !_mobSaveEnabled)
+        {
+            throw new IOException("Mob data was not loaded successfully. The original file is protected from overwrites.");
+        }
+        if (throwOnError && !_npcSaveEnabled)
+        {
+            throw new IOException(_npcStorageError);
         }
     }
 
+    /// <summary>Periodic save; skipped while the previous one is still writing.</summary>
+    private void SaveAllInBackground()
+    {
+        if (_periodicSave.IsCompleted)
+        {
+            _periodicSave = SaveAllAsync();
+        }
+    }
+
+    /// <summary>
+    /// Windows logoff/shutdown only allows a synchronous handler, so this is the one place that blocks on IO.
+    /// The saves run on the thread pool (the UI thread is parked, so nothing mutates state meanwhile) and never
+    /// resume on the dispatcher, which keeps the wait deadlock-free.
+    /// </summary>
+    private void SaveAllBlocking()
+    {
+        _sessionEnding = true;
+        CaptureLayout();
+        try
+        {
+            Task.Run(() => Task.WhenAll(StartSaves().Select(s => s.Task))).Wait(TimeSpan.FromSeconds(15));
+        }
+        catch (AggregateException)
+        {
+            // The session is ending; there is nowhere left to report a failed save.
+        }
+    }
     private void SetLocked(bool locked)
     {
         _settings.Locked = locked;
@@ -975,19 +1155,37 @@ public partial class MainWindow : Window
     }
 
     private bool _shutDown;
+    private bool _shuttingDown;
 
-    /// <summary>Runs when the dock (main) window closes: saves everything and closes the overlays.</summary>
-    private void Shutdown()
+    /// <summary>
+    /// The dock (main) window is closing. The close is held back while everything is saved asynchronously,
+    /// then repeated; at Windows logoff the data was already saved, so it closes immediately.
+    /// </summary>
+    private async void Dock_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        if (_shutDown)
+        if (_shutDown || _sessionEnding)
         {
             return;
         }
 
+        e.Cancel = true;
+        if (_shuttingDown)
+        {
+            return;
+        }
+        _shuttingDown = true;
+        await ShutdownAsync();
         _shutDown = true;
+        _dock.Close();
+    }
+
+    private async Task ShutdownAsync()
+    {
+        // Start disposal first so it abandons wiki work before the callers' tokens cancel it layer by layer.
+        var disposingWiki = _wikiRepository.DisposeAsync();
         _wikiCts.Cancel();
         _npcWikiCts?.Cancel();
-        _wikiRepository.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        await disposingWiki;
         _renderTimer.Stop();
         _houseTimer.Stop();
         _gameTimer.Stop();
@@ -998,8 +1196,8 @@ public partial class MainWindow : Window
         {
             try
             {
-                // Tail callbacks never wait on the dispatcher; finish the current batch before the final save.
-                tail.GetAwaiter().GetResult();
+                // Finish the current batch before the final save.
+                await tail;
             }
             catch (OperationCanceledException)
             {
@@ -1009,26 +1207,30 @@ public partial class MainWindow : Window
                 StatusText.Text = $"Log reader stopped during shutdown: {ex.Message}";
             }
         }
-        SaveAll();
+        await SaveAllAsync();
         foreach (var w in _overlays.Values)
         {
             w.Close();
         }
     }
-
     private async void Browse_Click(object sender, RoutedEventArgs e)
     {
-        string dir = _currentFile is not null ? Path.GetDirectoryName(_currentFile)! : LogFileLocator.DefaultDirectory;
+        string dir = _currentFile is not null ? Path.GetDirectoryName(_currentFile)! : _settings.LogDirectory ?? LogFileLocator.DefaultDirectory;
         var dlg = new OpenFileDialog
         {
             Title = "Choose an EverQuest log file",
             Filter = "EverQuest logs (eqlog*.txt)|eqlog*.txt|All files (*.*)|*.*",
-            InitialDirectory = Directory.Exists(dir) ? dir : null,
+            InitialDirectory = await Task.Run(() => Directory.Exists(dir)) ? dir : null,
         };
         if (dlg.ShowDialog(_dock) == true)
         {
             await SwitchToAsync(dlg.FileName);
         }
+    }
+
+    private async void ChooseFolder_Click(object sender, RoutedEventArgs e)
+    {
+        await ChooseLogFolderAsync();
     }
 
     private void FollowNewest_Click(object sender, RoutedEventArgs e)
@@ -1119,14 +1321,7 @@ public partial class MainWindow : Window
         _matcher = matcher;
         TriggerStatusText.Text = matcher.Errors.Count == 0 ? "" : "Invalid regex (trigger skipped): " + string.Join("; ", matcher.Errors);
         _settings.Triggers = [.. _triggers];
-        try
-        {
-            _settings.Save();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            TriggerStatusText.Text += $" Could not save alert triggers: {ex.Message}";
-        }
+        SaveSettingsInBackground(error => TriggerStatusText.Text += $" Could not save alert triggers: {error}");
     }
 
     private void Triggers_RowEditEnding(object? sender, DataGridRowEditEndingEventArgs e)
@@ -1465,7 +1660,7 @@ public partial class MainWindow : Window
         {
             _engine.SetSpawnTracked(row.Zone, row.Mob, box.IsChecked == true);
             CheckSpawnWiki();
-            SaveSpawns();
+            _ = SaveQuietlyAsync(_engine.SaveSpawnsAsync(AppSettings.SpawnsPath));
         }
     }
 
@@ -1493,30 +1688,31 @@ public partial class MainWindow : Window
         }
 
         _spawnsSignature = "";
-        SaveSpawns();
+        _ = SaveQuietlyAsync(_engine.SaveSpawnsAsync(AppSettings.SpawnsPath));
     }
 
-    private void SaveSpawns(bool throwOnError = false)
+    /// <summary>Settings save for UI handlers that can't await; <paramref name="onError"/> receives the failure message.</summary>
+    private async void SaveSettingsInBackground(Action<string>? onError = null)
     {
         try
         {
-            _engine.SaveSpawns(AppSettings.SpawnsPath);
+            await _settings.SaveAsync();
         }
-        catch (IOException) when (!throwOnError)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Try again on the next save.
+            onError?.Invoke(ex.Message);
         }
     }
 
-    private void SaveMotes(bool throwOnError = false)
+    /// <summary>For small learned-data saves; a failed write stays dirty and the periodic save retries it.</summary>
+    private static async Task SaveQuietlyAsync(Task save)
     {
         try
         {
-            _engine.SaveMotes(AppSettings.MotesPath);
+            await save;
         }
-        catch (IOException) when (!throwOnError)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Try again on the next save.
         }
     }
 }

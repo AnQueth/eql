@@ -19,6 +19,14 @@ public partial class MainWindow
     {
         get
         {
+            return Path.Combine(AppSettings.Folder, "quest-lookups.jsonl");
+        }
+    }
+
+    private static string LegacyQuestCachePath
+    {
+        get
+        {
             return Path.Combine(AppSettings.Folder, "quest-lookups.json");
         }
     }
@@ -41,23 +49,20 @@ public partial class MainWindow
     private string? _questActiveItem;
     private readonly HashSet<string> _questFailed = new(StringComparer.OrdinalIgnoreCase);
     private ProgressBar? _questProgressBar;
-    private TextBlock? _questProgressText;
+    private ContentControl? _questProgressText;
+    private OverlayTable? _questProgressTable;
     private TextBlock? _questCurrentText;
     private readonly System.Collections.ObjectModel.ObservableCollection<QuestInventoryItem> _ownedQuestItems = [];
 
-    private void InitializeQuestInventory()
+    private void InitializeQuestInventory(StartupState state)
     {
-        try
+        if (state.QuestInventory is { } inventory)
         {
-            if (File.Exists(QuestInventoryPath))
-            {
-                _questInventory = JsonSerializer.Deserialize<QuestInventory>(File.ReadAllText(QuestInventoryPath))
-                    ?? throw new JsonException("Empty quest inventory.");
-            }
+            _questInventory = inventory;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        if (state.QuestInventoryError is { } error)
         {
-            QuestLookupStatus.Text = $"Could not load quest inventory: {ex.Message}";
+            QuestLookupStatus.Text = $"Could not load quest inventory: {error.Message}";
         }
 
         QuestOwnedGrid.ItemsSource = _ownedQuestItems;
@@ -137,9 +142,7 @@ public partial class MainWindow
             {
                 return result;
             }
-            var snapshot = _questCache.Values.Where(r => !QuestLookup.ItemTitle(r.Item).Equals(item,
-                StringComparison.OrdinalIgnoreCase)).Append(result).ToArray();
-            await Task.Run(() => AtomicFile.WriteAllText(QuestCachePath, JsonSerializer.Serialize(snapshot)), _wikiCts.Token);
+            await QuestLookupStore.AppendAsync(QuestCachePath, result, _wikiCts.Token);
             _questCache[item] = result;
             return result;
         }
@@ -184,14 +187,27 @@ public partial class MainWindow
         var quests = _questInventory.Opportunities(_characterName ?? "", _questCache, _settings.QuestFilter, _settings.QuestRecentFirst);
         foreach (var quest in quests)
         {
-            rows.Add(new(quest.Title, Bold: true, QuestHeading: true));
+            rows.Add(new(quest.Title, Bold: true, QuestHeading: true, Wrap: true,
+                Link: QuestLookup.PageUrl(quest.Title), ToolTip: $"Open {quest.Title} on EQLWiki"));
             var items = _settings.QuestRecentFirst
                 ? quest.Items.OrderByDescending(i => i.LastLootUtc).ThenBy(i => i.Item, StringComparer.OrdinalIgnoreCase)
                 : quest.Items.OrderBy(i => i.Item, StringComparer.OrdinalIgnoreCase);
             foreach (var item in items)
             {
                 rows.Add(new(item.Item, Wrap: true, LootItem: item.Item,
-                    Details: $"Owned {item.Owned}  |  Carried / equipped {item.Carried}  |  Bank {item.Bank}  |  Collection {item.Collection}  |  Installed {item.Installed}  |  History {item.Historical} (unconfirmed)"));
+                    Table: OverlayTable.Columns(
+                    [
+                        ("Owned", $"{item.Owned}"),
+                        ("Carried", $"{item.Carried}"),
+                        ("Bank", $"{item.Bank}"),
+                        ("Hoard", $"{item.Hoard}"),
+                        ("Depot", $"{item.Depot}"),
+                        ("Other", $"{item.OtherStorage}"),
+                        ("Collection", $"{item.Collection}"),
+                        ("Installed", $"{item.Installed}"),
+                        ("Looted*", $"{item.Historical}"),
+                    ]),
+                    Details: item.Historical > 0 ? "* Looted is from log history and unconfirmed." : null));
             }
         }
         if (rows.Count == 0)
@@ -237,8 +253,7 @@ public partial class MainWindow
             ToolTip = "Completed checks, including failed attempts. Failed items can be retried from Loot quests.",
         };
         toolbar.Children.Add(_questProgressBar);
-        _questProgressText = new TextBlock { TextWrapping = TextWrapping.Wrap };
-        _questProgressText.SetResourceReference(TextBlock.ForegroundProperty, "NightText");
+        _questProgressText = new ContentControl();
         toolbar.Children.Add(_questProgressText);
         _questCurrentText = new TextBlock
         {
@@ -263,6 +278,7 @@ public partial class MainWindow
 
     private void UpdateQuestProgress()
     {
+        _questWikiActivity = null;
         if (_questProgressBar is null || _questProgressText is null || _questCurrentText is null)
         {
             return;
@@ -271,15 +287,55 @@ public partial class MainWindow
         var activity = GetQuestWorkProgress();
         _questProgressBar.Maximum = Math.Max(1, activity.Total);
         _questProgressBar.Value = activity.Completed;
-        _questProgressText.Text = activity.Summary;
+        var table = activity.Total == 0
+            ? null
+            : OverlayTable.Columns(
+            [
+                ("Checked", $"{activity.Completed:N0} / {activity.Total:N0}"),
+                ("Done", $"{100.0 * activity.Completed / activity.Total:0}%"),
+                ("Cached", $"{activity.Cached:N0}"),
+                ("Queued", $"{activity.QueuedCount:N0}"),
+                ("Failed", $"{activity.Failed:N0}"),
+            ]);
+        if (table is null)
+        {
+            if (_questProgressText.Content is not TextBlock text)
+            {
+                text = new TextBlock { TextWrapping = TextWrapping.Wrap };
+                text.SetResourceReference(TextBlock.ForegroundProperty, "NightText");
+                _questProgressText.Content = text;
+            }
+            text.Text = activity.Summary;
+            _questProgressTable = null;
+        }
+        else if (table != _questProgressTable)
+        {
+            var element = OverlayPanel.BuildTable(table, 12);
+            element.Margin = new Thickness(0);
+            _questProgressText.Content = element;
+            _questProgressTable = table;
+        }
         _questCurrentText.Text = _questProgress;
         _questCurrentText.ToolTip = _questProgress;
     }
 
     private QuestWorkProgress GetQuestWorkProgress()
     {
-        var items = _questInventory.Items.Where(i => i.Character.Equals(_characterName, StringComparison.OrdinalIgnoreCase))
-            .Select(i => QuestLookup.ItemTitle(i.Item)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var titles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in _questInventory.Items)
+        {
+            if (!entry.Character.Equals(_characterName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            if (!_questTitles.TryGetValue(entry.Item, out string? title))
+            {
+                title = QuestLookup.ItemTitle(entry.Item);
+                _questTitles[entry.Item] = title;
+            }
+            titles.Add(title);
+        }
+        var items = titles.ToArray();
         bool Cached(string item)
         {
             return _questCache.TryGetValue(item, out var result) &&
@@ -292,21 +348,54 @@ public partial class MainWindow
         int active = items.Count(i => i == _questActiveItem && !Cached(i));
         int queued = Math.Max(0, items.Length - completed - active);
         string summary = items.Length == 0 ? "Waiting for inventory or loot" :
-            $"{completed:N0} / {items.Length:N0} checked ({100.0 * completed / items.Length:0}%)  |  {cached:N0} cached  |  {queued:N0} queued  |  {failed:N0} failed";
+            $"{completed:N0} / {items.Length:N0} checked ({100.0 * completed / items.Length:0}%) · {cached:N0} cached · {queued:N0} queued · {failed:N0} failed";
         var waiting = items.Where(i => !Cached(i) && !_questAttempted.Contains(i)).ToArray();
-        return new(items.Length, completed, summary, waiting);
+        return new(items.Length, completed, summary, waiting, cached, queued, failed);
     }
 
     private QuestWikiActivity GetQuestWikiActivity()
     {
-        var progress = GetQuestWorkProgress();
-        return new(progress.Summary, _questProgress, _questActiveItem, progress.Queued,
-            _questProgress.StartsWith("Lookup failed", StringComparison.Ordinal));
+        // The wiki panel refreshes every second; rescanning thousands of inventory rows each time is wasted work,
+        // so reuse the last result briefly. UpdateQuestProgress still computes fresh numbers on every change.
+        if (_questWikiActivity is null || DateTime.UtcNow - _questWikiActivityAt > QuestWikiActivityLifetime)
+        {
+            var progress = GetQuestWorkProgress();
+            _questWikiActivity = new(progress.Summary, _questProgress, _questActiveItem, progress.Queued,
+                _questProgress.StartsWith("Lookup failed", StringComparison.Ordinal));
+            _questWikiActivityAt = DateTime.UtcNow;
+        }
+        return _questWikiActivity;
     }
 
-    private sealed record QuestWorkProgress(int Total, int Completed, string Summary, IReadOnlyList<string> Queued);
+    private static readonly TimeSpan QuestWikiActivityLifetime = TimeSpan.FromSeconds(2);
+    private readonly Dictionary<string, string> _questTitles = new(StringComparer.Ordinal);
+    private QuestWikiActivity? _questWikiActivity;
+    private DateTime _questWikiActivityAt;
 
-    private void SaveQuestInventory(bool throwOnError = false)
+    private sealed record QuestWorkProgress(int Total, int Completed, string Summary, IReadOnlyList<string> Queued,
+        int Cached = 0, int QueuedCount = 0, int Failed = 0);
+
+    private readonly SemaphoreSlim _questInventorySaveGate = new(1, 1);
+    private long _questInventorySaveSequence;
+
+    private async Task SaveQuestInventoryAsync()
+    {
+        try
+        {
+            await StartQuestInventorySave();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _questDirty = true;
+            QuestLookupStatus.Text = $"Could not save quest inventory: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Snapshots the inventory now and writes it asynchronously without returning to the UI thread.
+    /// The caller marks the inventory dirty again if the write fails.
+    /// </summary>
+    private Task StartQuestInventorySave()
     {
         while (_questLoot.TryDequeue(out var note))
         {
@@ -315,17 +404,28 @@ public partial class MainWindow
         }
         if (!_questDirty)
         {
-            return;
+            return Task.CompletedTask;
         }
 
+        var snapshot = _questInventory.Clone();
+        _questDirty = false;
+        return WriteQuestInventoryAsync(snapshot, Interlocked.Increment(ref _questInventorySaveSequence));
+    }
+
+    private async Task WriteQuestInventoryAsync(QuestInventory snapshot, long sequence)
+    {
+        await _questInventorySaveGate.WaitAsync().ConfigureAwait(false);
         try
         {
-            AtomicFile.WriteAllText(QuestInventoryPath, JsonSerializer.Serialize(_questInventory));
-            _questDirty = false;
+            // A newer snapshot is already queued behind this one; writing this would only be overwritten.
+            if (sequence == Interlocked.Read(ref _questInventorySaveSequence))
+            {
+                await AtomicFile.WriteJsonAsync(QuestInventoryPath, snapshot).ConfigureAwait(false);
+            }
         }
-        catch (Exception ex) when (!throwOnError && (ex is IOException or UnauthorizedAccessException))
+        finally
         {
-            QuestLookupStatus.Text = $"Could not save quest inventory: {ex.Message}";
+            _questInventorySaveGate.Release();
         }
     }
 
@@ -340,14 +440,14 @@ public partial class MainWindow
             return;
         }
         _questDirty = true;
-        Dispatcher.BeginInvoke(() =>
+        Dispatcher.BeginInvoke(async () =>
         {
             QuestOwnedGrid.CommitEdit();
-            SaveQuestInventory();
+            await SaveQuestInventoryAsync();
         });
     }
 
-    private void CompleteQuest_Click(object sender, RoutedEventArgs e)
+    private async void CompleteQuest_Click(object sender, RoutedEventArgs e)
     {
         if (QuestResults.SelectedItem is not QuestReference quest)
         {
@@ -362,8 +462,8 @@ public partial class MainWindow
         }
 
         _questDirty = true;
-        SaveQuestInventory();
         QuestLookupStatus.Text = completed ? "Quest marked completed. Adjust owned counts after turning items in." : "Quest marked incomplete.";
+        await SaveQuestInventoryAsync();
     }
 
     private void RetryQuests_Click(object sender, RoutedEventArgs e)
@@ -373,31 +473,23 @@ public partial class MainWindow
         UpdateQuestProgress();
     }
 
-    private void InitializeLootQuests()
+    private void InitializeLootQuests(StartupState state)
     {
         _wikiHttp.DefaultRequestHeaders.UserAgent.ParseAdd("EqLogOverlay/1.0");
-        if (!File.Exists(QuestCachePath))
+        if (state.QuestCacheError is { } error)
         {
-            return;
+            QuestLookupStatus.Text = $"Could not load wiki cache: {error.Message}";
         }
-
-        try
+        foreach (var result in state.QuestCache)
         {
-            foreach (var result in JsonSerializer.Deserialize<List<QuestLookupResult>>(File.ReadAllText(QuestCachePath)) ?? [])
+            string title = QuestLookup.ItemTitle(result.Item);
+            if (!_questCache.TryGetValue(title, out var existing) || result.CheckedUtc > existing.CheckedUtc)
             {
-                string title = QuestLookup.ItemTitle(result.Item);
-                if (!_questCache.TryGetValue(title, out var existing) || result.CheckedUtc > existing.CheckedUtc)
+                _questCache[title] = result with
                 {
-                    _questCache[title] = result with
-                    {
-                        Item = title
-                    };
-                }
+                    Item = title
+                };
             }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
-        {
-            QuestLookupStatus.Text = $"Could not load wiki cache: {ex.Message}";
         }
     }
 
@@ -527,7 +619,25 @@ public partial class MainWindow
     {
         if (sender is System.Windows.Documents.Hyperlink { Tag: string item })
         {
-            OpenWiki(QuestLookup.PageUrl(QuestLookup.ItemTitle(item)));
+            OpenWiki(QuestLookup.ItemUrl(item));
+            e.Handled = true;
+        }
+    }
+
+    private void NpcWikiLink_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Documents.Hyperlink { Tag: string npc })
+        {
+            OpenWiki(QuestLookup.SearchUrl(npc));
+            e.Handled = true;
+        }
+    }
+
+    private void UrlWikiLink_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Documents.Hyperlink { Tag: string url })
+        {
+            OpenWiki(url);
             e.Handled = true;
         }
     }

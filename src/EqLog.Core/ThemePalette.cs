@@ -8,6 +8,15 @@ public sealed class ThemePalette
     public string Name { get; set; } = "";
     public Dictionary<string, string> Colors { get; set; } = [];
 
+    public ThemePalette Clone()
+    {
+        return new ThemePalette
+        {
+            Name = Name,
+            Colors = Colors is null ? null! : new Dictionary<string, string>(Colors, Colors.Comparer),
+        };
+    }
+
     public static readonly string[] ColorKeys =
     [
         "NightBackground", "NightSurface", "NightRaised", "NightBorder", "NightText", "NightMuted",

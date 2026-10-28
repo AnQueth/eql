@@ -29,9 +29,7 @@ public sealed class WikiRepositoryTests
             requests++;
             return Task.FromResult(Response("""{"query":{"pages":[{"title":"Missing","missing":true}]}}"""));
         }));
-        await using var repository = new WikiRepository(http, new MobResistanceStore(), () =>
-        {
-        }, TimeSpan.Zero);
+        await using var repository = new WikiRepository(http, new MobResistanceStore(), () => Task.CompletedTask, TimeSpan.Zero);
         var missing = await repository.GetQuestAsync("Missing", WikiPriority.Background, false, default);
         Assert.False(missing.Found);
         var persisted = JsonSerializer.Deserialize<QuestLookupResult>(JsonSerializer.Serialize(missing))!;
@@ -132,9 +130,7 @@ public sealed class WikiRepositoryTests
     public async Task Activity_RepositoryReportsParserErrors()
     {
         using var http = new HttpClient(new Handler((_, _) => Task.FromResult(Response("not json"))));
-        await using var repository = new WikiRepository(http, new MobResistanceStore(), () =>
-        {
-        }, TimeSpan.Zero);
+        await using var repository = new WikiRepository(http, new MobResistanceStore(), () => Task.CompletedTask, TimeSpan.Zero);
         await Assert.ThrowsAnyAsync<JsonException>(() =>
             repository.GetMobAsync("broken", WikiPriority.Interactive, true, default));
         Assert.Contains(repository.GetActivity().Recent, e => e.IsError && e.Name == "mob:BROKEN");
@@ -394,7 +390,11 @@ public sealed class WikiRepositoryTests
         }));
         var store = new MobResistanceStore();
         int saves = 0;
-        await using var repository = new WikiRepository(http, store, () => saves++, TimeSpan.Zero);
+        await using var repository = new WikiRepository(http, store, () =>
+        {
+            saves++;
+            return Task.CompletedTask;
+        }, TimeSpan.Zero);
         using var canceled = new CancellationTokenSource();
         var background = repository.GetSpellAsync("Flame X", WikiPriority.Background, false, canceled.Token);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -424,7 +424,7 @@ public sealed class WikiRepositoryTests
             }
             return SpellPage();
         }));
-        await using var repository = new WikiRepository(http, new(), () => { }, TimeSpan.Zero);
+        await using var repository = new WikiRepository(http, new(), () => Task.CompletedTask, TimeSpan.Zero);
         var blocking = repository.GetSpellAsync("Blocking", WikiPriority.Background, false, default);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         var low = repository.GetSpellAsync("Background", WikiPriority.Background, false, default);
@@ -465,7 +465,7 @@ public sealed class WikiRepositoryTests
             }
             return SpellPage();
         }));
-        await using var repository = new WikiRepository(http, new(), () => { }, TimeSpan.Zero);
+        await using var repository = new WikiRepository(http, new(), () => Task.CompletedTask, TimeSpan.Zero);
         Task background = quest
             ? repository.GetQuestAsync("Gnoll Fang", WikiPriority.Background, false, default)
             : repository.GetSpellAsync("Flame X", WikiPriority.Background, false, default);
@@ -526,7 +526,7 @@ public sealed class WikiRepositoryTests
         var store = new MobResistanceStore();
         var old = new SpellResistanceInfo("Flame", ResistanceType.Fire, "old", DateTime.UtcNow.AddDays(-8), true);
         store.SetSpell(old);
-        await using var repository = new WikiRepository(http, store, () => { }, TimeSpan.Zero);
+        await using var repository = new WikiRepository(http, store, () => Task.CompletedTask, TimeSpan.Zero);
         repository.BackgroundFailed += (_, error) => failed.TrySetResult(error);
         repository.ObserveSpell("Flame");
         Assert.IsType<HttpRequestException>(await failed.Task.WaitAsync(TimeSpan.FromSeconds(5)));
@@ -554,7 +554,7 @@ public sealed class WikiRepositoryTests
         store.SetSpell(new("Fresh", ResistanceType.Fire, "Fire", DateTime.UtcNow, true, "Single", "Instant", 1));
         store.SetSpell(new("Old", ResistanceType.Fire, "Fire", DateTime.UtcNow, true));
         store.SetSpell(new("Expired", ResistanceType.Fire, "Fire", DateTime.UtcNow.AddDays(-8), true, "Single", "Instant", 1));
-        await using var repository = new WikiRepository(http, store, () => { }, TimeSpan.Zero);
+        await using var repository = new WikiRepository(http, store, () => Task.CompletedTask, TimeSpan.Zero);
         await repository.GetSpellAsync("Fresh", WikiPriority.Interactive, false, default);
         Assert.Equal(0, requests);
         await repository.GetSpellAsync("Old", WikiPriority.Background, false, default);
@@ -563,17 +563,19 @@ public sealed class WikiRepositoryTests
         await repository.GetSpellAsync("Missing", WikiPriority.Interactive, false, default);
         await repository.GetSpellAsync("Fresh", WikiPriority.Interactive, true, default);
         Assert.Equal(4, requests);
-        string path = Path.Combine(Path.GetTempPath(), $"eq-wiki-{Guid.NewGuid():N}.json");
+        string folder = Path.Combine(Path.GetTempPath(), $"eq-wiki-{Guid.NewGuid():N}");
+        string path = Path.Combine(folder, "mob-resistances.json");
+        Directory.CreateDirectory(folder);
         try
         {
-            store.Save(path);
-            await using var restarted = new WikiRepository(http, MobResistanceStore.Load(path), () => { }, TimeSpan.Zero);
+            await store.SaveAsync(path);
+            await using var restarted = new WikiRepository(http, await MobResistanceStore.LoadAsync(path), () => Task.CompletedTask, TimeSpan.Zero);
             await restarted.GetSpellAsync("Fresh", WikiPriority.Interactive, false, default);
             Assert.Equal(4, requests);
         }
         finally
         {
-            File.Delete(path);
+            Directory.Delete(folder, recursive: true);
         }
     }
 
@@ -590,6 +592,7 @@ public sealed class WikiRepositoryTests
             {
                 completed.TrySetResult();
             }
+            return Task.CompletedTask;
         }, TimeSpan.Zero);
         var engine = new LogEngine();
         engine.SpellObserved += repository.ObserveSpell;
@@ -628,7 +631,7 @@ public sealed class WikiRepositoryTests
             }
             return SpellPage();
         }));
-        var repository = new WikiRepository(http, new(), () => { }, TimeSpan.Zero);
+        var repository = new WikiRepository(http, new(), () => Task.CompletedTask, TimeSpan.Zero);
         using var cts = new CancellationTokenSource();
         var first = repository.GetSpellAsync("One", WikiPriority.Background, false, cts.Token);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -666,7 +669,7 @@ public sealed class WikiRepositoryTests
             }
             return Task.FromResult(query.Contains("Flame X") ? Page(null) : SpellPage());
         }));
-        await using var repository = new WikiRepository(http, new(), () => { }, TimeSpan.Zero);
+        await using var repository = new WikiRepository(http, new(), () => Task.CompletedTask, TimeSpan.Zero);
         await repository.GetQuestAsync("Gnoll Fang +1", WikiPriority.Background, false, default);
         await repository.GetSpellAsync("Flame X", WikiPriority.Interactive, false, default);
         Assert.Equal(6, calls.Count);
@@ -691,8 +694,9 @@ public sealed class WikiRepositoryTests
         var cachedMob = MobWikiLookup.ParseMob("A rat", "{{Namedmobpage\n| HP = 10\n}}", DateTime.UtcNow);
         store.SetWiki("A rat", cachedMob);
         var sky = new SkyQuestCatalog(DateTime.UtcNow,
-            [new("Bard", "Test", "Reward", "Giver", "phrase", "rune", "items", "url", [], [], [])]);
-        await using var repository = new WikiRepository(http, store, () => { }, TimeSpan.Zero);
+            [new("Bard", "Test", "Reward", "Giver", "phrase", "rune", "items", "url", [], [], [])],
+            new Dictionary<string, IReadOnlyList<string>>());
+        await using var repository = new WikiRepository(http, store, () => Task.CompletedTask, TimeSpan.Zero);
         repository.SeedSky(sky);
         Assert.Same(cachedMob, await repository.GetMobAsync("A rat", WikiPriority.RealTime, false, default));
         var cachedActivity = repository.GetActivity();

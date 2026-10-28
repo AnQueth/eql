@@ -29,6 +29,21 @@ public sealed class QuestLookup(HttpClient http)
         return "https://eqlwiki.com/" + Uri.EscapeDataString(title.Replace(' ', '_'));
     }
 
+    public static string ItemUrl(string item)
+    {
+        return PageUrl(ItemTitle(item));
+    }
+
+    /// <summary>
+    /// Wiki "go" search: opens the page directly when a title matches (MediaWiki also tries capitalisation
+    /// variants such as "a gnoll pup" / "A Gnoll Pup") and falls back to search results otherwise. Used for NPCs,
+    /// whose log names don't always match the page title exactly.
+    /// </summary>
+    public static string SearchUrl(string name)
+    {
+        return "https://eqlwiki.com/index.php?title=Special:Search&go=Go&search=" + Uri.EscapeDataString(name.Trim());
+    }
+
     public async Task<QuestLookupResult> FindAsync(string item, CancellationToken cancellationToken = default)
     {
         item = ItemTitle(item);

@@ -7,7 +7,7 @@ public class InventoryExportTests
     {
         var items = InventoryExport.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "InventorySample.txt")));
         Assert.Contains(items, i => i.Name == "Water Flask" && i.Count == 927);
-        Assert.Contains(items, i => i.Bank);
+        Assert.Contains(items, i => i.Storage == InventoryStorage.Bank);
         Assert.Contains(items, i => i.Location == "Head-Slot7" && i.Installed);
         Assert.Contains(items, i => i.Location == "General 2-Slot1-Slot8" && i.Installed);
         Assert.Contains(items, i => i.Location == "General 2-Slot21" && i.Name == "Soul Leech, Dark Sword of Blood (Exaltation)");
@@ -22,6 +22,67 @@ public class InventoryExportTests
         inventory.ApplyExport("Que", items, DateTime.UtcNow);
         Assert.Equal(items.Sum(i => i.Count), inventory.Items.Sum(i => i.Owned + i.Collection + i.Installed));
         Assert.Equal(892, inventory.Items.Sum(i => i.Collection));
+    }
+
+    [Fact]
+    public void ClassifiesEveryStorageLocation()
+    {
+        var items = InventoryExport.Parse(string.Join("\n",
+            "Location\tName\tID\tCount\tSlots",
+            "Ear\tPearl Earring\t1\t1\t0",
+            "Head-Slot1\tHelm Gem\t2\t1\t0",
+            "General 1-Slot2\tGnoll Fang\t3\t4\t0",
+            "Held\tCursor Thing\t4\t1\t0",
+            "Bank3-Slot1\tBanked Fang\t5\t6\t0",
+            "Bank3-Slot1-Slot2\tBanked Aug\t6\t1\t0",
+            "SharedBank2\tShared Fang\t7\t2\t0",
+            "Hoard 12\tHoarded Sword\t8\t1\t2",
+            "Hoard 12-Slot1\tHoard Aug\t9\t1\t0",
+            "Personal-Depot7\tSilk Swatch\t10\t250\t0",
+            "Mystery Vault 3-Slot1\tVault Relic\t12\t5\t0",
+            "Hoardings\tLookalike Gem\t13\t1\t0",
+            "",
+            "KeyRing\tName\tID\t",
+            "Augmentation\tCollected Aug\t11"));
+
+        InventoryExportItem Row(string name)
+        {
+            return items.Single(i => i.Name == name);
+        }
+
+        Assert.Equal(InventoryStorage.Carried, Row("Pearl Earring").Storage);
+        Assert.True(Row("Helm Gem").Installed);
+        Assert.Equal(InventoryStorage.Carried, Row("Gnoll Fang").Storage);
+        Assert.False(Row("Gnoll Fang").Installed);
+        Assert.Equal(InventoryStorage.Carried, Row("Cursor Thing").Storage);
+        Assert.Equal(InventoryStorage.Bank, Row("Banked Fang").Storage);
+        Assert.False(Row("Banked Fang").Installed);
+        Assert.True(Row("Banked Aug").Installed);
+        Assert.Equal(InventoryStorage.Bank, Row("Shared Fang").Storage);
+        Assert.Equal(InventoryStorage.Hoard, Row("Hoarded Sword").Storage);
+        Assert.False(Row("Hoarded Sword").Installed);
+        Assert.True(Row("Hoard Aug").Installed);
+        Assert.Equal(InventoryStorage.Depot, Row("Silk Swatch").Storage);
+        Assert.True(Row("Collected Aug").Collection);
+        Assert.Equal(InventoryStorage.Other, Row("Vault Relic").Storage);
+        Assert.False(Row("Vault Relic").Installed);
+        Assert.Equal(InventoryStorage.Other, Row("Lookalike Gem").Storage);
+        Assert.Equal(["Hoardings", "Mystery Vault 3"], InventoryExport.UnknownLocations(items));
+
+        var inventory = new QuestInventory();
+        inventory.ApplyExport("Que", items, DateTime.UtcNow);
+        var sword = inventory.Items.Single(i => i.Item == "Hoarded Sword");
+        Assert.Equal(1, sword.Hoard);
+        Assert.Equal(0, sword.Carried);
+        Assert.Equal(1, sword.Owned);
+        var silk = inventory.Items.Single(i => i.Item == "Silk Swatch");
+        Assert.Equal(250, silk.Depot);
+        Assert.Equal(0, silk.Carried);
+        Assert.Equal(250, silk.Owned);
+        var relic = inventory.Items.Single(i => i.Item == "Vault Relic");
+        Assert.Equal(5, relic.OtherStorage);
+        Assert.Equal(0, relic.Carried);
+        Assert.Equal(5, relic.Owned);
     }
 
     [Fact]
@@ -50,9 +111,9 @@ public class InventoryExportTests
     {
         var inventory = new QuestInventory();
         inventory.ApplyExport("Que", [
-            new("Equipment", "Mask", 1, 1, false, Collection: true),
-            new("Head-Slot7", "Mask", 1, 1, false, Installed: true),
-            new("General 1-Slot1", "Mask", 1, 2, false),
+            new("Equipment", "Mask", 1, 1, InventoryStorage.Carried, Collection: true),
+            new("Head-Slot7", "Mask", 1, 1, InventoryStorage.Carried, Installed: true),
+            new("General 1-Slot1", "Mask", 1, 2, InventoryStorage.Carried),
         ], DateTime.UtcNow);
         var item = Assert.Single(inventory.Items);
         Assert.Equal(2, item.Owned);
@@ -71,7 +132,7 @@ public class InventoryExportTests
         inventory.NoteLoot("Que", "log", 1, "Gnoll Fang", 2, true, at.AddMinutes(-1));
         inventory.NoteLoot("Que", "log", 2, "Gnoll Fang", 3, true, at.AddMinutes(1));
         inventory.NoteLoot("Other", "log2", 1, "Gnoll Fang", 8, true, at);
-        inventory.ApplyExport("Que", [new("General 1", "Gnoll Fang", 1, 4, false), new("Bank1", "Gnoll Fang", 1, 5, true)], at);
+        inventory.ApplyExport("Que", [new("General 1", "Gnoll Fang", 1, 4, InventoryStorage.Carried), new("Bank1", "Gnoll Fang", 1, 5, InventoryStorage.Bank)], at);
         var item = inventory.Items.Single(i => i.Character == "Que");
         Assert.Equal(12, item.Owned);
         Assert.Equal(4, item.Carried);
@@ -86,7 +147,7 @@ public class InventoryExportTests
     {
         var at = DateTime.UtcNow;
         var inventory = new QuestInventory();
-        inventory.ApplyExport("Que", [new("General 1", "Fang", 1, 2, false)], at);
+        inventory.ApplyExport("Que", [new("General 1", "Fang", 1, 2, InventoryStorage.Carried)], at);
         inventory.NoteLoot("Que", "log", 1, "Fang", 2, false, at.AddSeconds(-1));
         inventory.NoteLoot("Que", "log", 2, "Fang", 1, false, at.AddSeconds(1));
         Assert.Equal(3, Assert.Single(inventory.Items).Owned);

@@ -10,7 +10,115 @@ namespace EqLog.Overlay;
 /// <summary>One line in an overlay: left/right text with an optional proportional bar behind it.</summary>
 public sealed record AbilityBreakdown(string Title, string Context, string RateLabel, IReadOnlyList<AbilityStats> Abilities);
 
-public sealed record OverlayRow(string Left, string Right = "", double Fraction = 0, Brush? Bar = null, Brush? Foreground = null, bool Wrap = false, bool Bold = false, double Scale = 1, string? LootItem = null, AbilityBreakdown? Breakdown = null, bool QuestHeading = false, string? Details = null, bool Stacked = false, string? ExtraColumn = null, string? ToolTip = null);
+public sealed record OverlayRow(string Left, string Right = "", double Fraction = 0, Brush? Bar = null, Brush? Foreground = null, bool Wrap = false, bool Bold = false, double Scale = 1, string? LootItem = null, AbilityBreakdown? Breakdown = null, bool QuestHeading = false, string? Details = null, bool Stacked = false, string? ExtraColumn = null, string? ToolTip = null, string? WatchKey = null, bool Watched = false, OverlayTable? Table = null, string? Link = null);
+
+/// <summary>
+/// A small grid shown inside a row's card, below its title. With <see cref="Header"/> it is a column table
+/// (numeric columns right-aligned); with <see cref="RowLabels"/> even columns are labels and odd columns their values.
+/// <see cref="Then"/> chains another table underneath. <see cref="Links"/> maps value-cell text to a URL that the
+/// cell opens when clicked. Equality is by value so unchanged rows are not rebuilt.
+/// </summary>
+public sealed record OverlayTable(IReadOnlyList<string>? Header, IReadOnlyList<IReadOnlyList<string>> Rows,
+    bool RowLabels = false, OverlayTable? Then = null, IReadOnlyDictionary<string, string>? Links = null)
+{
+    /// <summary>Label/value table, <paramref name="pairsPerRow"/> pairs side by side.</summary>
+    public static OverlayTable Pairs(IEnumerable<(string Label, string Value)> pairs, int pairsPerRow = 1, OverlayTable? then = null)
+    {
+        var rows = pairs
+            .Chunk(Math.Max(1, pairsPerRow))
+            .Select(chunk => (IReadOnlyList<string>)chunk.SelectMany(p => new[] { p.Label, p.Value }).ToArray())
+            .ToArray();
+        return new(null, rows, RowLabels: true, Then: then);
+    }
+
+    /// <summary>One header row and one value row.</summary>
+    public static OverlayTable Columns(IEnumerable<(string Header, string Value)> columns, OverlayTable? then = null)
+    {
+        var list = columns.ToArray();
+        return new(list.Select(c => c.Header).ToArray(), [list.Select(c => c.Value).ToArray()], Then: then);
+    }
+
+    /// <summary>Label/value pairs where a list of values shares one label, shown only on its first line.</summary>
+    public static IEnumerable<(string Label, string Value)> Labeled(string label, IEnumerable<string> values)
+    {
+        bool first = true;
+        foreach (string value in values)
+        {
+            yield return (first ? label : "", value);
+            first = false;
+        }
+    }
+
+    /// <summary>Copy with extra cell-text links merged into <see cref="Links"/>; empty texts are ignored.</summary>
+    public OverlayTable WithLinks(IEnumerable<(string Text, string Url)> links)
+    {
+        var merged = Links is null
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : new Dictionary<string, string>(Links, StringComparer.Ordinal);
+        foreach (var (text, url) in links)
+        {
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                merged.TryAdd(text, url);
+            }
+        }
+        return this with { Links = merged };
+    }
+
+    public bool Equals(OverlayTable? other)
+    {
+        if (other is null)
+        {
+            return false;
+        }
+        if (ReferenceEquals(this, other))
+        {
+            return true;
+        }
+
+        return RowLabels == other.RowLabels &&
+            SameCells(Header, other.Header) &&
+            Rows.Count == other.Rows.Count &&
+            Rows.Zip(other.Rows).All(pair => SameCells(pair.First, pair.Second)) &&
+            SameLinks(Links, other.Links) &&
+            Equals(Then, other.Then);
+    }
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(RowLabels);
+        hash.Add(Rows.Count);
+        foreach (var row in Rows)
+        {
+            foreach (string cell in row)
+            {
+                hash.Add(cell);
+            }
+        }
+        hash.Add(Then);
+        return hash.ToHashCode();
+    }
+
+    private static bool SameCells(IReadOnlyList<string>? a, IReadOnlyList<string>? b)
+    {
+        if (a is null || b is null)
+        {
+            return a is null && b is null;
+        }
+        return a.SequenceEqual(b, StringComparer.Ordinal);
+    }
+
+    private static bool SameLinks(IReadOnlyDictionary<string, string>? a, IReadOnlyDictionary<string, string>? b)
+    {
+        if (a is null || b is null)
+        {
+            return a is null && b is null;
+        }
+        return a.Count == b.Count &&
+            a.All(pair => b.TryGetValue(pair.Key, out string? url) && string.Equals(url, pair.Value, StringComparison.Ordinal));
+    }
+}
 
 /// <summary>
 /// The content of one overlay (title, subtitle, rows). It lives either in its own floating <see cref="OverlayWindow"/>
@@ -34,6 +142,7 @@ public sealed class OverlayPanel : ContentControl
     private readonly Grid _ornaments = new() { IsHitTestVisible = false };
     private readonly ContentControl _toolbar = new();
     private IReadOnlyList<OverlayRow> _current = [];
+    private string? _titleLink;
     private bool _invalidateRows;
     private double _opacity = 0.55;
     private bool _locked;
@@ -46,6 +155,24 @@ public sealed class OverlayPanel : ContentControl
         AutoScrollToEnd = autoScrollToEnd;
         _title.SetResourceReference(TextBlock.ForegroundProperty, "Pumpkin");
         _subtitle.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
+        _title.HorizontalAlignment = HorizontalAlignment.Left;
+        _title.Background = Brushes.Transparent;
+        // A linked title is a click target, so the press must not start a window drag.
+        _title.MouseLeftButtonDown += (_, e) =>
+        {
+            if (_titleLink is not null)
+            {
+                e.Handled = true;
+            }
+        };
+        _title.MouseLeftButtonUp += (_, e) =>
+        {
+            if (_titleLink is { } url)
+            {
+                e.Handled = true;
+                LinkRequested?.Invoke(url);
+            }
+        };
 
         _hint = new TextBlock
         {
@@ -201,7 +328,13 @@ public sealed class OverlayPanel : ContentControl
 
     public event Action<string>? LootLookupRequested;
     public event Action<string>? ItemWikiRequested;
+
+    /// <summary>A row or table cell with a URL was clicked.</summary>
+    public event Action<string>? LinkRequested;
     public event Action<AbilityBreakdown>? BreakdownRequested;
+
+    /// <summary>Raised when the star on a row with a <see cref="OverlayRow.WatchKey"/> is clicked.</summary>
+    public event Action<string>? WatchToggleRequested;
 
     public void SetToolbar(UIElement toolbar)
     {
@@ -344,9 +477,17 @@ public sealed class OverlayPanel : ContentControl
         }
     }
 
-    public void Update(string title, string? subtitle, IReadOnlyList<OverlayRow> rows)
+    public void Update(string title, string? subtitle, IReadOnlyList<OverlayRow> rows, string? titleLink = null)
     {
         _title.Text = title;
+        if (_titleLink != titleLink)
+        {
+            _titleLink = titleLink;
+            bool linked = titleLink is not null;
+            _title.TextDecorations = linked ? TextDecorations.Underline : null;
+            _title.Cursor = linked ? System.Windows.Input.Cursors.Hand : null;
+            _title.ToolTip = linked ? "Open on EQLWiki" : null;
+        }
         _subtitle.Text = subtitle ?? "";
         _subtitle.Visibility = string.IsNullOrEmpty(subtitle) ? Visibility.Collapsed : Visibility.Visible;
 
@@ -458,6 +599,28 @@ public sealed class OverlayPanel : ContentControl
 
         var weight = row.Bold ? FontWeights.Bold : FontWeights.Normal;
         var text = new DockPanel { Margin = new Thickness(3, 0, 3, 0) };
+        if (row.WatchKey is { } watchKey)
+        {
+            var star = new Button
+            {
+                Content = row.Watched ? "\u2605" : "\u2606",
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(0, 0, 6, 0),
+                VerticalAlignment = VerticalAlignment.Top,
+                Cursor = System.Windows.Input.Cursors.Hand,
+                Focusable = false,
+                ToolTip = row.Watched ? "Stop watching this quest" : "Watch this quest (shown in the Watching tab)",
+            };
+            star.SetResourceReference(ForegroundProperty, "Pumpkin");
+            star.Click += (_, e) =>
+            {
+                WatchToggleRequested?.Invoke(watchKey);
+                e.Handled = true;
+            };
+            DockPanel.SetDock(star, Dock.Left);
+            text.Children.Add(star);
+        }
         if (row.ExtraColumn is not null)
         {
             var extra = new TextBlock
@@ -503,16 +666,19 @@ public sealed class OverlayPanel : ContentControl
         {
             left.Foreground = row.Foreground;
         }
-        if (row.LootItem is not null)
+        if (row.LootItem is not null || row.Link is not null)
         {
             left.TextDecorations = TextDecorations.Underline;
         }
 
-        if (row.Details is { } details)
+        if (row.Details is not null || row.Table is not null)
         {
             left.FontWeight = FontWeights.SemiBold;
             var itemContent = new StackPanel();
-            itemContent.Children.Add(left);
+            if (!string.IsNullOrEmpty(row.Left))
+            {
+                itemContent.Children.Add(left);
+            }
             if (row.Stacked && !string.IsNullOrEmpty(row.Right))
             {
                 var result = new TextBlock
@@ -529,15 +695,27 @@ public sealed class OverlayPanel : ContentControl
                 }
                 itemContent.Children.Add(result);
             }
-            var description = new TextBlock
+            for (var table = row.Table; table is not null; table = table.Then)
             {
-                Text = details,
-                TextWrapping = TextWrapping.Wrap,
-                FontSize = Math.Max(10, FontSize - 1),
-                Margin = new Thickness(0, 4, 0, 0),
-            };
-            description.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
-            itemContent.Children.Add(description);
+                var element = BuildTable(table, FontSize, url => LinkRequested?.Invoke(url));
+                if (itemContent.Children.Count == 0)
+                {
+                    element.Margin = new Thickness(0);
+                }
+                itemContent.Children.Add(element);
+            }
+            if (!string.IsNullOrEmpty(row.Details))
+            {
+                var description = new TextBlock
+                {
+                    Text = row.Details,
+                    TextWrapping = TextWrapping.Wrap,
+                    FontSize = Math.Max(10, FontSize - 1),
+                    Margin = new Thickness(0, itemContent.Children.Count == 0 ? 0 : 4, 0, 0),
+                };
+                description.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
+                itemContent.Children.Add(description);
+            }
             text.Children.Add(itemContent);
             text.Margin = new Thickness(10, 8, 10, 8);
             var glass = new Border
@@ -560,7 +738,7 @@ public sealed class OverlayPanel : ContentControl
         }
 
         grid.Children.Add(text);
-        if (row.LootItem is not null || row.Breakdown is not null)
+        if (row.LootItem is not null || row.Breakdown is not null || row.Link is not null)
         {
             var button = new Button
             {
@@ -571,10 +749,11 @@ public sealed class OverlayPanel : ContentControl
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 Cursor = System.Windows.Input.Cursors.Hand,
                 ToolTip = row.Breakdown is not null ? "Click for ability breakdown" :
-                    $"Open {row.LootItem} on EQLWiki (right-click for quest references)",
+                    row.LootItem is not null ? $"Open {row.LootItem} on EQLWiki (right-click for quest references)" :
+                    row.ToolTip ?? "Open on EQLWiki",
                 Focusable = false,
             };
-            if (row.Details is not null)
+            if (row.Details is not null || row.Table is not null)
             {
                 button.Margin = new Thickness(12, 0, 0, 5);
             }
@@ -588,6 +767,10 @@ public sealed class OverlayPanel : ContentControl
                 else if (row.LootItem is { } item)
                 {
                     ItemWikiRequested?.Invoke(item);
+                }
+                else if (row.Link is { } link)
+                {
+                    LinkRequested?.Invoke(link);
                 }
             };
             if (row.LootItem is { } lootItem)
@@ -605,6 +788,143 @@ public sealed class OverlayPanel : ContentControl
         }
 
         return grid;
+    }
+
+    /// <summary>
+    /// Renders an <see cref="OverlayTable"/> as a real grid. Label/value tables use muted auto-width label columns;
+    /// column tables get a header rule, zebra rows, and right-aligned numeric columns.
+    /// </summary>
+    public static FrameworkElement BuildTable(OverlayTable table, double fontSize, Action<string>? openLink = null)
+    {
+        int columns = Math.Max(table.Header?.Count ?? 0, table.Rows.Count == 0 ? 0 : table.Rows.Max(r => r.Count));
+        var grid = new Grid { Margin = new Thickness(0, 6, 0, 0) };
+        grid.SetValue(TextElement.FontSizeProperty, Math.Max(10, fontSize - 1));
+        if (columns == 0)
+        {
+            return grid;
+        }
+
+        var numeric = new bool[columns];
+        for (int c = 0; c < columns; c++)
+        {
+            var cells = table.Rows.Where(r => c < r.Count && r[c].Length > 0).Select(r => r[c]).ToArray();
+            numeric[c] = !table.RowLabels && cells.Length > 0 && cells.All(IsNumeric);
+        }
+
+        bool allNumeric = numeric.All(n => n);
+        int stretch = table.RowLabels ? -1 : Array.IndexOf(numeric, false);
+        for (int c = 0; c < columns; c++)
+        {
+            GridLength width;
+            if (table.RowLabels)
+            {
+                width = c % 2 == 0 ? GridLength.Auto : new GridLength(1, GridUnitType.Star);
+            }
+            else if (allNumeric || c == stretch)
+            {
+                width = new GridLength(1, GridUnitType.Star);
+            }
+            else
+            {
+                width = GridLength.Auto;
+            }
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = width });
+        }
+
+        int gridRow = 0;
+        if (table.Header is { } header)
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var rule = new Border { BorderThickness = new Thickness(0, 0, 0, 1) };
+            rule.SetResourceReference(Border.BorderBrushProperty, "GridLine");
+            Grid.SetColumnSpan(rule, columns);
+            grid.Children.Add(rule);
+            for (int c = 0; c < header.Count; c++)
+            {
+                var cell = TableCell(header[c], c, columns, numeric[c], wrap: false);
+                cell.FontWeight = FontWeights.SemiBold;
+                cell.TextTrimming = TextTrimming.CharacterEllipsis;
+                cell.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
+                grid.Children.Add(cell);
+            }
+            gridRow++;
+        }
+
+        for (int r = 0; r < table.Rows.Count; r++, gridRow++)
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            if (table.Header is not null && r % 2 == 1)
+            {
+                var stripe = new Border { CornerRadius = new CornerRadius(2), Opacity = 0.7 };
+                stripe.SetResourceReference(Border.BackgroundProperty, "Alternate");
+                Grid.SetRow(stripe, gridRow);
+                Grid.SetColumnSpan(stripe, columns);
+                grid.Children.Add(stripe);
+            }
+
+            var cells = table.Rows[r];
+            for (int c = 0; c < cells.Count; c++)
+            {
+                bool label = table.RowLabels && c % 2 == 0;
+                var cell = TableCell(cells[c], c, columns, numeric[c], wrap: !label);
+                if (label)
+                {
+                    cell.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
+                }
+                else if (table.RowLabels)
+                {
+                    cell.FontWeight = FontWeights.SemiBold;
+                }
+                if (!label && openLink is not null && table.Links is { } links && links.TryGetValue(cells[c], out string? url))
+                {
+                    MakeLink(cell, url, openLink);
+                }
+                Grid.SetRow(cell, gridRow);
+                grid.Children.Add(cell);
+            }
+        }
+        return grid;
+    }
+
+    /// <summary>
+    /// Turns a table cell into a link. The press is marked handled so a clickable card around the table
+    /// (for example an item row) doesn't also act on it.
+    /// </summary>
+    private static void MakeLink(TextBlock cell, string url, Action<string> openLink)
+    {
+        cell.TextDecorations = TextDecorations.Underline;
+        cell.Cursor = System.Windows.Input.Cursors.Hand;
+        cell.ToolTip = "Open on EQLWiki";
+        cell.HorizontalAlignment = HorizontalAlignment.Left;
+        cell.Background = Brushes.Transparent;
+        cell.MouseLeftButtonDown += (_, e) =>
+        {
+            e.Handled = true;
+        };
+        cell.MouseLeftButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            openLink(url);
+        };
+    }
+
+    private static TextBlock TableCell(string text, int column, int columns, bool numeric, bool wrap)
+    {
+        var cell = new TextBlock
+        {
+            Text = text,
+            TextWrapping = wrap ? TextWrapping.Wrap : TextWrapping.NoWrap,
+            TextAlignment = numeric ? TextAlignment.Right : TextAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(column == 0 ? 2 : 6, 1, column == columns - 1 ? 2 : 6, 1),
+        };
+        Grid.SetColumn(cell, column);
+        return cell;
+    }
+
+    private static bool IsNumeric(string text)
+    {
+        return text.Length > 0 && (char.IsDigit(text[0]) || (text.Length > 1 && text[0] is '-' or '+' && char.IsDigit(text[1])) || text == "?");
     }
 
     private static Brush Frozen(Color c)

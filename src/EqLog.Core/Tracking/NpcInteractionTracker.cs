@@ -54,7 +54,7 @@ public sealed class NpcInteractionTracker(NpcCompendium store, string source)
         if (line.Message.EndsWith(" died.", StringComparison.Ordinal))
         {
             string victim = line.Message[..^" died.".Length];
-            if (store.Get(victim, _zone)?.Encounters.Any(e => e.Outcome == "Active") == true)
+            if (store.HasActiveEncounter(victim, _zone))
             {
                 OnEvent(new KillEvent(line.Timestamp, null, victim), index, character, loadout);
                 return;

@@ -13,15 +13,17 @@ public partial class MainWindow
     private readonly List<ThemePalette> _themes = [];
     private ThemeEditor? _themeEditor;
 
-    private void InitializeThemes()
+    private void InitializeThemes(StartupState state)
     {
         _changingTheme = true;
         try
         {
-            foreach (string path in Directory.GetFiles(ThemeManager.BuiltInFolder, "*.json").Order())
+            if (state.ThemesError is { } error)
             {
-                _themes.Add(ThemeManager.Load(path));
+                ThemeStatus.Text = $"Could not load themes: {error.Message}";
+                return;
             }
+            _themes.AddRange(state.Themes);
 
             if (_settings.Theme is { } saved)
             {
@@ -48,7 +50,7 @@ public partial class MainWindow
             ThemePicker.ItemsSource = _themes;
             ThemePicker.SelectedItem = _settings.Theme ??
                 _themes.Single(t => t.Name == "Halloween");
-            _themeEditor = new ThemeEditor { ApplyRequested = ApplyEditedTheme };
+            _themeEditor = new ThemeEditor { ApplyRequested = ApplyEditedThemeAsync };
             ThemeEditorHost.Content = _themeEditor;
             _themeEditor.LoadPalette((ThemePalette)ThemePicker.SelectedItem);
             if (string.IsNullOrEmpty(ThemeStatus.Text))
@@ -56,7 +58,7 @@ public partial class MainWindow
                 ThemeStatus.Text = "Choose a theme or import a JSON palette. Changes are saved immediately.";
             }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or FormatException)
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
         {
             ThemeStatus.Text = $"Could not load themes: {ex.Message}";
         }
@@ -66,24 +68,23 @@ public partial class MainWindow
         }
     }
 
-    private void Theme_Changed(object sender, SelectionChangedEventArgs e)
+    private async void Theme_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (!_changingTheme && ThemePicker.SelectedItem is ThemePalette theme)
         {
-            SelectTheme(theme);
+            await SelectThemeAsync(theme);
         }
     }
 
-    private bool SelectTheme(ThemePalette theme)
+    private async Task<bool> SelectThemeAsync(ThemePalette theme)
     {
         var previous = _settings.Theme;
         try
         {
             theme.Validate();
             _settings.Theme = theme;
-            _settings.Save();
+            await _settings.SaveAsync();
             ThemeManager.Apply(theme);
-            RenderSkyQuests();
             foreach (var overlay in _overlays.Values)
             {
                 overlay.Panel.SetBackgroundOpacity(_settings.Overlays[overlay.Panel.Key].BackgroundOpacity ?? _settings.BackgroundOpacity);
@@ -104,9 +105,9 @@ public partial class MainWindow
         }
     }
 
-    private bool ApplyEditedTheme(ThemePalette theme)
+    private async Task<bool> ApplyEditedThemeAsync(ThemePalette theme)
     {
-        if (!SelectTheme(theme))
+        if (!await SelectThemeAsync(theme))
         {
             return false;
         }
@@ -125,7 +126,7 @@ public partial class MainWindow
         return true;
     }
 
-    private void ImportTheme_Click(object sender, RoutedEventArgs e)
+    private async void ImportTheme_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFileDialog { Title = "Import theme JSON", Filter = "JSON themes (*.json)|*.json" };
         if (dialog.ShowDialog(_dock) != true)
@@ -135,7 +136,7 @@ public partial class MainWindow
 
         try
         {
-            var theme = ThemeManager.Load(dialog.FileName);
+            var theme = await ThemeManager.LoadAsync(dialog.FileName);
             _themes.Add(theme);
             ThemePicker.Items.Refresh();
             ThemePicker.SelectedItem = theme;

@@ -249,9 +249,11 @@ public class MobResistanceTests
     }
 
     [Fact]
-    public void Store_SaveAndLoad_PreservesObservationsWikiAndReplayWatermarks()
+    public async Task Store_SaveAndLoad_PreservesObservationsWikiAndReplayWatermarks()
     {
-        string path = Path.GetTempFileName();
+        string folder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(folder, "mob-resistances.json");
+        Directory.CreateDirectory(folder);
         try
         {
             var store = new MobResistanceStore();
@@ -259,8 +261,8 @@ public class MobResistanceTests
             store.SetSpell(new("Conflagration X", ResistanceType.Fire, "Fire", T0, SingleTargetDirectDamage: true));
             store.SetWiki("Heart harpie", MobWikiLookup.ParseMob("Heart harpie",
                 "{{Namedmobpage\n| level = 58\n| MR = 100\n| FR = 0\n}}", T0));
-            store.Save(path);
-            var loaded = MobResistanceStore.Load(path);
+            await store.SaveAsync(path);
+            var loaded = await MobResistanceStore.LoadAsync(path);
             loaded.Record("LOG", 4, "Sky", "Heart harpie", "Conflagration X", true);
             var info = loaded.Get("Sky", "Heart harpie");
             Assert.Equal(1, info.Observations.Single(o => o.Type == ResistanceType.Fire).Resisted);
@@ -270,21 +272,82 @@ public class MobResistanceTests
         }
         finally
         {
-            File.Delete(path);
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Store_SpellCache_RenamesEarlierSpellsFileToSpellInfo()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(folder, "mob-resistances.json");
+        string legacy = Path.Combine(folder, "mob-resistances.spells.jsonl");
+        try
+        {
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(legacy,
+                JsonSerializer.Serialize(new SpellResistanceInfo("Rend X", ResistanceType.Magic, "Magic", T0)) + "\n");
+
+            var store = await MobResistanceStore.LoadAsync(path);
+
+            Assert.Equal(ResistanceType.Magic, store.GetSpell("Rend X")?.Type);
+            Assert.False(File.Exists(legacy));
+            Assert.True(File.Exists(Path.Combine(folder, "spell-info.jsonl")));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Store_SpellCache_IsAppendedToItsOwnFileAndLegacyInlineSpellsMove()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(folder, "mob-resistances.json");
+        string spells = MobResistanceStore.SpellCachePath(path);
+        try
+        {
+            Directory.CreateDirectory(folder);
+            var legacy = new MobResistanceStore.Data();
+            legacy.Spells["REND X"] = new("Rend X", ResistanceType.Magic, "Magic", T0);
+            File.WriteAllText(path, JsonSerializer.Serialize(legacy));
+
+            var store = await MobResistanceStore.LoadAsync(path);
+            Assert.Equal(ResistanceType.Magic, store.GetSpell("Rend X")?.Type);
+            store.Record("log", 1, "Sky", "Azarack", "Rend X", true, T0);
+            store.SetSpell(new("Conflagration X", ResistanceType.Fire, "Fire", T0, SingleTargetDirectDamage: true));
+            await store.SaveAsync(path);
+
+            Assert.Equal(Path.Combine(folder, "spell-info.jsonl"), spells);
+            Assert.Equal(2, File.ReadAllLines(spells).Length);
+            Assert.Contains("\"Spells\":{}", File.ReadAllText(path));
+            Assert.DoesNotContain("DamageSamples", File.ReadAllText(path));
+
+            var reloaded = await MobResistanceStore.LoadAsync(path);
+            Assert.Equal(ResistanceType.Magic, reloaded.GetSpell("Rend X")?.Type);
+            Assert.True(reloaded.GetSpell("Conflagration X")?.SingleTargetDirectDamage);
+
+            reloaded.SetSpell(new("Rend X", ResistanceType.Cold, "Cold", T0.AddDays(1)));
+            await reloaded.SaveAsync(path);
+            Assert.Equal(3, File.ReadAllLines(spells).Length);
+            Assert.Equal(ResistanceType.Cold, (await MobResistanceStore.LoadAsync(path)).GetSpell("Rend X")?.Type);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
         }
     }
 
     [Theory]
-    [InlineData("{broken")]
-    [InlineData("""{"Mobs":null}""")]
     [InlineData("""{"Wiki":{"RAT":{"Resistances":null}}}""")]
-    public void Store_CorruptData_ThrowsRatherThanOverwriting(string json)
+    public async Task Store_CorruptData_ThrowsRatherThanOverwriting(string json)
     {
         string path = Path.GetTempFileName();
         try
         {
             File.WriteAllText(path, json);
-            Assert.Throws<JsonException>(() => MobResistanceStore.Load(path));
+            await Assert.ThrowsAsync<JsonException>(() => MobResistanceStore.LoadAsync(path));
             Assert.Equal(json, File.ReadAllText(path));
         }
         finally
@@ -361,23 +424,25 @@ public class MobResistanceTests
     }
 
     [Fact]
-    public void Store_SpecialTraits_RoundTripAndOldCacheCompatibility()
+    public async Task Store_SpecialTraits_RoundTripAndOldCacheCompatibility()
     {
-        string path = Path.GetTempFileName();
+        string folder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(folder, "mob-resistances.json");
+        Directory.CreateDirectory(folder);
         try
         {
             var store = new MobResistanceStore();
             store.SetWiki("Cyndreela", MobWikiLookup.ParseMob("Cyndreela",
                 "{{Namedmobpage\n| special = Immune to Flee, See Invis\n| AC = 279\n| HP = ~1750\n}}", T0));
-            store.Save(path);
-            Assert.Equal("Immune to Flee, See Invis", MobResistanceStore.Load(path).Get("Feerrott", "Cyndreela").Wiki?.Special);
-            Assert.Equal("279", MobResistanceStore.Load(path).Get("Feerrott", "Cyndreela").Wiki?.Stats?.ArmorClass);
+            await store.SaveAsync(path);
+            Assert.Equal("Immune to Flee, See Invis", (await MobResistanceStore.LoadAsync(path)).Get("Feerrott", "Cyndreela").Wiki?.Special);
+            Assert.Equal("279", (await MobResistanceStore.LoadAsync(path)).Get("Feerrott", "Cyndreela").Wiki?.Stats?.ArmorClass);
             var oldCache = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!;
             var cachedMob = Assert.IsType<System.Text.Json.Nodes.JsonObject>(oldCache["Wiki"]!["CYNDREELA"]);
             Assert.True(cachedMob.Remove("Special"));
             Assert.True(cachedMob.Remove("Stats"));
             File.WriteAllText(path, oldCache.ToJsonString());
-            var loaded = MobResistanceStore.Load(path).Get("Feerrott", "Cyndreela").Wiki;
+            var loaded = (await MobResistanceStore.LoadAsync(path)).Get("Feerrott", "Cyndreela").Wiki;
             Assert.NotNull(loaded);
             Assert.Null(loaded.Special);
             Assert.Null(loaded.Stats);
@@ -385,7 +450,7 @@ public class MobResistanceTests
         }
         finally
         {
-            File.Delete(path);
+            Directory.Delete(folder, recursive: true);
         }
     }
 

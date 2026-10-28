@@ -50,14 +50,7 @@ public partial class MainWindow
     {
         _settings.CheckForUpdatesOnStartup = CheckUpdatesBox.IsChecked == true;
         _settings.AutomaticallyDownloadUpdates = DownloadUpdatesBox.IsChecked == true;
-        try
-        {
-            _settings.Save();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            UpdateStatusText.Text = $"Could not save update preferences: {ex.Message}";
-        }
+        SaveSettingsInBackground(error => UpdateStatusText.Text = $"Could not save update preferences: {error}");
     }
 
     private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
@@ -199,11 +192,12 @@ public partial class MainWindow
 
             _settings.Triggers = [.. _triggers];
             // Verify persistence before stopping anything; refuse to restart if data cannot be saved.
-            SaveAll(throwOnError: true);
+            await SaveAllAsync(throwOnError: true);
             await StopTailingAsync();
-            await _wikiCts.CancelAsync();
-            await _wikiRepository.DisposeAsync();
-            SaveAll(throwOnError: true);
+            var disposingWiki = _wikiRepository.DisposeAsync();
+            _wikiCts.Cancel();
+            await disposingWiki;
+            await SaveAllAsync(throwOnError: true);
             _updater.WaitExitThenApplyUpdates(_availableUpdate, restart: true);
             _dock.Close();
         }

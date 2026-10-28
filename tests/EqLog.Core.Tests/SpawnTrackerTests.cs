@@ -57,7 +57,7 @@ public class SpawnTrackerTests
     }
 
     [Fact]
-    public void WikiFallbackCanBeRemovedAndRehydratedWithoutBecomingLearnedData()
+    public async Task WikiFallbackCanBeRemovedAndRehydratedWithoutBecomingLearnedData()
     {
         string path = Path.Combine(Path.GetTempPath(), $"spawn-wiki-{Guid.NewGuid():N}.json");
         try
@@ -65,8 +65,8 @@ public class SpawnTrackerTests
             var store = new SpawnStore();
             store.SetTracked("Kedge Keep", "Shellara Ebbhunter", true);
             store.SetWikiRespawn("Shellara Ebbhunter", 400);
-            store.Save(path);
-            var reloaded = SpawnStore.Load(path);
+            await store.SaveAsync(path);
+            var reloaded = await SpawnStore.LoadAsync(path);
             Assert.Null(reloaded.Get("Kedge Keep", "Shellara Ebbhunter")!.RespawnSeconds);
             reloaded.SetWikiRespawn("Shellara Ebbhunter", 400);
             Assert.Equal(400, reloaded.Get("Kedge Keep", "Shellara Ebbhunter")!.RespawnSeconds);
@@ -132,7 +132,7 @@ public class SpawnTrackerTests
         Assert.True(names["The Juggernaught"]);
     }
     [Fact]
-    public void CountdownSurvivesRestartWithNewLogFile()
+    public async Task CountdownSurvivesRestartWithNewLogFile()
     {
         string path = Path.Combine(Path.GetTempPath(), $"spawns-{Guid.NewGuid():N}.json");
         try
@@ -142,10 +142,10 @@ public class SpawnTrackerTests
             engine.ProcessLines([L(0, "You have entered Nektropos Castle 2 (Refined)."), L(10, "You have slain Lord Rikantus Everling!")]);
             store.SetTracked("Nektropos Castle", "Lord Rikantus Everling", true);
             store.SetOverride("Nektropos Castle", "Lord Rikantus Everling", 900);
-            store.Save(path);
+            await store.SaveAsync(path);
 
             // A new log (e.g. after logging back in) only shows you entering the zone again.
-            var restarted = new LogEngine(spawns: SpawnStore.Load(path));
+            var restarted = new LogEngine(spawns: await SpawnStore.LoadAsync(path));
             restarted.ProcessLines([L(300, "You have entered Nektropos Castle 4 (Refined).")]);
             var timer = Assert.Single(restarted.Snapshot(T0.AddSeconds(310)).Spawns.Timers);
 

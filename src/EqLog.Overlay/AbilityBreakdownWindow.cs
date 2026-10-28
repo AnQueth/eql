@@ -26,7 +26,7 @@ public sealed class AbilityBreakdownWindow : Window
         header.Children.Add(context);
         header.Children.Add(new TextBlock
         {
-            Text = $"Total {breakdown.Abilities.Sum(a => a.Total):N0} | {breakdown.Abilities.Sum(a => a.PerSecond):N1} {breakdown.RateLabel}",
+            Text = $"Total {breakdown.Abilities.Sum(a => a.Total):N0} · {breakdown.Abilities.Sum(a => a.PerSecond):N1} {breakdown.RateLabel}",
             Margin = new Thickness(0, 8, 0, 0),
         });
         DockPanel.SetDock(header, Dock.Top);

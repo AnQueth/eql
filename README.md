@@ -24,8 +24,12 @@ together; do not copy just the executable.
 
 1. Turn logging on in EverQuest with **`/log on`**.
 2. Use **windowed or borderless** mode; overlays cannot draw over exclusive fullscreen.
-3. In **General > Log file**, use **Browse...** if your log is not selected automatically.
-4. In **General > Overlays**, enable the panels you want and choose floating or **docked**.
+3. The app looks for logs in the usual EverQuest Legends and EverQuest Live install folders. If none are found,
+   it asks you to choose your **Logs** folder (choosing the EverQuest install folder also works). You can change it
+   later in **General > Log file** with **Choose folder...**, or pick a single file with **Browse...**.
+   If the folder has no logs yet, type `/log on` in game and the log is picked up automatically.
+4. Every panel starts **docked** in the main window (Alerts float over the game). In **General > Overlays**,
+   enable the panels you want and untick **docked** to float one over the game.
 5. Unlock floating overlays to arrange them, then lock them to pass clicks through to the game.
 
 The default log folder is:
@@ -98,25 +102,25 @@ not updated; existing plain builds must install an updater-enabled release once.
 
 ## Overlays
 
-Enable **Sky quest tracker** under **General → Overlays** for a compact Plane of Sky tracker.
-It can be docked or floating and has a class selector shared with the Plane of Sky tab.
-Only quests with at least one currently owned ingredient appear. Each entry shows the quest,
-turn-in NPC, reward, and ingredient owned/required counts. Historical loot and installed augmentations
-do not qualify; collection ownership does, with a turn-in availability warning. Inventory and newer
-loot update counts automatically. The scrollable list is virtualized. **Refresh** reloads wiki data;
-the existing 24-hour Sky cache is shared with the full browser. The overlay is off by default.
+Enable **Sky quest tracker** under **General → Overlays** for Plane of Sky class quests (there is no
+separate settings tab). It can be docked or floating. See [Plane of Sky class quests](#plane-of-sky-class-quests).
+The overlay is off by default.
 
 Docked overlays live on a **freeform canvas**, not a wrapping grid. Drag the accent-colored header
 handle (or noninteractive panel space) to place a panel anywhere, including empty space, without
 moving any other panels. A full-size highlighted preview follows the pointer, preserving where
-you grabbed the panel. Drop to place it; Escape or dropping outside the dock cancels the move.
-Panels may overlap; dragging a panel brings it to the front. Drag near any edge to scroll.
+you grabbed the panel. While you drag, the other panels move live to show the layout you'd get by
+dropping there. Drop to place it; Escape or dropping outside the dock cancels the move and puts
+every panel back.
+Panels never overlap: after every move, resize, dock/undock, or dock-window width change the canvas
+reflows. The panel you just dropped or resized stays exactly where you put it (it remains the anchor
+until you move or resize another panel). Panels it covers are pushed straight down below it, and
+every panel floats straight up into empty space above it. Panels never change columns, so panels
+you didn't touch stay put unless a gap opens above them. Panels never move sideways: resizing a
+panel past the right or bottom edge grows the canvas and scrolls along with the grip, and a
+narrower window or settings-panel splitter just adds a scrollbar. Drag near any edge to scroll.
 Each panel's canvas position and bottom-right-grip size are saved independently of its floating
-window position and size. Resizing a panel moves overlapping neighbors into the nearest clear
-space (left, right, above, or below), with a small gap. Unaffected panels stay put where possible;
-the resized panel stays anchored, and displaced positions are saved. Shrinking pulls adjacent
-panels and connected rows or columns closer to fill the freed space; deliberately separated
-panels stay put. Resizing the dock window itself never rearranges panels.
+window position and size.
 Newly docked panels without saved positions are placed in available space automatically.
 Buttons, filters, and scrollbars remain interactive even when floating overlays are locked.
 
@@ -177,7 +181,8 @@ Tick **docked** next to an overlay to show it as a tile in this window instead o
 Each panel also has its own button: **Dock** on a floating overlay (visible while overlays are unlocked) and
 **Pop out** on a docked tile, to move just that one panel.
 **Dock all** docks everything except Alerts; **Float all** turns every panel back into an overlay.
-Drag a tile anywhere on the canvas and drag its gold bottom-right corner to resize it.
+Drag a tile to reorder it on the canvas and drag its gold bottom-right corner to resize it; the
+other panels reflow around it.
 Docked panels use fantasy-style metallic frames with beveled edges, inset content, raised
 title strips, and corner studs. Frame colors follow your theme; floating overlays keep their
 compact appearance.
@@ -327,21 +332,29 @@ Corrupt history is reported and protected from overwrites; new observations then
 
 ### Plane of Sky class quests
 
-Open **Settings > Plane of Sky** to browse the wiki's class tests. Choose a class or **All classes**;
-each card shows the reward, quest giver, trigger phrase, required rune, and quest items with drop-source
-notes. Click a quest title to open its class table on EQLWiki (the source table does not provide separate
-quest-page links). The class filter is saved. The catalog is cached for one day in `sky-quests.json`;
-opening the tab after it expires fetches updates, and **Refresh** forces an update at any time.
-Network/format errors appear above the cards, keeping previously loaded data available.
-Each card tracks the active character's owned/missing quantities for the rune and required items,
-using inventory exports, newer loot, and manual owned-count corrections. Upgrade suffixes are ignored
-when matching. Export carried/equipped and bank counts are shown separately; unconfirmed historical
-loot does not satisfy requirements. Progress updates while the tab is open. Items may count toward
-multiple quests (they are not reserved), and all listed items owned does not verify faction or other
-prerequisites. Refresh the inventory export after turn-ins to update counts.
-Sky's owned totals also include collection entries: an item in your Equipment collection is shown as
-**Have**, not **Missing**, with the collection count and an explicit turn-in-availability warning.
-Installed augmentations and unconfirmed historical loot do not satisfy requirements. The editable
+Turn on the **Sky quest tracker** overlay (**General → Overlays**) to browse the wiki's class tests.
+Its toolbar has a search box (quest name, reward, required items, and droppers), a class filter
+(**All classes** or one class), **Wiki**, and **Refresh**. Unlock floating overlays to type. Three tabs:
+
+- **By class**: each quest shows its reward, who to give it to and what to say, and every required
+  item with HAVE/NEED counts, the mob(s) that drop it, and where your copies are.
+- **By dropper**: required items grouped by the mob that drops them, with the quests that need each item.
+  Items whose wiki page names only the zone (typically runes) are grouped last.
+- **Need**: only the items you still need for the class-filtered (and searched) quests, boss first and
+  then each missing item with how many more you need and which quests use it.
+- **Watching**: click the ☆ next to any quest to watch it. Watched quests can come from different classes
+  and ignore the class filter. The tab starts with a hunt list of still-missing items grouped by dropper,
+  followed by the watched quests.
+
+Search, class, tab, and watch list are saved. The catalog and item drop sources are cached for one day in
+`sky-quests.json`; **Refresh** forces an update. Network/format errors appear at the top of the list,
+keeping previously loaded data available.
+Counts use the active character's inventory exports, newer loot, and manual owned-count corrections.
+Upgrade suffixes are ignored when matching. Unconfirmed historical loot and installed augmentations do
+not satisfy requirements. Items may count toward multiple quests (they are not reserved; the hunt list
+compares the combined requirement against what you own), and owning every item does not verify faction or
+other prerequisites. Refresh the inventory export after turn-ins to update counts.
+Collection entries count as owned, with an explicit turn-in-availability warning. The editable
 Owned column in Loot quests still represents non-collection counts; Sky adds the separate Collection
 column when evaluating ownership.
 
@@ -374,8 +387,9 @@ In **Settings > Loot quests**, edit **Owned** to confirm your inventory. Newly o
 owned counts; correct them manually after sales, banking, depot transfers or turn-ins. Auto-sold and
 depot loot are excluded. Select a quest reference to mark it complete (or reopen it); completion hides it
 from the opportunities panel without assuming which items were consumed. Counts and completions are
-stored per character in `quest-inventory.json`. Historical lines are deduplicated per log path and line
-number; replacing or moving a log can import it again as unconfirmed history.
+stored per character in `quest-inventory.json`. Historical lines are deduplicated with one compact
+watermark (latest timestamp and line number) per character and log path; replacing or moving a log can
+import it again as unconfirmed history.
 
 Automatic lookups run one at a time, cache results for seven days, and show errors explicitly.
 The Quest opportunities toolbar puts sorting and filtering side by side, with a horizontal progress
@@ -405,7 +419,7 @@ This works in the docked panel and in unlocked floating overlays. Press **Ctrl+S
 floating overlay first; locked overlays pass clicks through to the game.
 
 Only the item name is sent, never log files or character information.
-Results are cached for seven days in `%AppData%\EqLogOverlay\quest-lookups.json`.
+Results are cached for seven days in `%AppData%\EqLogOverlay\quest-lookups.jsonl` (one appended line per lookup; the latest line per item wins and the file is compacted on load).
 All item identity comparisons ignore upgrade modifiers such as `+1`, `+ 1`, or `+10`, wherever they
 appear in a name, using the same normalization for loot totals, inventory grouping, item searches,
 Sky requirements, wiki lookups, item-page links, and cache keys. Comparisons also ignore case and
@@ -532,10 +546,11 @@ Settings are stored in `%AppData%\EqLogOverlay\`:
 - `spell-durations.json`: learned samples and overrides
 - `spawn-timers.json`: respawn samples, overrides, tracked mobs and the last kill/sighting per zone, so countdowns keep running across restarts and new log files
 - `motes.json`: all-time mote totals per character and mote drops/kills per zone and mob
-- `mob-resistances.json`: resistance observations by zone/mob, replay watermarks, and cached EQLWiki NPC/spell data
-- `npc-compendium.json`: NPC name/zone catalog, historical considers, active/completed encounter summaries, per-spell damage/outcome counts, and import watermarks (no raw log lines)
-- `quest-inventory.json`: quest inventory counts and completions per character
-- `quest-lookups.json`: cached item quest references
+- `mob-resistances.json`: resistance observations by zone/mob, replay watermarks, and cached EQLWiki NPC data
+- `spell-info.jsonl`: cached EQLWiki spell resist types, appended one line per spell (latest wins); an older `mob-resistances.spells.jsonl` is renamed to this on load
+- `npc-compendium\`: NPC name/zone catalog, historical considers, active encounters and import watermarks in `index.json`, with completed encounter summaries and per-spell damage/outcome counts appended to one `npcs\*.jsonl` file per NPC (no raw log lines). An older single `npc-compendium.json` is migrated automatically and renamed to `npc-compendium.json.migrated`, which can be deleted afterwards.
+- `quest-inventory.json`: non-zero quest inventory counts, completions and per-log loot watermarks per character
+- `quest-lookups.jsonl`: cached item quest references, appended one line per lookup (an older `quest-lookups.json` is migrated and removed automatically)
 - `sky-quests.json`: cached Plane of Sky quest catalog
 
 Tracking data is saved periodically, on exit, and on Windows logoff/shutdown.

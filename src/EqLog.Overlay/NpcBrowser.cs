@@ -8,7 +8,8 @@ namespace EqLog.Overlay;
 
 public partial class MainWindow
 {
-    private static readonly string NpcCompendiumPath = Path.Combine(AppSettings.Folder, "npc-compendium.json");
+    private static readonly string NpcCompendiumFolder = Path.Combine(AppSettings.Folder, "npc-compendium");
+    private static readonly string LegacyNpcCompendiumPath = Path.Combine(AppSettings.Folder, "npc-compendium.json");
     private NpcCompendium _npcCompendium = new();
     private bool _npcSaveEnabled = true;
     private string? _npcStorageError;
@@ -40,18 +41,16 @@ public partial class MainWindow
         }
     }
 
-    private void InitializeNpcCompendium()
+    private void InitializeNpcCompendium(StartupState state)
     {
-        try
+        if (state.NpcCompendium is { } npcs)
         {
-            _npcCompendium = NpcCompendium.Load(NpcCompendiumPath);
+            _npcCompendium = npcs;
+            return;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
-        {
-            _npcSaveEnabled = false;
-            _npcStorageError = $"NPC compendium could not load: {ex.Message}. This session is not being saved; the original file is protected.";
-            MobInfoStatusText.Text = _npcStorageError;
-        }
+        _npcSaveEnabled = false;
+        _npcStorageError = $"NPC compendium could not load: {state.NpcCompendiumError?.Message}. This session is not being saved; the original file is protected.";
+        MobInfoStatusText.Text = _npcStorageError;
     }
 
     private void ConfigureNpcToolbar(OverlayPanel panel)
@@ -168,10 +167,49 @@ public partial class MainWindow
         panel.SetToolbar(bar);
     }
 
+    private NpcEntry? _npcEntry;
+    private string? _npcEntryKey;
+    private Task? _npcEntryLoad;
+
+    /// <summary>
+    /// The selected NPC with its history. Cached histories come back immediately; otherwise the file is read in the
+    /// background, this returns null for a new selection until it arrives, and the panel re-renders when it does.
+    /// </summary>
     private NpcEntry? SelectedNpc()
     {
-        return _settings.NpcSelectedMob is { } mob && _settings.NpcSelectedZone is { } zone
-            ? _npcCompendium.Get(mob, zone) : null;
+        if (_settings.NpcSelectedMob is not { } mob || _settings.NpcSelectedZone is not { } zone)
+        {
+            return null;
+        }
+        string key = mob + "\n" + zone;
+        if (_npcEntryLoad is null || _npcEntryLoad.IsCompleted)
+        {
+            var load = _npcCompendium.GetAsync(mob, zone);
+            if (load.IsCompletedSuccessfully)
+            {
+                _npcEntry = load.Result;
+                _npcEntryKey = key;
+            }
+            else
+            {
+                _npcEntryLoad = CompleteNpcLoadAsync(load, key);
+            }
+        }
+        return _npcEntryKey == key ? _npcEntry : null;
+    }
+
+    private async Task CompleteNpcLoadAsync(Task<NpcEntry?> load, string key)
+    {
+        try
+        {
+            _npcEntry = await load;
+            _npcEntryKey = key;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _npcStorageError = $"Could not read NPC history: {ex.Message}";
+        }
+        _npcNextRender = default;
     }
 
     private void SelectNpc(string mob, string zone)
@@ -274,7 +312,7 @@ public partial class MainWindow
         {
             AddNpcOverviewRows(rows, entry, mob, zone);
         }
-        return new(mob, zone, rows);
+        return new(mob, zone, rows, QuestLookup.SearchUrl(mob));
     }
 
     private void AddNpcOverviewRows(List<OverlayRow> rows, NpcEntry? entry, string mob, string zone)
@@ -292,9 +330,18 @@ public partial class MainWindow
         }
         else
         {
+            var seen = new List<(string Label, string Value)>
+            {
+                ("First seen", $"{entry.FirstSeen:g}"),
+                ("Considers", $"{entry.Considers:N0}"),
+            };
+            if (entry.LastConsider is { } con)
+            {
+                seen.Add(("Last consider", $"{con.Time:g}"));
+            }
             rows.Add(new("Last seen", $"{entry.LastSeen:g}",
-                Details: $"First seen {entry.FirstSeen:g}  |  {entry.Considers:N0} considers" +
-                    (entry.LastConsider is { } con ? $"\nLast consider {con.Time:g}; historical, not your current game target." : ""),
+                Table: OverlayTable.Pairs(seen),
+                Details: entry.LastConsider is not null ? "Historical, not your current game target." : null,
                 Stacked: true));
         }
     }
@@ -304,9 +351,13 @@ public partial class MainWindow
         var encounters = entry.Encounters;
         rows.Add(new("Your combat record",
             encounters.Any(e => e.YourDamage > 0) ? $"{entry.YourAverageDps:N1} average DPS" : "No personal damage recorded",
-            Details: $"{encounters.Sum(e => e.YourDamage):N0} damage  |  {encounters.Count:N0} encounters  |  " +
-                $"{encounters.Count(e => e.Outcome == "NPC died"):N0} NPC deaths observed\n" +
-                $"Damage taken: {encounters.Sum(e => e.IncomingDamage):N0}",
+            Table: OverlayTable.Pairs(
+            [
+                ("Damage", $"{encounters.Sum(e => e.YourDamage):N0}"),
+                ("Encounters", $"{encounters.Count:N0}"),
+                ("NPC deaths observed", $"{encounters.Count(e => e.Outcome == "NPC died"):N0}"),
+                ("Damage taken", $"{encounters.Sum(e => e.IncomingDamage):N0}"),
+            ]),
             Stacked: true));
         if (encounters.Any(e => e.OtherDamage > 0))
         {
@@ -323,7 +374,7 @@ public partial class MainWindow
         _npcHistoryPage = Math.Clamp(_npcHistoryPage, 0, pages - 1);
         _npcPrevious.IsEnabled = _npcHistoryPage > 0;
         _npcNext.IsEnabled = _npcHistoryPage + 1 < pages;
-        _npcPageLabel.Text = $"Page {_npcHistoryPage + 1} of {pages}  |  {encounters.Count:N0} encounters";
+        _npcPageLabel.Text = $"Page {_npcHistoryPage + 1} of {pages} · {encounters.Count:N0} encounters";
         if (entry is not null)
         {
             AddNpcCombatSummary(rows, entry);
@@ -334,13 +385,26 @@ public partial class MainWindow
         }
         foreach (var encounter in encounters.Skip(_npcHistoryPage * NpcHistoryPageSize).Take(NpcHistoryPageSize))
         {
-            string spells = string.Join("\n", encounter.Spells.OrderByDescending(s => s.Damage).Select(s =>
-                $"{s.Spell}  |  {s.Damage:N0} damage  |  {s.Landings:N0} direct landings  |  {s.Resists:N0} resists"));
+            var spellRows = encounter.Spells
+                .OrderByDescending(s => s.Damage)
+                .Select(s => (IReadOnlyList<string>)[s.Spell, $"{s.Damage:N0}", $"{s.Landings:N0}", $"{s.Resists:N0}"])
+                .ToArray();
+            OverlayTable? spells = spellRows.Length > 0
+                ? new OverlayTable(["Spell", "Damage", "Landings", "Resists"], spellRows)
+                : null;
             rows.Add(new($"{encounter.Start:g}  /  {encounter.Outcome}",
-                $"{encounter.YourDps:N1} DPS  |  {encounter.YourDamage:N0} damage  |  {encounter.Seconds:0.#}s",
-                Details: $"{encounter.Character}  |  {encounter.Classes ?? "classes unknown"}  |  Level {encounter.Level?.ToString() ?? "?"}\n" +
-                    $"Others: {encounter.OtherDamage:N0} damage  |  Taken: {encounter.IncomingDamage:N0}" +
-                    (spells.Length > 0 ? "\n\n" + spells : ""), Stacked: true));
+                $"{encounter.YourDps:N1} DPS",
+                Table: OverlayTable.Pairs(
+                [
+                    ("Character", encounter.Character),
+                    ("Classes", encounter.Classes ?? "unknown"),
+                    ("Level", encounter.Level?.ToString() ?? "?"),
+                    ("Duration", $"{encounter.Seconds:0.#}s"),
+                    ("Your damage", $"{encounter.YourDamage:N0}"),
+                    ("Others' damage", $"{encounter.OtherDamage:N0}"),
+                    ("Damage taken", $"{encounter.IncomingDamage:N0}"),
+                ], pairsPerRow: 2, then: spells),
+                Stacked: true));
         }
         rows.Add(new("How this history is measured", Details:
             "Average DPS is total damage / summed encounter seconds (last activity - start + 1, minimum 1s). " +
@@ -365,12 +429,24 @@ public partial class MainWindow
             string school = metadata?.Type?.ToString() ?? "School not verified";
             string result;
             string explanation;
-            string evidence = $"Full resists {counts.FullResists:N0}  |  Damage samples {counts.DamageHits:N0}" +
-                (counts.LegacyLandings > 0 ? $"  |  Earlier landings {counts.LegacyLandings:N0}" : "");
+            var evidence = new List<(string Label, string Value)>
+            {
+                ("Full resists", $"{counts.FullResists:N0}"),
+                ("Damage samples", $"{counts.DamageHits:N0}"),
+            };
+            if (counts.LegacyLandings > 0)
+            {
+                evidence.Add(("Earlier landings", $"{counts.LegacyLandings:N0}"));
+            }
             if (observed is not null && metadata?.SingleTargetDirectDamage == true)
             {
                 result = $"{school}  /  {observed.DisplayText}";
-                evidence = $"Full/near-full {observed.Landed:N0}  |  Full resists {counts.FullResists:N0}  |  Estimated partial {observed.EstimatedPartial:N0}";
+                evidence =
+                [
+                    ("Full/near-full", $"{observed.Landed:N0}"),
+                    ("Full resists", $"{counts.FullResists:N0}"),
+                    ("Estimated partial", $"{observed.EstimatedPartial:N0}"),
+                ];
                 explanation = observed.UnassessedDamage > 0
                     ? $"{observed.UnassessedDamage:N0} hits need a reliable normal-damage baseline for this character/loadout/rank."
                     : observed.Landed + observed.Resisted == 0 ? "No assessed damage outcomes yet." : "";
@@ -385,7 +461,8 @@ public partial class MainWindow
                 result = $"{school}  /  {metadata?.TargetType ?? "Wiki details pending"}";
                 explanation = metadata?.AssessmentNote ?? "Spell metadata has not been loaded. Use Refresh wiki to retry.";
             }
-            rows.Add(new(spell, result, Details: evidence + (explanation.Length > 0 ? "\n" + explanation : ""), Stacked: true));
+            rows.Add(new(spell, result, Table: OverlayTable.Pairs(evidence, pairsPerRow: 3),
+                Details: explanation.Length > 0 ? explanation : null, Stacked: true));
         }
         rows.Add(new("About damage ratings", Details:
             "Only verified single-target instant damage (including lifetaps) receives a full/partial rating. " +
@@ -398,7 +475,7 @@ public partial class MainWindow
         }
     }
 
-    private void SaveNpcCompendium(bool throwOnError)
+    private async Task SaveNpcCompendiumAsync(bool throwOnError)
     {
         if (!_npcSaveEnabled)
         {
@@ -410,7 +487,7 @@ public partial class MainWindow
         }
         try
         {
-            _npcCompendium.Save(NpcCompendiumPath);
+            await _npcCompendium.SaveAsync(NpcCompendiumFolder);
             _npcStorageError = null;
         }
         catch (Exception ex) when (!throwOnError && (ex is IOException or UnauthorizedAccessException))

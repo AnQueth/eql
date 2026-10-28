@@ -23,7 +23,7 @@ public sealed class LogTailer(string path)
     /// <param name="onProgress">Invoked after each batch and whenever the reader catches up to the end of the file.</param>
     public async Task RunAsync(bool fromStart, Action<IReadOnlyList<string>> onLines, Action<TailProgress>? onProgress, CancellationToken ct)
     {
-        await using var fs = new FileStream(Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16, FileOptions.SequentialScan);
+        await using var fs = new FileStream(Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16, FileOptions.SequentialScan | FileOptions.Asynchronous);
         long position = fromStart ? 0 : fs.Length;
         fs.Seek(position, SeekOrigin.Begin);
 
@@ -54,7 +54,8 @@ public sealed class LogTailer(string path)
                     reportedCaughtUp = true;
                 }
 
-                await Task.Delay(PollInterval, ct).ConfigureAwait(false);
+                // The loop condition handles cancellation; avoid throwing on every shutdown.
+                await Task.Delay(PollInterval, ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
                 continue;
             }
 
