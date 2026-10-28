@@ -39,6 +39,7 @@ public sealed class DockWindow : Window
     private Vector _dragOffset;
     private string? _anchorKey;
     private bool _splitterDragging;
+    private readonly ContentControl _notice = new() { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 0, 10, 0) };
 
     public DockWindow(DockWindowSettings settings)
     {
@@ -94,7 +95,9 @@ public sealed class DockWindow : Window
         var bar = new DockPanel { Margin = new Thickness(8, 6, 8, 2) };
         DockPanel.SetDock(_sideToggle, Dock.Left);
         DockPanel.SetDock(topmost, Dock.Right);
+        DockPanel.SetDock(_notice, Dock.Left);
         bar.Children.Add(_sideToggle);
+        bar.Children.Add(_notice);
         bar.Children.Add(topmost);
         var dragHint = new TextBlock
         {
@@ -225,6 +228,13 @@ public sealed class DockWindow : Window
     public DockWindowSettings Settings
     {
         get;
+    }
+
+    /// <summary>Shows a notice (such as an available update) in the top bar, or hides it when null.</summary>
+    public void SetNotice(UIElement? notice)
+    {
+        _notice.Content = notice;
+        _notice.Visibility = notice is null ? Visibility.Collapsed : Visibility.Visible;
     }
 
     /// <summary>Puts the settings UI into the side panel.</summary>

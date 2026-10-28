@@ -77,6 +77,7 @@ public partial class MainWindow
 
             _availableUpdate = update;
             _updateDownloaded = false;
+            RefreshUpdateNotice();
             if (update is null)
             {
                 UpdateStatusText.Text = "You are running the latest stable release.";
@@ -152,6 +153,7 @@ public partial class MainWindow
             }
 
             _updateDownloaded = true;
+            RefreshUpdateNotice();
             UpdateStatusText.Text = $"Version {update.TargetFullRelease.Version} is ready. Restart to update when convenient.";
         }
         finally
@@ -166,6 +168,43 @@ public partial class MainWindow
         CheckUpdateButton.IsEnabled = !busy;
         DownloadUpdateButton.IsEnabled = !busy && _availableUpdate is not null && !_updateDownloaded;
         RestartUpdateButton.IsEnabled = !busy && _updateDownloaded;
+        RefreshUpdateNotice();
+    }
+
+    /// <summary>Shows an "update available" banner with its action button in the main window's top bar.</summary>
+    private void RefreshUpdateNotice()
+    {
+        if (_availableUpdate is null)
+        {
+            _dock.SetNotice(null);
+            return;
+        }
+
+        var version = _availableUpdate.TargetFullRelease.Version;
+        var text = new System.Windows.Controls.TextBlock
+        {
+            Text = _updateDownloaded
+                ? $"\u2B06 Version {version} is ready"
+                : _updateBusy
+                    ? $"\u2B06 Downloading version {version}..."
+                    : $"\u2B06 Version {version} is available",
+            FontWeight = FontWeights.Bold,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0),
+        };
+        text.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "Pumpkin");
+        var button = new System.Windows.Controls.Button
+        {
+            Content = _updateDownloaded ? "Restart to update" : "Download update",
+            IsEnabled = !_updateBusy,
+            Padding = new Thickness(8, 2, 8, 2),
+            Focusable = false,
+        };
+        button.Click += _updateDownloaded ? RestartUpdate_Click : DownloadUpdate_Click;
+        var panel = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
+        panel.Children.Add(text);
+        panel.Children.Add(button);
+        _dock.SetNotice(panel);
     }
 
     private async void RestartUpdate_Click(object sender, RoutedEventArgs e)
