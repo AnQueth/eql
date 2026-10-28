@@ -163,8 +163,22 @@ pacing and allowing live considers to proceed while background requests wait. Ex
 failures follow the existing visible-error and cache-preservation paths. MediaWiki errors
 inside successful HTTP responses continue through the API adapters' explicit error handling.
 
-NPC/spell cache formats and one/seven-day TTLs are unchanged. Quest and Sky caches retain
-their seven/one-day TTLs and existing files. Quest persistence has its own save-only gate,
+`WikiRepository.GetActivity` exposes copied request/operation snapshots for the optional
+Wiki activity overlay. Scheduler-owned request state survives between attempts during
+Polly backoff, reflects context priority promotion, and is removed on completion or
+cancellation. A bounded in-memory history retains the latest 30 HTTP outcomes, transient
+failures, and repository parsing/cache errors; monitoring does not submit requests or write
+diagnostic files. The normal render loop only obtains snapshots while the panel is showing.
+Repository completion records include cache hits so sub-frame operations remain observable.
+Quest enrichment has a dispatcher-owned work list before repository submission; both quest
+progress displays use the same progress calculation, and the wiki panel shows that backlog
+separately from actual HTTP work.
+
+NPC metadata uses a one-day TTL; found spell and quest metadata use seven days, while
+confirmed missing results use one day. Spell/quest results persist a `Found` flag (older
+cache entries default to found). API/network failures do not produce negative cache entries.
+The UI quest batch and progress paths share `QuestLookupResult.NeedsRefresh` with the repository.
+Sky caches retain their one-day TTL and existing files. Quest persistence has its own save-only gate,
 never a network lock; interacting with an automatically queued item can promote it.
 The Sky loading guard explicitly promotes an existing operation when the browser is opened.
 Application shutdown and restart-to-update cancel and join repository work before the final

@@ -474,10 +474,33 @@ never count as learned samples. Once local learning supplies a time, it takes pr
 The overlay shows each tracked mob as a countdown after you kill it, then **DUE** once the time has
 passed, **up** once it's been seen alive again, and the learned time when it hasn't been killed yet.
 
+## Wiki activity
+
+Enable **Wiki activity** in the overlay list to monitor the shared wiki request queue.
+It shows each request's priority, URL, attempt count, elapsed time, and whether it is
+queued/pacing, sending, or waiting to retry. Cache/data-processing operations appear
+while they run. Quest enrichment progress and its waiting-item queue are shown separately
+from the HTTP queue, since cached checks need no HTTP request. Cache hits remain in recent
+activity even when they finish between screen updates. The latest 30 outcomes and errors (including wiki parsing/cache
+failures) remain visible until the app closes. Polly retries transient failures up to
+three times; an error in the history can therefore be followed by a successful retry.
+This panel supports the same docking, visibility, and appearance controls as other overlays.
+Fresh quest references already loaded from disk are consumed in short UI-safe batches,
+not one item per screen refresh; these batches need neither HTTP nor another cache write.
+Missing item, NPC, and spell pages are cached for 24 hours before another automatic lookup.
+Missing item pages are distinguished from existing pages with no quest references.
+Network/API errors are not cached as missing pages; explicit force refresh bypasses cached results.
+
 ## Motes
 
 The **Motes** overlay counts the Motes of Potential you loot, from corpses and Reward Chests:
 
+- The **Owned** column shows your selected character's current inventory beside the drop
+  counts in each tier row and the total row. Owned includes carried/bank counts from the
+  inventory export plus newer loot; collection, installed items and historical drops are
+  excluded. `?` means inventory is not loaded. Hover for the export date and freshness
+  details. Run `/outputfile inventory` after spending,
+  selling, or moving motes to refresh counts; log drops alone cannot detect those changes.
 - One row per tier, taken from the item name ("Mote of <Tier> Potential", so new tiers appear automatically), most collected first, showing this
   session's count and, in brackets, the all-time count. The subtitle shows the session total and motes per hour.
 - **Recent**: the last few drops with tier, quantity, source and time.

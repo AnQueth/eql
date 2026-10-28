@@ -13,7 +13,11 @@ public sealed record OverlayDefinition(string Key, string Caption, double Width,
 public sealed record ActiveAlert(string Text, Brush Color, DateTime Expires);
 
 /// <summary>Per-render options the presenters need from the app.</summary>
-public sealed record OverlayView(ISet<ChatChannel> ChatChannels, IReadOnlyList<ActiveAlert> Alerts, int LootGrouping = 0);
+public sealed record OverlayView(ISet<ChatChannel> ChatChannels, IReadOnlyList<ActiveAlert> Alerts, int LootGrouping = 0,
+    QuestInventory? Inventory = null, WikiActivitySnapshot? WikiActivity = null, QuestWikiActivity? QuestWiki = null);
+
+/// <summary>Quest enrichment work waiting outside the shared HTTP scheduler.</summary>
+public sealed record QuestWikiActivity(string Summary, string Status, string? ActiveItem, IReadOnlyList<string> Queued, bool HasError);
 
 /// <summary>Turns engine snapshots into overlay rows.</summary>
 public static class OverlayPresenters
@@ -63,28 +67,108 @@ public static class OverlayPresenters
         new("sky", "Sky quest tracker", 380, 420, false, (_, _, _) => new("Sky quest tracker", null, [])),
         new("mobinfo", "Mob info", 540, 620, false, (_, _, _) => new("Mob info", null, [])),
         new("npcs", "NPC compendium", 620, 720, false, (_, _, _) => new("NPC compendium", null, [])),
+        new("wiki", "Wiki activity", 480, 360, false, WikiActivity),
     ];
 
-    private static OverlayContent Motes(EngineSnapshot s, LogEngine _, OverlayView __)
+    private static OverlayContent WikiActivity(EngineSnapshot _, LogEngine __, OverlayView view)
+    {
+        var activity = view.WikiActivity;
+        var rows = new List<OverlayRow>();
+        if (activity is null)
+        {
+            rows.Add(new("Wiki monitor unavailable", Foreground: Warn));
+            return new("Wiki activity", null, rows);
+        }
+        if (view.QuestWiki is { } quest)
+        {
+            rows.Add(new("Quest enrichment", Foreground: Header, Bold: true));
+            rows.Add(new(quest.Summary, Wrap: true, Foreground: Dim));
+            rows.Add(new(quest.Status, Wrap: true, Foreground: quest.HasError ? Bad : Dim));
+            if (quest.ActiveItem is not null)
+            {
+                rows.Add(new(quest.ActiveItem, "Checking / saving"));
+            }
+        }
+        rows.Add(new("HTTP requests", $"{activity.Requests.Count} pending / active", Foreground: Header, Bold: true));
+        foreach (var request in activity.Requests)
+        {
+            string priority = request.Priority == WikiPriority.RealTime ? "Real-time" : request.Priority.ToString();
+            rows.Add(new(request.Name, $"{priority} · {request.Attempt}/4",
+                Details: $"{request.State} | {(DateTime.UtcNow - request.StartedUtc).TotalSeconds:0}s\n{request.Url}"));
+        }
+        if (activity.Requests.Count == 0)
+        {
+            rows.Add(new(activity.Operations.Count > 0 ? "Processing wiki data / cache" :
+                view.QuestWiki is { ActiveItem: not null } or { Queued.Count: > 0 }
+                    ? "No HTTP in flight - quest work / cache checks pending" : "Idle", Wrap: true, Foreground: Dim));
+        }
+        var requestNames = activity.Requests.Select(r => r.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (string operation in activity.Operations.Where(o => !requestNames.Contains(o)))
+        {
+            rows.Add(new(operation, "Processing / cache", Foreground: Dim));
+        }
+        if (view.QuestWiki is { Queued.Count: > 0 } backlog)
+        {
+            rows.Add(new("Quest work queue", $"{backlog.Queued.Count:N0} waiting", Foreground: Header,
+                Bold: true, QuestHeading: true));
+            foreach (string item in backlog.Queued.Take(10))
+            {
+                rows.Add(new(item, "Background", ToolTip: "Waiting for quest enrichment; may be served from cache without HTTP."));
+            }
+            if (backlog.Queued.Count > 10)
+            {
+                rows.Add(new($"{backlog.Queued.Count - 10:N0} more waiting (hover to view)", Foreground: Dim,
+                    ToolTip: string.Join("\n", backlog.Queued.Skip(10))));
+            }
+        }
+        rows.Add(new("Recent activity / errors", Foreground: Header, Bold: true, QuestHeading: true));
+        foreach (var entry in activity.Recent)
+        {
+            rows.Add(new($"{entry.TimeUtc.ToLocalTime():HH:mm:ss} {entry.Name}", entry.IsError ? "ERROR" : "",
+                Foreground: entry.IsError ? Bad : Dim, Details: entry.Message));
+        }
+        return new("Wiki activity", "Priority queue · paced HTTP · Polly retries", rows);
+    }
+
+    private static OverlayContent Motes(EngineSnapshot s, LogEngine _, OverlayView view)
     {
         var m = s.Motes;
-        var rows = new List<OverlayRow>
-        {
-            new("Tier", "session  (all time)", Foreground: Header, Bold: true),
-        };
+        var rows = new List<OverlayRow>();
+        var inventory = view.Inventory;
+        var held = inventory?.Items.Where(i => i.Character.Equals(s.CharacterName, StringComparison.OrdinalIgnoreCase))
+            .Select(i => (Item: i, Tier: MoteTiers.TierOf(ItemNames.Normalize(i.Item))))
+            .Where(i => i.Tier is not null)
+            .GroupBy(i => i.Tier!, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase).ToArray();
+        bool hasExport = inventory is not null &&
+            inventory.ExportTimes.ContainsKey(s.CharacterName.ToUpperInvariant());
+        string inventoryTip = (hasExport
+            ? $"Export {inventory!.ExportTimes[s.CharacterName.ToUpperInvariant()].ToLocalTime():g}; owned includes newer loot."
+            : "No inventory export: owned counts only reflect tracked loot/manual adjustments.") +
+            "\nOwned excludes collection, installed items and historical drops." +
+            "\nRun /outputfile inventory after spending or moving motes to refresh.";
+        var ownedByTier = held?.ToDictionary(g => g.Key, g => g.Sum(i => i.Item.Owned), StringComparer.OrdinalIgnoreCase)
+            ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        rows.Add(new("Tier", "session (all)", Foreground: Header, Bold: true,
+            ExtraColumn: "Owned", ToolTip: inventoryTip));
         var allTime = m.AllTime.ToDictionary(c => c.Tier, c => c.Count, StringComparer.OrdinalIgnoreCase);
         var session = m.Session.ToDictionary(c => c.Tier, c => c.Count, StringComparer.OrdinalIgnoreCase);
         var tiers = allTime.Keys.Union(session.Keys, StringComparer.OrdinalIgnoreCase)
+            .Union(ownedByTier.Keys, StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(t => allTime.GetValueOrDefault(t)).ThenByDescending(t => session.GetValueOrDefault(t))
             .ThenBy(t => t, StringComparer.OrdinalIgnoreCase);
         foreach (var tier in tiers)
         {
             int n = session.GetValueOrDefault(tier);
+            string owned = hasExport || ownedByTier.ContainsKey(tier)
+                ? ownedByTier.GetValueOrDefault(tier).ToString("N0") : "?";
             rows.Add(new(tier, $"{n}  ({allTime.GetValueOrDefault(tier)})", Foreground: n > 0 ? Good : Dim,
-                LootItem: $"Mote of {tier} Potential"));
+                LootItem: $"Mote of {tier} Potential", ExtraColumn: owned, ToolTip: inventoryTip));
         }
 
-        rows.Add(new("Total", $"{m.SessionTotal}  ({m.AllTimeTotal})", Bold: true));
+        rows.Add(new("Total", $"{m.SessionTotal}  ({m.AllTimeTotal})", Bold: true,
+            ExtraColumn: hasExport || ownedByTier.Count > 0 ? ownedByTier.Values.Sum().ToString("N0") : "?",
+            ToolTip: inventoryTip));
 
         if (m.Recent.Count > 0)
         {
@@ -309,7 +393,9 @@ public static class OverlayPresenters
         foreach (var t in s.Timers)
         {
             string target = t.TargetConfirmed ? t.Target : $"{t.Target}?";
-            string left = $"{t.Spell} \u2192 {target}";
+            string left = string.IsNullOrWhiteSpace(t.Target) || t.Target == "(target)"
+                ? t.Spell
+                : $"{t.Spell} \u2192 {target}";
             switch (t.State)
             {
                 case TimerState.WornOff:

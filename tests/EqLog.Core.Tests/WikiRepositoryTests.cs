@@ -8,6 +8,140 @@ namespace EqLog.Core.Tests;
 public sealed class WikiRepositoryTests
 {
     [Theory]
+    [InlineData(false, 23, false)]
+    [InlineData(false, 25, true)]
+    [InlineData(true, 25, false)]
+    [InlineData(true, 169, true)]
+    public void MissingPageCache_ExpiresAfterOneDay_NotSeven(bool found, int hours, bool expired)
+    {
+        var date = DateTime.UtcNow.AddHours(-hours);
+        Assert.Equal(expired, new QuestLookupResult("Item", date, [], found).NeedsRefresh);
+        Assert.Equal(expired, new SpellResistanceInfo("Spell", null, null, date,
+            MetadataVersion: SpellResistanceInfo.CurrentMetadataVersion, Found: found).NeedsRefresh);
+    }
+
+    [Fact]
+    public async Task MissingQuest_IsPersistable_ReusedForDay_AndRetriedAfterExpiry()
+    {
+        int requests = 0;
+        using var http = new HttpClient(new Handler((_, _) =>
+        {
+            requests++;
+            return Task.FromResult(Response("""{"query":{"pages":[{"title":"Missing","missing":true}]}}"""));
+        }));
+        await using var repository = new WikiRepository(http, new MobResistanceStore(), () =>
+        {
+        }, TimeSpan.Zero);
+        var missing = await repository.GetQuestAsync("Missing", WikiPriority.Background, false, default);
+        Assert.False(missing.Found);
+        var persisted = JsonSerializer.Deserialize<QuestLookupResult>(JsonSerializer.Serialize(missing))!;
+        Assert.False(persisted.Found);
+        repository.SeedQuest(persisted with
+        {
+            CheckedUtc = DateTime.UtcNow.AddHours(-23)
+        });
+        Assert.False((await repository.GetQuestAsync("Missing", WikiPriority.Background, false, default)).Found);
+        Assert.Equal(1, requests);
+        repository.SeedQuest(persisted with
+        {
+            CheckedUtc = DateTime.UtcNow.AddHours(-25)
+        });
+        await repository.GetQuestAsync("Missing", WikiPriority.Background, false, default);
+        Assert.Equal(2, requests);
+        await repository.GetQuestAsync("Missing", WikiPriority.Background, true, default);
+        Assert.Equal(3, requests);
+    }
+
+    [Fact]
+    public async Task Activity_ReportsSendingQueuePromotionAndCompletion()
+    {
+        var entered = Signal();
+        var release = Signal();
+        using var http = new HttpClient(new Handler(async (_, ct) =>
+        {
+            entered.TrySetResult();
+            await release.Task.WaitAsync(ct);
+            return Response("{}");
+        }));
+        await using var scheduler = new WikiRequestScheduler(http, TimeSpan.Zero, TimeSpan.FromMinutes(1));
+        using var first = Request("first");
+        using var second = Request("second");
+        var sending = scheduler.SendAsync(first, new(WikiPriority.Background, "spell:first"), default);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var context = new WikiRequestContext(WikiPriority.Background, "mob:second");
+        var queued = scheduler.SendAsync(second, context, default);
+        context.Promote(WikiPriority.RealTime);
+        var snapshot = scheduler.Snapshot();
+        Assert.Equal(2, snapshot.Requests.Count);
+        Assert.Equal("Sending", snapshot.Requests[0].State);
+        var pending = Assert.Single(snapshot.Requests, r => r.Name == "mob:second");
+        Assert.Equal("Queued / pacing", pending.State);
+        Assert.Equal(WikiPriority.RealTime, pending.Priority);
+        Assert.EndsWith("/second", pending.Url);
+        release.TrySetResult();
+        using var a = await sending.WaitAsync(TimeSpan.FromSeconds(5));
+        using var b = await queued.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Empty(scheduler.Snapshot().Requests);
+        Assert.Equal(2, scheduler.Snapshot().Recent.Count);
+        Assert.All(scheduler.Snapshot().Recent, e => Assert.False(e.IsError));
+        Assert.Equal(2, snapshot.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Activity_ReportsRetryBackoffAndRemovesCanceledRequest()
+    {
+        using var http = new HttpClient(new Handler((_, _) =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+            response.Headers.RetryAfter = new(TimeSpan.FromMinutes(1));
+            return Task.FromResult(response);
+        }));
+        await using var scheduler = new WikiRequestScheduler(http, TimeSpan.Zero, TimeSpan.FromMinutes(1));
+        using var message = Request("retry");
+        using var cancel = new CancellationTokenSource();
+        var work = scheduler.SendAsync(message, new(WikiPriority.Background, "spell:retry"), cancel.Token);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (!scheduler.Snapshot().Recent.Any(e => e.Message.Contains("retrying")))
+        {
+            await Task.Delay(10, timeout.Token);
+        }
+        var snapshot = scheduler.Snapshot();
+        Assert.Contains("Retry backoff", Assert.Single(snapshot.Requests).State);
+        Assert.Contains(snapshot.Recent, e => e.IsError && e.Message.Contains("429"));
+        await cancel.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => work);
+        Assert.Empty(scheduler.Snapshot().Requests);
+    }
+
+    [Fact]
+    public async Task Activity_BoundsRecentErrorsAndKeepsNewestFirst()
+    {
+        using var http = new HttpClient(new Handler((_, _) => Task.FromResult(Response("{}"))));
+        await using var scheduler = new WikiRequestScheduler(http, TimeSpan.Zero, TimeSpan.FromMinutes(1));
+        for (int i = 0; i < 50; i++)
+        {
+            scheduler.RecordFailure("quest:" + i, new InvalidOperationException("Bad wiki data " + i));
+        }
+        var snapshot = scheduler.Snapshot();
+        Assert.Equal(30, snapshot.Recent.Count);
+        Assert.Equal("quest:49", snapshot.Recent[0].Name);
+        Assert.All(snapshot.Recent, e => Assert.True(e.IsError));
+    }
+
+    [Fact]
+    public async Task Activity_RepositoryReportsParserErrors()
+    {
+        using var http = new HttpClient(new Handler((_, _) => Task.FromResult(Response("not json"))));
+        await using var repository = new WikiRepository(http, new MobResistanceStore(), () =>
+        {
+        }, TimeSpan.Zero);
+        await Assert.ThrowsAnyAsync<JsonException>(() =>
+            repository.GetMobAsync("broken", WikiPriority.Interactive, true, default));
+        Assert.Contains(repository.GetActivity().Recent, e => e.IsError && e.Name == "mob:BROKEN");
+        Assert.Empty(repository.GetActivity().Requests);
+    }
+
+    [Theory]
     [InlineData(408, 4)]
     [InlineData(429, 4)]
     [InlineData(500, 4)]
@@ -561,6 +695,10 @@ public sealed class WikiRepositoryTests
         await using var repository = new WikiRepository(http, store, () => { }, TimeSpan.Zero);
         repository.SeedSky(sky);
         Assert.Same(cachedMob, await repository.GetMobAsync("A rat", WikiPriority.RealTime, false, default));
+        var cachedActivity = repository.GetActivity();
+        Assert.Empty(cachedActivity.Requests);
+        Assert.Contains(cachedActivity.Recent, e => e.Name == "mob:A RAT" &&
+            !e.IsError && e.Message.Contains("Cache hit"));
         Assert.Equal("18000", (await repository.GetMobAsync("A rat", WikiPriority.RealTime, true, default)).HitPoints);
         Assert.Same(sky, await repository.GetSkyAsync(WikiPriority.Background, false, default));
         await Assert.ThrowsAsync<InvalidOperationException>(() => repository.GetSkyAsync(WikiPriority.Interactive, true, default));

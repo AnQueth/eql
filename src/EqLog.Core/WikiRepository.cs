@@ -18,6 +18,20 @@ public sealed class WikiRepository : IAsyncDisposable
 
     public event Action<string, Exception>? BackgroundFailed;
 
+    /// <summary>Returns live requests and recent outcomes without exposing mutable scheduler state.</summary>
+    public WikiActivitySnapshot GetActivity()
+    {
+        string[] operations;
+        lock (_gate)
+        {
+            operations = _operations.Keys.ToArray();
+        }
+        return _scheduler.Snapshot() with
+        {
+            Operations = operations
+        };
+    }
+
     internal int PendingRequestCount
     {
         get
@@ -95,7 +109,7 @@ public sealed class WikiRepository : IAsyncDisposable
             lock (_gate)
             {
                 if (!operation.Force && _quests.TryGetValue(item, out var cached) &&
-                    DateTime.UtcNow - cached.CheckedUtc < TimeSpan.FromDays(7))
+                    !cached.NeedsRefresh)
                 {
                     operation.CacheHit = true;
                     return cached;
@@ -197,7 +211,7 @@ public sealed class WikiRepository : IAsyncDisposable
             if (!_operations.TryGetValue(key, out operation!) || operation.Cancellation.IsCancellationRequested ||
                 (force && operation.CacheHit))
             {
-                operation = new(priority, force, _stop.Token);
+                operation = new(key, priority, force, _stop.Token);
                 _operations[key] = operation;
                 operation.Worker = Task.Run(() => ExecuteAsync(key, operation, fetch));
             }
@@ -239,6 +253,7 @@ public sealed class WikiRepository : IAsyncDisposable
         {
             operation.Cancellation.Token.ThrowIfCancellationRequested();
             var result = await fetch(operation).ConfigureAwait(false);
+            _scheduler.RecordCompletion(key, operation.CacheHit);
             operation.Completion.TrySetResult(result!);
         }
         catch (OperationCanceledException ex)
@@ -247,6 +262,7 @@ public sealed class WikiRepository : IAsyncDisposable
         }
         catch (Exception ex)
         {
+            _scheduler.RecordFailure(key, ex);
             operation.Completion.TrySetException(ex);
         }
         finally
@@ -285,9 +301,9 @@ public sealed class WikiRepository : IAsyncDisposable
         _client.Dispose();
     }
 
-    private sealed class Operation(WikiPriority priority, bool force, CancellationToken token)
+    private sealed class Operation(string name, WikiPriority priority, bool force, CancellationToken token)
     {
-        public WikiRequestContext Context { get; } = new(priority);
+        public WikiRequestContext Context { get; } = new(priority, name);
         public CancellationTokenSource Cancellation { get; } = CancellationTokenSource.CreateLinkedTokenSource(token);
         public TaskCompletionSource<object> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task Worker { get; set; } = Task.CompletedTask;

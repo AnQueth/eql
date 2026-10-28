@@ -42,7 +42,10 @@ public class QuestLookupTests
     {
         using var handler = new Responses("""{"query":{"pages":[{"title":"Unknown item","missing":true}]}}""");
         using var http = new HttpClient(handler);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => new QuestLookup(http).FindAsync("Unknown item"));
+        var result = await new QuestLookup(http).FindAsync("Unknown item");
+        Assert.False(result.Found);
+        Assert.False(result.NeedsRefresh);
+        Assert.Empty(result.Quests);
     }
 
     [Fact]

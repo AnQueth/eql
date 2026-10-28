@@ -469,7 +469,7 @@ public partial class MainWindow : Window
 
     private static OverlayPlacement DefaultPlacement(OverlayDefinition def, int index, Rect work)
     {
-        if (def.Key == "npcs")
+        if (def.Key is "npcs" or "wiki")
         {
             return new OverlayPlacement
             {
@@ -735,7 +735,9 @@ public partial class MainWindow : Window
         }
         PumpQuestLoot();
         RefreshSkyInventory();
-        var view = new OverlayView(_chatChannels, UpdateAlerts(real), _settings.LootGrouping);
+        var view = new OverlayView(_chatChannels, UpdateAlerts(real), _settings.LootGrouping, _questInventory,
+            IsShowing("wiki") ? _wikiRepository.GetActivity() : null,
+            IsShowing("wiki") ? GetQuestWikiActivity() : null);
         if (LogLinesTab.IsSelected)
         {
             RefreshRawLines();

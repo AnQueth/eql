@@ -4,7 +4,17 @@ using System.Text.Json;
 namespace EqLog.Core;
 
 public sealed record QuestReference(string Title, string Url);
-public sealed record QuestLookupResult(string Item, DateTime CheckedUtc, IReadOnlyList<QuestReference> Quests);
+public sealed record QuestLookupResult(string Item, DateTime CheckedUtc, IReadOnlyList<QuestReference> Quests, bool Found = true)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool NeedsRefresh
+    {
+        get
+        {
+            return DateTime.UtcNow - CheckedUtc >= TimeSpan.FromDays(Found ? 7 : 1);
+        }
+    }
+}
 
 /// <summary>Finds quest pages that link to or transclude an exact item page on EQLWiki.</summary>
 public sealed class QuestLookup(HttpClient http)
@@ -31,7 +41,7 @@ public sealed class QuestLookup(HttpClient http)
         var page = resolved.RootElement.GetProperty("query").GetProperty("pages")[0];
         if (page.TryGetProperty("missing", out _))
         {
-            throw new InvalidOperationException($"EQLWiki has no item page named '{item}'. Try searching the wiki directly.");
+            return new(item, DateTime.UtcNow, [], Found: false);
         }
 
         string title = page.GetProperty("title").GetString()!;

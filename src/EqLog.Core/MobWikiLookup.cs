@@ -58,7 +58,7 @@ public sealed class MobWikiLookup(HttpClient http)
                 string.Equals(targetType, "Lifetap", StringComparison.OrdinalIgnoreCase)) &&
             page.Value.Text.Contains("Decrease Hitpoints", StringComparison.OrdinalIgnoreCase);
         return new(spell, type, detail, DateTime.UtcNow, singleTargetDirectDamage, targetType, duration,
-            SpellResistanceInfo.CurrentMetadataVersion);
+            SpellResistanceInfo.CurrentMetadataVersion, Found: page is not null);
     }
 
     public static MobWikiInfo ParseMob(string title, string text, DateTime checkedUtc)

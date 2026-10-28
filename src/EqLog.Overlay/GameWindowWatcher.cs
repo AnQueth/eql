@@ -24,6 +24,11 @@ internal static partial class GameWindowWatcher
         }
 
         IntPtr foreground = GetForegroundWindow();
+        if (foreground == IntPtr.Zero)
+        {
+            return false;
+        }
+
         GetWindowThreadProcessId(foreground, out uint foregroundPid);
         bool overlayFocused = HwndSource.FromHwnd(foreground)?.RootVisual is OverlayWindow { IsVisible: true };
         if (!_gamePids.Contains(foregroundPid) && !overlayFocused)

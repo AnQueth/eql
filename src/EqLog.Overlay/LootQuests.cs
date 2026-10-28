@@ -87,9 +87,36 @@ public partial class MainWindow
             QuestOwnedGrid.Items.Refresh();
         }
 
+        var cacheBudget = Stopwatch.StartNew();
+        int cacheHits = 0;
+        foreach (var item in items)
+        {
+            string title = QuestLookup.ItemTitle(item.Item);
+            if (!_questAttempted.Contains(title) && _questCache.TryGetValue(title, out var cached) &&
+                !cached.NeedsRefresh)
+            {
+                _questAttempted.Add(title);
+                _questFailed.Remove(title);
+                cacheHits++;
+            }
+            if (cacheBudget.ElapsedMilliseconds >= 5)
+            {
+                break;
+            }
+        }
+        if (cacheHits > 0 && !_questWorking)
+        {
+            _questProgress = $"Used cached wiki references for {cacheHits:N0} items (no HTTP needed).";
+        }
+
         if (!_questWorking)
         {
-            var next = items.FirstOrDefault(i => !_questAttempted.Contains(QuestLookup.ItemTitle(i.Item)));
+            var next = items.FirstOrDefault(i =>
+            {
+                string title = QuestLookup.ItemTitle(i.Item);
+                return !_questAttempted.Contains(title) &&
+                    (!_questCache.TryGetValue(title, out var cached) || cached.NeedsRefresh);
+            });
             if (next is not null)
             {
                 _questAttempted.Add(QuestLookup.ItemTitle(next.Item));
@@ -129,10 +156,11 @@ public partial class MainWindow
         _questProgress = $"Looking up {item}...";
         try
         {
-            await GetQuestResultAsync(item, WikiPriority.Background);
+            var result = await GetQuestResultAsync(item, WikiPriority.Background);
             _questFailed.Remove(QuestLookup.ItemTitle(item));
             _questActiveItem = null;
-            _questProgress = $"Wiki references checked: {item}.";
+            _questProgress = result.Found ? $"Wiki references checked: {item}."
+                : $"Wiki item page not found: {item}. Cached for 24 hours.";
         }
         catch (OperationCanceledException) when (_wikiCts.IsCancellationRequested) { }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or IOException or
@@ -240,13 +268,22 @@ public partial class MainWindow
             return;
         }
 
+        var activity = GetQuestWorkProgress();
+        _questProgressBar.Maximum = Math.Max(1, activity.Total);
+        _questProgressBar.Value = activity.Completed;
+        _questProgressText.Text = activity.Summary;
+        _questCurrentText.Text = _questProgress;
+        _questCurrentText.ToolTip = _questProgress;
+    }
+
+    private QuestWorkProgress GetQuestWorkProgress()
+    {
         var items = _questInventory.Items.Where(i => i.Character.Equals(_characterName, StringComparison.OrdinalIgnoreCase))
             .Select(i => QuestLookup.ItemTitle(i.Item)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        var now = DateTime.UtcNow;
         bool Cached(string item)
         {
             return _questCache.TryGetValue(item, out var result) &&
-            now - result.CheckedUtc < TimeSpan.FromDays(7);
+            !result.NeedsRefresh;
         }
 
         int cached = items.Count(Cached);
@@ -254,13 +291,20 @@ public partial class MainWindow
         int completed = items.Count(i => Cached(i) || (_questAttempted.Contains(i) && i != _questActiveItem));
         int active = items.Count(i => i == _questActiveItem && !Cached(i));
         int queued = Math.Max(0, items.Length - completed - active);
-        _questProgressBar.Maximum = Math.Max(1, items.Length);
-        _questProgressBar.Value = completed;
-        _questProgressText.Text = items.Length == 0 ? "Waiting for inventory or loot" :
+        string summary = items.Length == 0 ? "Waiting for inventory or loot" :
             $"{completed:N0} / {items.Length:N0} checked ({100.0 * completed / items.Length:0}%)  |  {cached:N0} cached  |  {queued:N0} queued  |  {failed:N0} failed";
-        _questCurrentText.Text = _questProgress;
-        _questCurrentText.ToolTip = _questProgress;
+        var waiting = items.Where(i => !Cached(i) && !_questAttempted.Contains(i)).ToArray();
+        return new(items.Length, completed, summary, waiting);
     }
+
+    private QuestWikiActivity GetQuestWikiActivity()
+    {
+        var progress = GetQuestWorkProgress();
+        return new(progress.Summary, _questProgress, _questActiveItem, progress.Queued,
+            _questProgress.StartsWith("Lookup failed", StringComparison.Ordinal));
+    }
+
+    private sealed record QuestWorkProgress(int Total, int Completed, string Summary, IReadOnlyList<string> Queued);
 
     private void SaveQuestInventory(bool throwOnError = false)
     {
@@ -432,7 +476,9 @@ public partial class MainWindow
             }
 
             QuestResults.ItemsSource = result.Quests;
-            QuestLookupStatus.Text = result.Quests.Count == 0
+            QuestLookupStatus.Text = !result.Found
+                ? $"EQLWiki has no item page named '{result.Item}'. Cached for 24 hours; try searching the wiki directly."
+                : result.Quests.Count == 0
                 ? "No linked quest pages found. This does not prove the item has no quest use; wiki coverage may be incomplete."
                 : $"{result.Quests.Count} quest reference(s). Open a page to check requirements versus rewards.";
         }

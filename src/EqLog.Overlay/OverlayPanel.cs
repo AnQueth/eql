@@ -10,7 +10,7 @@ namespace EqLog.Overlay;
 /// <summary>One line in an overlay: left/right text with an optional proportional bar behind it.</summary>
 public sealed record AbilityBreakdown(string Title, string Context, string RateLabel, IReadOnlyList<AbilityStats> Abilities);
 
-public sealed record OverlayRow(string Left, string Right = "", double Fraction = 0, Brush? Bar = null, Brush? Foreground = null, bool Wrap = false, bool Bold = false, double Scale = 1, string? LootItem = null, AbilityBreakdown? Breakdown = null, bool QuestHeading = false, string? Details = null, bool Stacked = false);
+public sealed record OverlayRow(string Left, string Right = "", double Fraction = 0, Brush? Bar = null, Brush? Foreground = null, bool Wrap = false, bool Bold = false, double Scale = 1, string? LootItem = null, AbilityBreakdown? Breakdown = null, bool QuestHeading = false, string? Details = null, bool Stacked = false, string? ExtraColumn = null, string? ToolTip = null);
 
 /// <summary>
 /// The content of one overlay (title, subtitle, rows). It lives either in its own floating <see cref="OverlayWindow"/>
@@ -427,6 +427,10 @@ public sealed class OverlayPanel : ContentControl
     private FrameworkElement BuildRow(OverlayRow row)
     {
         var grid = new Grid { Margin = new Thickness(0, 0, 0, 1) };
+        if (row.ToolTip is not null)
+        {
+            grid.ToolTip = row.ToolTip;
+        }
         if (row.QuestHeading)
         {
             grid.Margin = new Thickness(0, 12, 0, 5);
@@ -454,9 +458,31 @@ public sealed class OverlayPanel : ContentControl
 
         var weight = row.Bold ? FontWeights.Bold : FontWeights.Normal;
         var text = new DockPanel { Margin = new Thickness(3, 0, 3, 0) };
+        if (row.ExtraColumn is not null)
+        {
+            var extra = new TextBlock
+            {
+                Text = row.ExtraColumn,
+                FontWeight = weight,
+                Width = 48,
+                TextAlignment = TextAlignment.Right,
+                Margin = new Thickness(8, 0, 0, 0),
+            };
+            if (row.Foreground is not null)
+            {
+                extra.Foreground = row.Foreground;
+            }
+            DockPanel.SetDock(extra, Dock.Right);
+            text.Children.Add(extra);
+        }
         if (!string.IsNullOrEmpty(row.Right) && !row.Stacked)
         {
             var right = new TextBlock { Text = row.Right, FontWeight = weight, Margin = new Thickness(8, 0, 0, 0) };
+            if (row.ExtraColumn is not null)
+            {
+                right.MinWidth = 100;
+                right.TextAlignment = TextAlignment.Right;
+            }
             if (row.Foreground is not null)
             {
                 right.Foreground = row.Foreground;

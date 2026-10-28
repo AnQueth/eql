@@ -64,7 +64,8 @@ public sealed record MobWikiStats(string? Race, string? ArmorClass, string? HpRe
     string? AttacksPerRound, string? AttackSpeed, string? DamagePerHit, string? AggroRadius,
     string? RunSpeed, string? RespawnTime, string? Location);
 public sealed record SpellResistanceInfo(string Spell, ResistanceType? Type, string? Detail, DateTime CheckedUtc,
-    bool SingleTargetDirectDamage = false, string? TargetType = null, string? Duration = null, int MetadataVersion = 0)
+    bool SingleTargetDirectDamage = false, string? TargetType = null, string? Duration = null, int MetadataVersion = 0,
+    bool Found = true)
 {
     public const int CurrentMetadataVersion = 1;
 
@@ -73,7 +74,8 @@ public sealed record SpellResistanceInfo(string Spell, ResistanceType? Type, str
     {
         get
         {
-            return MetadataVersion < CurrentMetadataVersion || DateTime.UtcNow - CheckedUtc > TimeSpan.FromDays(7);
+            return MetadataVersion < CurrentMetadataVersion ||
+                DateTime.UtcNow - CheckedUtc >= TimeSpan.FromDays(Found ? 7 : 1);
         }
     }
 
