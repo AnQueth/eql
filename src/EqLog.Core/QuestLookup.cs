@@ -6,6 +6,16 @@ namespace EqLog.Core;
 public sealed record QuestReference(string Title, string Url);
 public sealed record QuestLookupResult(string Item, DateTime CheckedUtc, IReadOnlyList<QuestReference> Quests, bool Found = true)
 {
+    /// <summary>Whether the wiki found an item page with at least one linked quest reference.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HasQuestReferences
+    {
+        get
+        {
+            return Found && Quests.Count > 0;
+        }
+    }
+
     [System.Text.Json.Serialization.JsonIgnore]
     public bool NeedsRefresh
     {

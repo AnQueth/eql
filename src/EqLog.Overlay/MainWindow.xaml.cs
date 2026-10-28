@@ -38,6 +38,8 @@ public sealed class DurationRow
     }
 
     public string Override { get; set; } = "";
+
+    public string Wiki { get; init; } = "-";
 }
 
 public sealed class SpawnRow
@@ -139,6 +141,7 @@ public partial class MainWindow : Window
     {
         _settings = state.Settings;
         _durations = state.Durations;
+        _engine = new LogEngine(_durations);
         _spawnStore = state.Spawns;
         _moteStore = state.Motes;
         InitializeComponent();
@@ -838,11 +841,16 @@ public partial class MainWindow : Window
                 "inventory" => new("Inventory & loot quests", _characterName, []),
                 _ => def.Render(snap, _engine, view),
             };
-            _overlays[def.Key].Panel.Update(content.Title, content.Subtitle, content.Rows, content.TitleLink);
+            var rows = def.Key is "loot" or "wiki"
+                ? content.Rows.Select(row => row.LootItem is { } item
+                    ? row with { HasQuestReferences = HasQuestReferences(item) }
+                    : row).ToArray()
+                : content.Rows;
+            _overlays[def.Key].Panel.Update(content.Title, content.Subtitle, rows, content.TitleLink);
         }
 
         HistoryProgress.Value = p.TotalBytes > 0 ? (double)p.BytesRead / p.TotalBytes : 0;
-        HistoryProgress.Visibility = p.CaughtUp ? Visibility.Collapsed : Visibility.Visible;
+        HistoryProgress.Visibility = p.CaughtUp ? Visibility.Hidden : Visibility.Visible;
 
         if (_tailTask is { IsFaulted: true } t)
         {
@@ -940,15 +948,15 @@ public partial class MainWindow : Window
         }
     }
 
-    private void RefreshDurations()
+    private void RefreshDurations(bool force = false)
     {
-        if (DurationsGrid.IsKeyboardFocusWithin)
+        if (!force && DurationsGrid.IsKeyboardFocusWithin)
         {
             return;
         }
 
         var list = _engine.SpellDurations();
-        string signature = string.Join('|', list.Select(d => $"{d.Spell}:{d.Samples}:{d.LearnedSeconds:F0}:{d.OverrideSeconds}:{d.Tracked}"));
+        string signature = string.Join('|', list.Select(d => $"{d.Spell}:{d.Samples}:{d.LearnedSeconds:F0}:{d.OverrideSeconds}:{d.Tracked}:{d.WikiSeconds}"));
         if (signature == _durationsSignature)
         {
             return;
@@ -963,10 +971,64 @@ public partial class MainWindow : Window
                 Tracked = d.Tracked,
                 Spell = d.Spell,
                 Learned = d.LearnedSeconds is double s ? OverlayPresenters.Clock(s) : "-",
+                Wiki = d.WikiSeconds is double wiki ? OverlayPresenters.Clock(wiki) : "-",
                 Samples = d.Samples,
                 Override = d.OverrideSeconds?.ToString("0.#", CultureInfo.CurrentCulture) ?? "",
             });
         }
+    }
+
+    private void AddDuration_Click(object sender, RoutedEventArgs e)
+    {
+        string spell = NewDurationSpellBox.Text.Trim();
+        if (spell.Length == 0 || !TryReadSpellDuration(NewDurationSecondsBox.Text.Trim(), out double seconds))
+        {
+            MessageBox.Show(_dock, "Enter a spell name and a positive, finite duration in seconds.", "Add spell");
+            return;
+        }
+        if (!DurationsGrid.CommitEdit(DataGridEditingUnit.Cell, true) ||
+            !DurationsGrid.CommitEdit(DataGridEditingUnit.Row, true))
+        {
+            return;
+        }
+
+        _engine.SetSpellDurationOverride(spell, seconds);
+        _engine.SetSpellTracked(spell, true);
+        _durationsSignature = "";
+        RefreshDurations(force: true);
+        NewDurationSpellBox.Clear();
+        NewDurationSecondsBox.Clear();
+        _ = SaveQuietlyAsync(_engine.SaveSpellDurationsAsync(AppSettings.DurationsPath));
+    }
+
+    private void RemoveDuration_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: DurationRow row })
+        {
+            return;
+        }
+        if (!DurationsGrid.CommitEdit(DataGridEditingUnit.Cell, true) ||
+            !DurationsGrid.CommitEdit(DataGridEditingUnit.Row, true))
+        {
+            return;
+        }
+        if (MessageBox.Show(_dock,
+            $"Remove {row.Spell}, its learned samples and its override? It will stay removed until you manually add this spell again.",
+            "Remove spell", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        _engine.RemoveSpellDuration(row.Spell);
+        _durationsSignature = "";
+        RefreshDurations(force: true);
+        _ = SaveQuietlyAsync(_engine.SaveSpellDurationsAsync(AppSettings.DurationsPath));
+    }
+
+    private static bool TryReadSpellDuration(string text, out double seconds)
+    {
+        return double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out seconds) &&
+            double.IsFinite(seconds) && seconds > 0 && seconds <= TimeSpan.MaxValue.TotalSeconds - 60;
     }
 
     private void DurationTrack_Click(object sender, RoutedEventArgs e)
@@ -991,14 +1053,14 @@ public partial class MainWindow : Window
         {
             _engine.SetSpellDurationOverride(row.Spell, null);
         }
-        else if (double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out double seconds) && seconds > 0)
+        else if (TryReadSpellDuration(text, out double seconds))
         {
             _engine.SetSpellDurationOverride(row.Spell, seconds);
         }
         else
         {
             e.Cancel = true;
-            MessageBox.Show(_dock, "Enter a duration in seconds, or leave it empty to use the learned value.", "Override");
+            MessageBox.Show(_dock, "Enter a positive, finite duration in seconds, or leave it empty to use the learned value or wiki estimate.", "Override");
             return;
         }
 

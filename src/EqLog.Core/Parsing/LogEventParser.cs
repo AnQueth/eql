@@ -96,7 +96,7 @@ public sealed partial class LogEventParser
             return wm.Success ? new SpellWornOffEvent(t, wm.Groups["s"].Value, Name(wm.Groups["t"].Value)) : null;
         }
 
-        if (m.Contains(" has been ", StringComparison.Ordinal))
+        if (m.Contains(" has been ", StringComparison.Ordinal) || m.EndsWith(" begins to spin.", StringComparison.Ordinal))
         {
             var em = EffectLandedRegex().Match(m);
             if (em.Success)
@@ -526,7 +526,7 @@ public sealed partial class LogEventParser
     [GeneratedRegex(@"^Your (?<s>.+) spell has worn off of (?<t>.+)\.$")]
     private static partial Regex WornOffRegex();
 
-    [GeneratedRegex(@"^(?<t>.+?) has been (?<e>mesmerized|charmed|rooted|stunned|enthralled|feared|snared|slowed|pacified|calmed)\.$")]
+    [GeneratedRegex(@"^(?<t>.+?) (?:has been (?<e>mesmerized|charmed|rooted|stunned|enthralled|feared|snared|slowed|pacified|calmed)|begins to (?<e>spin))\.$")]
     private static partial Regex EffectLandedRegex();
 
     [GeneratedRegex(@"^(?<t>.+?) has been awakened by (?<b>.+)\.$")]

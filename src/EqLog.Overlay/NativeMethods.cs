@@ -12,6 +12,7 @@ internal static partial class NativeMethods
 
     public const uint SWP_NOSIZE = 0x0001;
     public const uint SWP_NOMOVE = 0x0002;
+    public const uint SWP_NOZORDER = 0x0004;
     public const uint SWP_NOACTIVATE = 0x0010;
     public static readonly IntPtr HWND_TOPMOST = new(-1);
 
@@ -38,6 +39,59 @@ internal static partial class NativeMethods
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool UnregisterHotKey(IntPtr hWnd, int id);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct ChooseColorInfo
+    {
+        public int Size;
+        public IntPtr Owner;
+        public IntPtr Instance;
+        public uint Color;
+        public IntPtr CustomColors;
+        public uint Flags;
+        public IntPtr CustomData;
+        public IntPtr Hook;
+        public IntPtr TemplateName;
+    }
+
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    internal delegate UIntPtr ChooseColorHook(IntPtr dialog, uint message, UIntPtr wParam, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct ScreenRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct MonitorInfo
+    {
+        public int Size;
+        public ScreenRect Bounds;
+        public ScreenRect WorkArea;
+        public uint Flags;
+    }
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool GetWindowRect(IntPtr window, out ScreenRect rect);
+
+    [LibraryImport("user32.dll")]
+    internal static partial IntPtr MonitorFromRect(in ScreenRect rect, uint flags);
+
+    [LibraryImport("user32.dll", EntryPoint = "GetMonitorInfoW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
+
+    [LibraryImport("comdlg32.dll", EntryPoint = "ChooseColorW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool ChooseColor(ref ChooseColorInfo color);
+
+    [LibraryImport("comdlg32.dll")]
+    internal static partial uint CommDlgExtendedError();
 
     public static void SetExStyle(IntPtr hwnd, int add, int remove)
     {

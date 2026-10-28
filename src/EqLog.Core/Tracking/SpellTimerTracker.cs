@@ -44,6 +44,21 @@ public sealed class SpellTimerTracker(SpellDurationStore store)
 
     public SpellDurationStore Store { get; } = store;
 
+    /// <summary>Forgets active and pending state for a manually removed spell.</summary>
+    public void RemoveSpell(string spell)
+    {
+        _timers.RemoveAll(t => string.Equals(t.Spell, spell, StringComparison.OrdinalIgnoreCase));
+        _lastCastOf.Remove(spell);
+        if (_pending is { } pending && string.Equals(pending.Spell, spell, StringComparison.OrdinalIgnoreCase))
+        {
+            _pending = null;
+        }
+        if (_lastCast is { } cast && string.Equals(cast.Spell, spell, StringComparison.OrdinalIgnoreCase))
+        {
+            _lastCast = null;
+        }
+    }
+
     public void OnCast(CastBeginEvent e)
     {
         FinalizePending(e.Time, force: true);

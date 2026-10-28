@@ -31,7 +31,7 @@ public partial class MainWindow
             Margin = new Thickness(0, 0, 0, 6),
         };
         _mergeFilter.TextChanged += (_, _) => RefreshMergeView();
-        _mergeSummary = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6) };
+        _mergeSummary = new FixedLineTextBlock { Margin = new Thickness(0, 0, 0, 6) };
         _mergeSummary.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
         _mergeHost = new StackPanel();
         var mergeTop = new StackPanel { Children = { _mergeFilter, _mergeSummary } };
@@ -115,6 +115,18 @@ public partial class MainWindow
                 TextTrimming = TextTrimming.CharacterEllipsis,
             };
             heading.SetResourceReference(TextBlock.ForegroundProperty, "NightText");
+            if (HasQuestReferences(group.BaseName))
+            {
+                var badge = new Hyperlink(new Run("[Quest]"))
+                {
+                    Tag = group.BaseName,
+                    ToolTip = "Quest references available: click to view. Wiki mentions may include ingredients or rewards, not a turn-in checklist.",
+                };
+                badge.SetResourceReference(TextElement.ForegroundProperty, "Pumpkin");
+                badge.Click += QuestBadge_Click;
+                heading.Inlines.Add(badge);
+                heading.Inlines.Add(new Run(" "));
+            }
             var link = new Hyperlink(new Run(group.BaseName))
             {
                 Tag = group.BaseName,

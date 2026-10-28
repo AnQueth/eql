@@ -43,6 +43,7 @@ public partial class MainWindow
     private readonly System.Collections.Concurrent.ConcurrentQueue<Action> _questLoot = new();
     private readonly SemaphoreSlim _questSaveGate = new(1, 1);
     private readonly HashSet<string> _questAttempted = new(StringComparer.OrdinalIgnoreCase);
+    private int _questCacheCursor;
     private bool _questWorking;
     private bool _questDirty;
     private string _questProgress = "Waiting for loot.";
@@ -94,11 +95,18 @@ public partial class MainWindow
 
         var cacheBudget = Stopwatch.StartNew();
         int cacheHits = 0;
-        foreach (var item in items)
+        // Continue across frames so large inventories cannot leave later rows' markers stale.
+        for (int checkedItems = 0; checkedItems < items.Length; checkedItems++)
         {
-            string title = QuestLookup.ItemTitle(item.Item);
-            if (!_questAttempted.Contains(title) && _questCache.TryGetValue(title, out var cached) &&
-                !cached.NeedsRefresh)
+            if (_questCacheCursor >= items.Length)
+            {
+                _questCacheCursor = 0;
+            }
+            var item = items[_questCacheCursor++];
+            string title = GetQuestItemTitle(item.Item);
+            _questCache.TryGetValue(title, out var cached);
+            item.HasQuestReferences = cached?.HasQuestReferences == true;
+            if (!_questAttempted.Contains(title) && cached is not null && !cached.NeedsRefresh)
             {
                 _questAttempted.Add(title);
                 _questFailed.Remove(title);
@@ -118,13 +126,13 @@ public partial class MainWindow
         {
             var next = items.FirstOrDefault(i =>
             {
-                string title = QuestLookup.ItemTitle(i.Item);
+                string title = GetQuestItemTitle(i.Item);
                 return !_questAttempted.Contains(title) &&
                     (!_questCache.TryGetValue(title, out var cached) || cached.NeedsRefresh);
             });
             if (next is not null)
             {
-                _questAttempted.Add(QuestLookup.ItemTitle(next.Item));
+                _questAttempted.Add(GetQuestItemTitle(next.Item));
                 _ = AutoLookupQuestAsync(next.Item);
             }
             UpdateQuestProgress();
@@ -138,18 +146,38 @@ public partial class MainWindow
         await _questSaveGate.WaitAsync(_wikiCts.Token);
         try
         {
-            if (_questCache.GetValueOrDefault(item) == result)
+            var previous = _questCache.GetValueOrDefault(item);
+            if (previous == result)
             {
                 return result;
             }
             await QuestLookupStore.AppendAsync(QuestCachePath, result, _wikiCts.Token);
             _questCache[item] = result;
+            if ((previous?.HasQuestReferences == true) != result.HasQuestReferences)
+            {
+                RefreshMergeView();
+            }
             return result;
         }
         finally
         {
             _questSaveGate.Release();
         }
+    }
+
+    private bool HasQuestReferences(string item)
+    {
+        return _questCache.TryGetValue(GetQuestItemTitle(item), out var result) && result.HasQuestReferences;
+    }
+
+    private string GetQuestItemTitle(string item)
+    {
+        if (!_questTitles.TryGetValue(item, out string? title))
+        {
+            title = QuestLookup.ItemTitle(item);
+            _questTitles[item] = title;
+        }
+        return title;
     }
 
     private async Task AutoLookupQuestAsync(string item)
@@ -287,36 +315,27 @@ public partial class MainWindow
         var activity = GetQuestWorkProgress();
         _questProgressBar.Maximum = Math.Max(1, activity.Total);
         _questProgressBar.Value = activity.Completed;
-        var table = activity.Total == 0
-            ? null
-            : OverlayTable.Columns(
-            [
-                ("Checked", $"{activity.Completed:N0} / {activity.Total:N0}"),
-                ("Done", $"{100.0 * activity.Completed / activity.Total:0}%"),
-                ("Cached", $"{activity.Cached:N0}"),
-                ("Queued", $"{activity.QueuedCount:N0}"),
-                ("Failed", $"{activity.Failed:N0}"),
-            ]);
-        if (table is null)
-        {
-            if (_questProgressText.Content is not TextBlock text)
-            {
-                text = new TextBlock { TextWrapping = TextWrapping.Wrap };
-                text.SetResourceReference(TextBlock.ForegroundProperty, "NightText");
-                _questProgressText.Content = text;
-            }
-            text.Text = activity.Summary;
-            _questProgressTable = null;
-        }
-        else if (table != _questProgressTable)
+        // Always show the same table shape so the quest list below never shifts as work starts.
+        var table = OverlayTable.Columns(
+        [
+            ("Checked", $"{activity.Completed:N0} / {activity.Total:N0}"),
+            ("Done", activity.Total == 0 ? "-" : $"{100.0 * activity.Completed / activity.Total:0}%"),
+            ("Cached", $"{activity.Cached:N0}"),
+            ("Queued", $"{activity.QueuedCount:N0}"),
+            ("Failed", $"{activity.Failed:N0}"),
+        ]);
+        if (table != _questProgressTable)
         {
             var element = OverlayPanel.BuildTable(table, 12);
             element.Margin = new Thickness(0);
             _questProgressText.Content = element;
             _questProgressTable = table;
         }
-        _questCurrentText.Text = _questProgress;
-        _questCurrentText.ToolTip = _questProgress;
+        string current = activity.Total == 0 && string.IsNullOrEmpty(_questProgress)
+            ? activity.Summary
+            : _questProgress;
+        _questCurrentText.Text = current;
+        _questCurrentText.ToolTip = string.IsNullOrEmpty(current) ? null : current;
     }
 
     private QuestWorkProgress GetQuestWorkProgress()
@@ -328,12 +347,7 @@ public partial class MainWindow
             {
                 continue;
             }
-            if (!_questTitles.TryGetValue(entry.Item, out string? title))
-            {
-                title = QuestLookup.ItemTitle(entry.Item);
-                _questTitles[entry.Item] = title;
-            }
-            titles.Add(title);
+            titles.Add(GetQuestItemTitle(entry.Item));
         }
         var items = titles.ToArray();
         bool Cached(string item)
@@ -619,6 +633,15 @@ public partial class MainWindow
         {
             OpenWiki(QuestLookup.ItemUrl(item));
             e.Handled = true;
+        }
+    }
+
+    private async void QuestBadge_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Documents.Hyperlink { Tag: string item })
+        {
+            e.Handled = true;
+            await LookupLootItemAsync(item);
         }
     }
 

@@ -6,6 +6,19 @@ namespace EqLog.Core.Tests;
 public class QuestLookupTests
 {
     [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, false, false)]
+    [InlineData(false, true, false)]
+    public void QuestMarkerRequiresAnItemPageWithQuestReferences(bool found, bool hasReferences, bool expected)
+    {
+        QuestReference[] references = hasReferences ? [new("Gnoll Bounty", QuestLookup.PageUrl("Gnoll Bounty"))] : [];
+        var result = new QuestLookupResult("Gnoll Fang", DateTime.UtcNow.AddDays(-8), references, found);
+        Assert.Equal(expected, result.HasQuestReferences);
+        Assert.True(result.NeedsRefresh);
+    }
+
+    [Theory]
     [InlineData("Nargon's Staff +10", "Nargon's Staff")]
     [InlineData("Schemer's Guise + 1", "Schemer's Guise")]
     [InlineData("  Gnoll Fang  ", "Gnoll Fang")]

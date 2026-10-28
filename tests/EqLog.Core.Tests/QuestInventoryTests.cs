@@ -3,6 +3,39 @@ namespace EqLog.Core.Tests;
 public class QuestInventoryTests
 {
     [Fact]
+    public void QuestMarkerNotifiesOnlyWhenItsValueChanges()
+    {
+        var item = new QuestInventoryItem { Item = "Gnoll Fang" };
+        var notifications = new List<string?>();
+        item.PropertyChanged += (_, e) => notifications.Add(e.PropertyName);
+        item.HasQuestReferences = false;
+        item.HasQuestReferences = true;
+        item.HasQuestReferences = true;
+        item.HasQuestReferences = false;
+        Assert.Equal([nameof(QuestInventoryItem.HasQuestReferences), nameof(QuestInventoryItem.HasQuestReferences)], notifications);
+    }
+
+    [Fact]
+    public void QuestMarkerIsNotSavedAndCloningDoesNotCopyUiSubscribers()
+    {
+        var item = new QuestInventoryItem { Item = "Gnoll Fang", Owned = 2, HasQuestReferences = true };
+        int notifications = 0;
+        item.PropertyChanged += (_, _) => notifications++;
+
+        var clone = item.Clone();
+        Assert.True(clone.HasQuestReferences);
+        clone.HasQuestReferences = false;
+        Assert.Equal(0, notifications);
+        Assert.True(item.HasQuestReferences);
+
+        string json = System.Text.Json.JsonSerializer.Serialize(item);
+        Assert.DoesNotContain(nameof(QuestInventoryItem.HasQuestReferences), json);
+        var loaded = System.Text.Json.JsonSerializer.Deserialize<QuestInventoryItem>(json)!;
+        Assert.False(loaded.HasQuestReferences);
+        Assert.Equal(2, loaded.Owned);
+    }
+
+    [Fact]
     public void EngineReportsLootOutsideRecentSnapshotWithStableLineNumbers()
     {
         var engine = new LogEngine();

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text.Json.Serialization;
 
 namespace EqLog.Core;
@@ -191,8 +192,31 @@ public sealed class QuestInventory : IJsonOnDeserialized
 
 public sealed record QuestOpportunity(string Title, IReadOnlyList<QuestInventoryItem> Items);
 
-public sealed class QuestInventoryItem
+public sealed class QuestInventoryItem : INotifyPropertyChanged
 {
+    private bool _hasQuestReferences;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    /// <summary>Live wiki-cache enrichment for the inventory view; not part of saved ownership data.</summary>
+    [JsonIgnore]
+    public bool HasQuestReferences
+    {
+        get
+        {
+            return _hasQuestReferences;
+        }
+        set
+        {
+            if (_hasQuestReferences == value)
+            {
+                return;
+            }
+            _hasQuestReferences = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQuestReferences)));
+        }
+    }
+
     public string Character { get; set; } = "";
     public string Item { get; set; } = "";
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
@@ -249,7 +273,9 @@ public sealed class QuestInventoryItem
 
     public QuestInventoryItem Clone()
     {
-        return (QuestInventoryItem)MemberwiseClone();
+        var clone = (QuestInventoryItem)MemberwiseClone();
+        clone.PropertyChanged = null;
+        return clone;
     }
 }
 

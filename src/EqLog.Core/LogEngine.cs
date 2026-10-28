@@ -44,6 +44,9 @@ public sealed class LogEngine
     private readonly ChatTracker _chat = new();
     private readonly SpellCastTracker _spells = new();
     private readonly SpellTimerTracker _timers;
+    private readonly MobResistanceStore? _spellMetadata;
+    private readonly HashSet<string> _durationSpells = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (string? Text, double? Seconds)> _wikiDurationSources = new(StringComparer.OrdinalIgnoreCase);
     private readonly SpawnTracker _spawns;
     private readonly MoteTracker _motes;
     private readonly MobResistanceTracker? _resistances;
@@ -57,6 +60,7 @@ public sealed class LogEngine
     {
         _motes = new MoteTracker(motes ?? new MoteStore());
         _timers = new SpellTimerTracker(durations ?? new SpellDurationStore());
+        _spellMetadata = resistances;
         _spawns = new SpawnTracker(spawns ?? new SpawnStore());
         if (resistances is not null && logIdentity is not null)
         {
@@ -216,6 +220,8 @@ public sealed class LogEngine
                 _heals.OnHeal(h);
                 break;
             case CastBeginEvent c:
+                _durationSpells.Add(c.Spell);
+                UpdateWikiSpellDuration(c.Spell);
                 _spells.OnCast(c);
                 _timers.OnCast(c);
                 break;
@@ -302,6 +308,7 @@ public sealed class LogEngine
     {
         lock (_gate)
         {
+            UpdateWikiSpellDurations();
             _resistances?.Advance(now);
             if (advanceNpcIdle)
             {
@@ -343,7 +350,39 @@ public sealed class LogEngine
     {
         lock (_gate)
         {
+            UpdateWikiSpellDurations();
             return _timers.Store.List();
+        }
+    }
+
+    private void UpdateWikiSpellDurations()
+    {
+        foreach (string spell in _durationSpells)
+        {
+            UpdateWikiSpellDuration(spell);
+        }
+    }
+
+    private void UpdateWikiSpellDuration(string spell)
+    {
+        if (_spellMetadata?.GetSpell(spell) is { } info)
+        {
+            if (!_wikiDurationSources.TryGetValue(spell, out var cached) || cached.Text != info.Duration)
+            {
+                cached = (info.Duration, SpellDurationStore.TryParseWikiDuration(info.Duration, out double seconds) ? seconds : null);
+                _wikiDurationSources[spell] = cached;
+            }
+            _timers.Store.SetWikiDuration(spell, cached.Seconds);
+        }
+    }
+
+    /// <summary>Removes a spell's duration and active timers until it is manually added again.</summary>
+    public void RemoveSpellDuration(string spell)
+    {
+        lock (_gate)
+        {
+            _timers.Store.Remove(spell);
+            _timers.RemoveSpell(spell);
         }
     }
 

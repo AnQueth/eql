@@ -10,7 +10,7 @@ namespace EqLog.Overlay;
 /// <summary>One line in an overlay: left/right text with an optional proportional bar behind it.</summary>
 public sealed record AbilityBreakdown(string Title, string Context, string RateLabel, IReadOnlyList<AbilityStats> Abilities);
 
-public sealed record OverlayRow(string Left, string Right = "", double Fraction = 0, Brush? Bar = null, Brush? Foreground = null, bool Wrap = false, bool Bold = false, double Scale = 1, string? LootItem = null, AbilityBreakdown? Breakdown = null, bool QuestHeading = false, string? Details = null, bool Stacked = false, string? ExtraColumn = null, string? ToolTip = null, string? WatchKey = null, bool Watched = false, OverlayTable? Table = null, string? Link = null);
+public sealed record OverlayRow(string Left, string Right = "", double Fraction = 0, Brush? Bar = null, Brush? Foreground = null, bool Wrap = false, bool Bold = false, double Scale = 1, string? LootItem = null, AbilityBreakdown? Breakdown = null, bool QuestHeading = false, string? Details = null, bool Stacked = false, string? ExtraColumn = null, string? ToolTip = null, string? WatchKey = null, bool Watched = false, OverlayTable? Table = null, string? Link = null, bool HasQuestReferences = false);
 
 /// <summary>
 /// A small grid shown inside a row's card, below its title. With <see cref="Header"/> it is a column table
@@ -506,7 +506,15 @@ public sealed class OverlayPanel : ContentControl
             _title.ToolTip = linked ? "Open on EQLWiki" : null;
         }
         _subtitle.Text = subtitle ?? "";
-        _subtitle.Visibility = string.IsNullOrEmpty(subtitle) ? Visibility.Collapsed : Visibility.Visible;
+        // Once a subtitle has appeared, keep its line reserved so rows below never jump under the mouse.
+        if (!string.IsNullOrEmpty(subtitle))
+        {
+            _subtitle.Visibility = Visibility.Visible;
+        }
+        else if (_subtitle.Visibility == Visibility.Visible)
+        {
+            _subtitle.Visibility = Visibility.Hidden;
+        }
 
         if (!_invalidateRows && rows.SequenceEqual(_current))
         {
@@ -686,6 +694,23 @@ public sealed class OverlayPanel : ContentControl
         if (row.LootItem is not null || row.Link is not null)
         {
             left.TextDecorations = TextDecorations.Underline;
+        }
+        if (row.HasQuestReferences && row.LootItem is { } questItem)
+        {
+            left.Text = "";
+            var badge = new Hyperlink(new Run("[Quest]"))
+            {
+                FontWeight = FontWeights.SemiBold,
+                ToolTip = "Quest references available: click to view. Wiki mentions may include ingredients or rewards, not a turn-in checklist.",
+            };
+            badge.SetResourceReference(TextElement.ForegroundProperty, "Pumpkin");
+            badge.Click += (_, e) =>
+            {
+                e.Handled = true;
+                LootLookupRequested?.Invoke(questItem);
+            };
+            left.Inlines.Add(badge);
+            left.Inlines.Add(new Run(" " + row.Left));
         }
 
         if (row.Details is not null || row.Table is not null)

@@ -158,7 +158,7 @@ public partial class MainWindow
         }
         finally
         {
-            UpdateProgress.Visibility = Visibility.Collapsed;
+            UpdateProgress.Visibility = Visibility.Hidden;
         }
     }
 
@@ -198,6 +198,8 @@ public partial class MainWindow
             Content = _updateDownloaded ? "Restart to update" : "Download update",
             IsEnabled = !_updateBusy,
             Padding = new Thickness(8, 2, 8, 2),
+            Margin = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center,
             Focusable = false,
         };
         button.Click += _updateDownloaded ? RestartUpdate_Click : DownloadUpdate_Click;

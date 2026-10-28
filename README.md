@@ -71,7 +71,10 @@ Settings tabs sit at the top of the side panel, with no global settings stacked 
 **Appearance** contains theme selection, JSON import, and the theme editor.
 
 The **Appearance** tab edits a draft of your selected palette. Give it a name, enter `#RRGGBB`
-colors, and watch the swatches and sample card update. **Apply & save** activates the draft and
+colors or use **Pick...** beside each hex field to open the Windows color picker next to that button.
+The picker switches sides or shifts upward near screen edges to stay in the monitor's work area.
+Picking a color updates its hex field, swatch and sample card; cancelling leaves the draft unchanged.
+**Apply & save** activates the draft and
 persists it across restarts. **Export JSON...** writes an importable theme file without changing
 the active theme. **Reset draft** discards edits and reloads the last selected/applied palette;
 choosing a different theme also replaces the draft. Invalid colors are reported and block apply/export.
@@ -388,6 +391,14 @@ panel; unlock a floating copy to type in it). It has two tabs:
   Repeated worn slots (ears, wrists, rings, Any Slot) are numbered by their order in the export.
   The filter box matches item names and locations.
 
+A **[Quest]** marker beside an inventory item or merge group means the cached wiki lookup found
+quest references. The same marker appears beside items in **Loot** and the **Wiki** work queue.
+Click the marker to open that item's quest references in the inventory overlay; clicking the item
+name still opens its wiki page. Markers update as background lookups finish, without changing your
+owned counts or requiring another click. No marker may mean a lookup is still pending or failed,
+not proof that an item has no quest use. The marker indicates wiki references (including possible
+rewards or mentions), not verified turn-in eligibility.
+
 After the file stops changing, a successful import replaces the character's owned counts, including
 carried/equipped and bank/shared-bank items. All nonempty entries are imported, including the
 three-column KeyRing section (Equipment, Activated, Augmentation, and Equipment-* entries).
@@ -556,17 +567,29 @@ The log doesn't say how long a spell lasts, so the app learns durations from the
 effect landing and its "worn off" message. Mez and charm often break early, so the estimate is the
 80th percentile of the last 25 samples. Re-reading the same history doesn't count the same wear-off twice.
 
-The **Spell durations** grid shows learned values. Type a number of seconds in *Override* to fix a
-duration; clear it to go back to the learned value. Until a spell has a duration, its timer counts up
-and is marked "(learning)". Uncheck *Track* to hide a spell's timers (every rank of it); its
-duration is still learned.
+The **Spell durations** grid shows learned durations and wiki estimates. Spells you cast are
+looked up in the background using the shared EQLWiki cache. Explicit wiki durations are a fallback
+when no learned value is available, including six-second ticks and "Up to" maximums
+(for example, Whirl Till You Hurl's "Up to 2 ticks" becomes a 12-second estimate).
+Instant, permanent and ambiguous durations are not guessed. Timers on later casts use the wiki
+duration once its lookup completes; a spell without a known duration does not start a normal countdown.
+
+Enter a spell name and duration in seconds above the grid, then select **Add / update** to
+create a manual entry, even before the spell has appeared in the log. Type a number of seconds
+in *Override* to change a duration; clear it to use the learned value, then the wiki estimate.
+Other ranks can supply a duration when the current rank has none. Charm can still show an
+unknown-duration timer while learning.
+
+Uncheck *Track* to hide a spell's timers (every rank of it); its duration is still learned.
+**Remove** deletes the selected spell/rank's saved samples, override, wiki estimate and timers.
+It stays removed across restarts and log replays until you manually add that exact name again.
 
 ## Saved data and backups
 
 Settings are stored in `%AppData%\EqLogOverlay\`:
 
 - `settings.json`: log path, overlay positions/visibility/docking, docked window layout, opacity, font, chat channels, alert triggers
-- `spell-durations.json`: learned samples, overrides and untracked spells
+- `spell-durations.json`: learned samples, overrides, wiki duration estimates, untracked spells and removed spell/rank names
 - `spawn-timers.json`: respawn samples, overrides, tracked mobs and the last kill/sighting per zone, so countdowns keep running across restarts and new log files
 - `motes.json`: all-time mote totals per character and mote drops/kills per zone and mob
 - `mob-resistances.json`: resistance observations by zone/mob, replay watermarks, and cached EQLWiki NPC data

@@ -1,6 +1,7 @@
 <Window x:Class="EqLog.Overlay.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:EqLog.Overlay"
         Title="EverQuest Log Overlay" Height="720" Width="680" MinWidth="480" MinHeight="420"
         Background="{DynamicResource NightBackground}" Foreground="{DynamicResource NightText}" FontSize="13">
     <DockPanel x:Name="SettingsRoot" Margin="10">
@@ -22,8 +23,8 @@
                     <Button x:Name="DownloadUpdateButton" Content="Download update" IsEnabled="False" Click="DownloadUpdate_Click" />
                     <Button x:Name="RestartUpdateButton" Content="Restart to update" IsEnabled="False" Click="RestartUpdate_Click" />
                 </WrapPanel>
-                <ProgressBar x:Name="UpdateProgress" Maximum="100" Height="8" Visibility="Collapsed" />
-                <TextBlock x:Name="UpdateStatusText" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="{DynamicResource NightMuted}" />
+                <ProgressBar x:Name="UpdateProgress" Maximum="100" Height="8" Visibility="Hidden" />
+                <local:FixedLineTextBlock x:Name="UpdateStatusText" Margin="0,6,0,0" Foreground="{DynamicResource NightMuted}" />
             </StackPanel>
         </GroupBox>
         <GroupBox Header="Log file" DockPanel.Dock="Top">
@@ -36,7 +37,7 @@
                 </DockPanel>
                 <CheckBox x:Name="FollowNewestBox" Content="Switch automatically to the newest eqlog file in this folder (character changes)" Margin="0,6,0,0" Click="FollowNewest_Click" />
                 <ProgressBar x:Name="HistoryProgress" Height="6" Margin="0,6,0,0" Maximum="1" />
-                <TextBlock x:Name="StatusText" Margin="0,4,0,0" TextWrapping="Wrap" Foreground="{DynamicResource NightText}" />
+                <local:FixedLineTextBlock x:Name="StatusText" Margin="0,4,0,0" Foreground="{DynamicResource NightText}" />
             </StackPanel>
         </GroupBox>
 
@@ -71,7 +72,7 @@
                     <TextBox x:Name="MobTimeoutBox" Width="65" LostFocus="MobTimeout_Changed" />
                     <TextBlock Text="0 = until next consider" VerticalAlignment="Center" Margin="8,0,0,0" />
                 </StackPanel>
-                <TextBlock x:Name="MobInfoStatusText" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="{DynamicResource NightMuted}" />
+                <local:FixedLineTextBlock x:Name="MobInfoStatusText" Margin="0,6,0,0" Foreground="{DynamicResource NightMuted}" />
             </StackPanel>
         </GroupBox>
                     </StackPanel>
@@ -199,9 +200,10 @@
                     <StackPanel DockPanel.Dock="Top">
                         <Expander Header="How inventory and ownership work" Foreground="{DynamicResource NightMuted}" Margin="0,0,0,8">
                             <TextBlock Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap" Margin="4,8"
-                                       Text="All inventory sections and loot are looked up automatically on EQLWiki (only item names are sent). The export above Logs replaces counts when updated; run /outputfile inventory after sales or turn-ins. Collection and installed augment counts are shown separately, not assumed available for turn-ins. Newer loot adds to Owned; historical loot is unconfirmed. Quest references may include rewards." />
+                                       Text="All inventory sections and loot are looked up automatically on EQLWiki (only item names are sent). A [Quest] marker appears when cached quest references exist; click it to view them. No marker may mean the lookup is still pending. The export above Logs replaces counts when updated; run /outputfile inventory after sales or turn-ins. Collection and installed augment counts are shown separately, not assumed available for turn-ins. Newer loot adds to Owned; historical loot is unconfirmed. Quest references may include rewards." />
                         </Expander>
-                        <TextBlock x:Name="InventoryStatus" Foreground="{DynamicResource NightText}" TextWrapping="Wrap" Margin="0,4"
+                        <local:FixedLineTextBlock x:Name="InventoryStatus" Lines="3" Margin="0,4"
+                                   Foreground="{DynamicResource NightText}"
                                    Text="Waiting for the log file to locate its character inventory export." />
                         <WrapPanel>
                             <Button x:Name="LookupQuestButton" Content="Look up quests" Click="LookupQuest_Click" />
@@ -210,8 +212,6 @@
                             <Button Content="Complete / reopen quest" Click="CompleteQuest_Click" />
                             <Button Content="Retry lookups" Click="RetryQuests_Click" />
                         </WrapPanel>
-                        <TextBlock x:Name="QuestLookupStatus" Foreground="{DynamicResource Pumpkin}" TextWrapping="Wrap" Margin="0,6"
-                                   Text="Lookups are cached for seven days. Enable the Quest opportunities panel to see all matching quests." />
                     </StackPanel>
                     <Grid>
                         <Grid.RowDefinitions>
@@ -229,12 +229,30 @@
                                 <DataGridTemplateColumn Header="Item" IsReadOnly="True" Width="*" MinWidth="190" SortMemberPath="Item">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
-                                            <TextBlock TextTrimming="CharacterEllipsis" VerticalAlignment="Center">
-                                                <Hyperlink Tag="{Binding Item}" Click="ItemWikiLink_Click"
-                                                           Foreground="{DynamicResource Pumpkin}" ToolTip="Open item on EQLWiki">
-                                                    <Run Text="{Binding Item}" />
-                                                </Hyperlink>
-                                            </TextBlock>
+                                            <DockPanel VerticalAlignment="Center">
+                                                <TextBlock DockPanel.Dock="Left" Margin="0,0,6,0" FontWeight="SemiBold">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding HasQuestReferences}" Value="False">
+                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                    <Hyperlink Tag="{Binding Item}" Click="QuestBadge_Click"
+                                                               Foreground="{DynamicResource Pumpkin}"
+                                                               ToolTip="Quest references available: click to view. Wiki mentions may include ingredients or rewards, not a turn-in checklist.">
+                                                        <Run Text="[Quest]" />
+                                                    </Hyperlink>
+                                                </TextBlock>
+                                                <TextBlock TextTrimming="CharacterEllipsis" VerticalAlignment="Center">
+                                                    <Hyperlink Tag="{Binding Item}" Click="ItemWikiLink_Click"
+                                                               Foreground="{DynamicResource Pumpkin}" ToolTip="Open item on EQLWiki">
+                                                        <Run Text="{Binding Item}" />
+                                                    </Hyperlink>
+                                                </TextBlock>
+                                            </DockPanel>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
@@ -252,7 +270,12 @@
                         <GridSplitter Grid.Row="2" Height="4" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                                       Background="{DynamicResource NightBorder}" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
                                       ToolTip="Drag to resize the inventory and quest lists" />
-                        <TextBlock Grid.Row="3" Text="QUEST REFERENCES" Foreground="{DynamicResource NightMuted}" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,8" />
+                        <StackPanel Grid.Row="3">
+                            <TextBlock Text="QUEST REFERENCES" Foreground="{DynamicResource NightMuted}" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,4" />
+                            <local:FixedLineTextBlock x:Name="QuestLookupStatus" Lines="2" Margin="0,0,0,6"
+                                       Foreground="{DynamicResource Pumpkin}"
+                                       Text="Lookups are cached for seven days. Enable the Quest opportunities panel to see all matching quests." />
+                        </StackPanel>
                         <ListBox x:Name="QuestResults" Grid.Row="4" HorizontalContentAlignment="Stretch"
                                  ToolTip="Click a quest name to open it on EQLWiki, or select a row for Complete / reopen. History is unconfirmed loot; Owned is editable. Carried includes equipped items.">
                             <ListBox.ItemTemplate>
@@ -271,8 +294,18 @@
             </TabItem>
             <TabItem Header="Spell durations">
             <DockPanel Margin="4">
+                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                    <TextBlock Text="Add a spell and its duration in seconds" Margin="0,0,0,4" />
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="Add / update" Click="AddDuration_Click" />
+                        <TextBox x:Name="NewDurationSecondsBox" DockPanel.Dock="Right" Width="75" Margin="4,0"
+                                 ToolTip="Duration in seconds" AutomationProperties.Name="Spell duration in seconds" />
+                        <TextBox x:Name="NewDurationSpellBox" ToolTip="Spell name, including rank if desired"
+                                 AutomationProperties.Name="Spell name" />
+                    </DockPanel>
+                </StackPanel>
                 <TextBlock DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap"
-                           Text="Learned from 'worn off' messages; type an override in seconds. Timers start only for checked spells with a known duration. Uncheck Track to hide a spell's timers (its duration is still learned). Clear an override to go back to the learned value." />
+                           Text="Override takes priority, then learned duration, then the wiki estimate (ticks are 6 seconds). Wiki lookups run in the background for spells you cast. Uncheck Track to hide timers but keep learning. Remove deletes this spell/rank and prevents automatic rediscovery until you add it again." />
                 <DataGrid x:Name="DurationsGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
                           HeadersVisibility="Column" GridLinesVisibility="Horizontal"
                           CellEditEnding="Durations_CellEditEnding">
@@ -286,8 +319,18 @@
                         </DataGridTemplateColumn>
                         <DataGridTextColumn Header="Spell" Binding="{Binding Spell}" IsReadOnly="True" Width="*" />
                         <DataGridTextColumn Header="Learned" Binding="{Binding Learned}" IsReadOnly="True" Width="80" />
+                        <DataGridTextColumn Header="Wiki" Binding="{Binding Wiki}" IsReadOnly="True" Width="65" />
                         <DataGridTextColumn Header="Samples" Binding="{Binding Samples}" IsReadOnly="True" Width="70" />
                         <DataGridTextColumn Header="Override (s)" Binding="{Binding Override}" Width="100" />
+                        <DataGridTemplateColumn Header="Action" Width="90" MinWidth="90">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Button Content="Remove" Click="RemoveDuration_Click" Padding="8,1" Margin="0"
+                                            MinHeight="22" VerticalAlignment="Center"
+                                            ToolTip="Remove this spell/rank until manually added again" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                     </DataGrid.Columns>
                 </DataGrid>
             </DockPanel>
@@ -300,7 +343,7 @@
                                 <Button Content="Import JSON..." DockPanel.Dock="Right" Margin="8,0,0,0" Click="ImportTheme_Click" />
                                 <ComboBox x:Name="ThemePicker" DisplayMemberPath="Name" SelectionChanged="Theme_Changed" />
                             </DockPanel>
-                            <TextBlock x:Name="ThemeStatus" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                            <local:FixedLineTextBlock x:Name="ThemeStatus" Foreground="{DynamicResource NightMuted}" Margin="0,6,0,0" />
                         </StackPanel>
                     </GroupBox>
                     <ContentControl x:Name="ThemeEditorHost" />
