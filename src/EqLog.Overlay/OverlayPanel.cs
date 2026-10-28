@@ -10,7 +10,7 @@ namespace EqLog.Overlay;
 /// <summary>One line in an overlay: left/right text with an optional proportional bar behind it.</summary>
 public sealed record AbilityBreakdown(string Title, string Context, string RateLabel, IReadOnlyList<AbilityStats> Abilities);
 
-public sealed record OverlayRow(string Left, string Right = "", double Fraction = 0, Brush? Bar = null, Brush? Foreground = null, bool Wrap = false, bool Bold = false, double Scale = 1, string? LootItem = null, AbilityBreakdown? Breakdown = null, bool QuestHeading = false, string? Details = null);
+public sealed record OverlayRow(string Left, string Right = "", double Fraction = 0, Brush? Bar = null, Brush? Foreground = null, bool Wrap = false, bool Bold = false, double Scale = 1, string? LootItem = null, AbilityBreakdown? Breakdown = null, bool QuestHeading = false, string? Details = null, bool Stacked = false);
 
 /// <summary>
 /// The content of one overlay (title, subtitle, rows). It lives either in its own floating <see cref="OverlayWindow"/>
@@ -28,6 +28,10 @@ public sealed class OverlayPanel : ContentControl
     private readonly TextBlock _dockDragHandle;
     private readonly Button _dockButton;
     private readonly Border _frame;
+    private readonly Border _titleFrame;
+    private readonly Border _inset;
+    private readonly Border _bevel;
+    private readonly Grid _ornaments = new() { IsHitTestVisible = false };
     private readonly ContentControl _toolbar = new();
     private IReadOnlyList<OverlayRow> _current = [];
     private bool _invalidateRows;
@@ -98,12 +102,13 @@ public sealed class OverlayPanel : ContentControl
             Margin = new Thickness(0, 3, 0, 0),
         };
 
+        _titleFrame = new Border { Child = header };
         var layout = new DockPanel();
-        DockPanel.SetDock(header, Dock.Top);
-        layout.Children.Add(header);
+        DockPanel.SetDock(_titleFrame, Dock.Top);
+        layout.Children.Add(_titleFrame);
         DockPanel.SetDock(_toolbar, Dock.Top);
         layout.Children.Add(_toolbar);
-        if (key is "quests" or "sky")
+        if (key is "quests" or "sky" or "npcs")
         {
             _virtualList = new VirtualRowList(BuildRow)
             {
@@ -138,12 +143,36 @@ public sealed class OverlayPanel : ContentControl
             layout.Children.Add(_scroll);
         }
 
+        _inset = new Border { Child = layout };
+        _bevel = new Border { Child = _inset };
+        var frameContent = new Grid();
+        frameContent.Children.Add(_bevel);
+        frameContent.Children.Add(_ornaments);
+        foreach (var horizontal in new[] { HorizontalAlignment.Left, HorizontalAlignment.Right })
+        {
+            foreach (var vertical in new[] { VerticalAlignment.Top, VerticalAlignment.Bottom })
+            {
+                var stud = new Border
+                {
+                    Width = 5,
+                    Height = 5,
+                    CornerRadius = new CornerRadius(1),
+                    BorderThickness = new Thickness(1),
+                    BorderBrush = Brushes.Black,
+                    HorizontalAlignment = horizontal,
+                    VerticalAlignment = vertical,
+                    Margin = new Thickness(3),
+                };
+                stud.SetResourceReference(Border.BackgroundProperty, "Pumpkin");
+                _ornaments.Children.Add(stud);
+            }
+        }
         _frame = new Border
         {
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(6, 4, 6, 4),
             BorderThickness = new Thickness(1),
-            Child = layout,
+            Child = frameContent,
         };
         Content = _frame;
         Focusable = false;
@@ -171,6 +200,7 @@ public sealed class OverlayPanel : ContentControl
     public event Action<OverlayPanel>? DockToggleRequested;
 
     public event Action<string>? LootLookupRequested;
+    public event Action<string>? ItemWikiRequested;
     public event Action<AbilityBreakdown>? BreakdownRequested;
 
     public void SetToolbar(UIElement toolbar)
@@ -184,7 +214,7 @@ public sealed class OverlayPanel : ContentControl
         {
             if (source is System.Windows.Controls.Primitives.ButtonBase or
                 System.Windows.Controls.Primitives.TextBoxBase or
-                System.Windows.Controls.Primitives.ScrollBar or System.Windows.Controls.Primitives.Thumb or ComboBox)
+                System.Windows.Controls.Primitives.ScrollBar or System.Windows.Controls.Primitives.Thumb or ComboBox or TabItem or Hyperlink)
             {
                 return true;
             }
@@ -206,7 +236,7 @@ public sealed class OverlayPanel : ContentControl
         Apply();
     }
 
-    /// <summary>Docked tiles remain interactive and show a subtle border.</summary>
+    /// <summary>Docked tiles remain interactive and use theme-colored, beveled fantasy frames.</summary>
     public void SetDocked(bool docked)
     {
         _docked = docked;
@@ -220,6 +250,7 @@ public sealed class OverlayPanel : ContentControl
         var bg = new SolidColorBrush(Color.FromArgb((byte)(opacity * 255), color.R, color.G, color.B));
         bg.Freeze();
         _frame.Background = bg;
+        ApplyDockFrame();
         _hint.Visibility = _locked || _docked ? Visibility.Collapsed : Visibility.Visible;
         _dockDragHandle.Visibility = _docked ? Visibility.Visible : Visibility.Collapsed;
 
@@ -234,6 +265,73 @@ public sealed class OverlayPanel : ContentControl
         {
             _frame.BorderBrush = Brushes.Transparent;
         }
+    }
+
+    private void ApplyDockFrame()
+    {
+        _ornaments.Visibility = _docked ? Visibility.Visible : Visibility.Collapsed;
+        _frame.Padding = _docked ? new Thickness(2) : new Thickness(6, 4, 6, 4);
+        _frame.CornerRadius = new CornerRadius(_docked ? 8 : 4);
+        _frame.BorderThickness = new Thickness(_docked ? 2 : 1);
+        _bevel.BorderThickness = _docked ? new Thickness(1, 1, 2, 2) : new Thickness(0);
+        _bevel.CornerRadius = new CornerRadius(5);
+        _inset.Margin = _docked ? new Thickness(3) : new Thickness(0);
+        _inset.Padding = _docked ? new Thickness(5, 3, 5, 5) : new Thickness(0);
+        _inset.BorderThickness = _docked ? new Thickness(1) : new Thickness(0);
+        _inset.CornerRadius = new CornerRadius(3);
+        _titleFrame.Padding = _docked ? new Thickness(5, 5, 5, 7) : new Thickness(0);
+        _titleFrame.Margin = _docked ? new Thickness(-5, -3, -5, 5) : new Thickness(0);
+        _titleFrame.BorderThickness = _docked ? new Thickness(0, 0, 0, 2) : new Thickness(0);
+        _titleFrame.CornerRadius = new CornerRadius(3, 3, 0, 0);
+        if (!_docked)
+        {
+            _bevel.Background = null;
+            _bevel.BorderBrush = null;
+            _inset.Background = null;
+            _inset.BorderBrush = null;
+            _titleFrame.Background = null;
+            _titleFrame.BorderBrush = null;
+            return;
+        }
+
+        Color metal = ((SolidColorBrush)FindResource("NightBorder")).Color;
+        Color accent = ((SolidColorBrush)FindResource("Pumpkin")).Color;
+        Color raised = ((SolidColorBrush)FindResource("NightRaised")).Color;
+        Color background = ((SolidColorBrush)FindResource("NightBackground")).Color;
+        _bevel.Background = null;
+        _bevel.BorderBrush = Gradient(
+            Blend(accent, Colors.White, 0.35), metal, Blend(metal, Colors.Black, 0.8));
+        _inset.Background = Gradient(background, background, Blend(background, Colors.Black, 0.25), _opacity);
+        _inset.BorderBrush = Gradient(Colors.Black, metal, Blend(metal, Colors.White, 0.2));
+        _titleFrame.Background = Gradient(
+            Blend(raised, accent, 0.12), raised, Blend(raised, Colors.Black, 0.3), _opacity);
+        _titleFrame.BorderBrush = Gradient(accent, metal, Blend(metal, Colors.Black, 0.5));
+    }
+
+    private static Color Blend(Color from, Color to, double amount)
+    {
+        return Color.FromRgb(
+            (byte)(from.R + (to.R - from.R) * amount),
+            (byte)(from.G + (to.G - from.G) * amount),
+            (byte)(from.B + (to.B - from.B) * amount));
+    }
+
+    private static Brush Gradient(Color top, Color middle, Color bottom, double opacity = 1)
+    {
+        var brush = new LinearGradientBrush
+        {
+            StartPoint = new Point(0, 0),
+            EndPoint = new Point(0.35, 1),
+            Opacity = opacity,
+            GradientStops =
+            {
+                new GradientStop(top, 0),
+                new GradientStop(middle, 0.45),
+                new GradientStop(bottom, 1),
+            },
+        };
+        brush.Freeze();
+        return brush;
     }
 
     protected override void OnPropertyChanged(DependencyPropertyChangedEventArgs e)
@@ -356,7 +454,7 @@ public sealed class OverlayPanel : ContentControl
 
         var weight = row.Bold ? FontWeights.Bold : FontWeights.Normal;
         var text = new DockPanel { Margin = new Thickness(3, 0, 3, 0) };
-        if (!string.IsNullOrEmpty(row.Right))
+        if (!string.IsNullOrEmpty(row.Right) && !row.Stacked)
         {
             var right = new TextBlock { Text = row.Right, FontWeight = weight, Margin = new Thickness(8, 0, 0, 0) };
             if (row.Foreground is not null)
@@ -379,12 +477,32 @@ public sealed class OverlayPanel : ContentControl
         {
             left.Foreground = row.Foreground;
         }
+        if (row.LootItem is not null)
+        {
+            left.TextDecorations = TextDecorations.Underline;
+        }
 
         if (row.Details is { } details)
         {
             left.FontWeight = FontWeights.SemiBold;
             var itemContent = new StackPanel();
             itemContent.Children.Add(left);
+            if (row.Stacked && !string.IsNullOrEmpty(row.Right))
+            {
+                var result = new TextBlock
+                {
+                    Text = row.Right,
+                    TextWrapping = TextWrapping.Wrap,
+                    FontWeight = FontWeights.SemiBold,
+                    Margin = new Thickness(0, 5, 0, 0),
+                };
+                result.SetResourceReference(TextBlock.ForegroundProperty, "Pumpkin");
+                if (row.Foreground is not null)
+                {
+                    result.Foreground = row.Foreground;
+                }
+                itemContent.Children.Add(result);
+            }
             var description = new TextBlock
             {
                 Text = details,
@@ -405,6 +523,10 @@ public sealed class OverlayPanel : ContentControl
             glass.SetResourceReference(Border.BackgroundProperty, "NightRaised");
             glass.SetResourceReference(Border.BorderBrushProperty, "NightBorder");
             grid.Children.Insert(0, glass);
+            if (row.Stacked)
+            {
+                grid.Margin = new Thickness(0, 0, 0, 8);
+            }
         }
         else
         {
@@ -422,7 +544,8 @@ public sealed class OverlayPanel : ContentControl
                 Padding = new Thickness(0),
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 Cursor = System.Windows.Input.Cursors.Hand,
-                ToolTip = row.Breakdown is not null ? "Click for ability breakdown" : $"Look up quest references for {row.LootItem}",
+                ToolTip = row.Breakdown is not null ? "Click for ability breakdown" :
+                    $"Open {row.LootItem} on EQLWiki (right-click for quest references)",
                 Focusable = false,
             };
             if (row.Details is not null)
@@ -438,9 +561,20 @@ public sealed class OverlayPanel : ContentControl
                 }
                 else if (row.LootItem is { } item)
                 {
-                    LootLookupRequested?.Invoke(item);
+                    ItemWikiRequested?.Invoke(item);
                 }
             };
+            if (row.LootItem is { } lootItem)
+            {
+                var menu = new ContextMenu();
+                var wiki = new MenuItem { Header = "Open item on EQLWiki" };
+                wiki.Click += (_, _) => ItemWikiRequested?.Invoke(lootItem);
+                var quests = new MenuItem { Header = "Look up quest references" };
+                quests.Click += (_, _) => LootLookupRequested?.Invoke(lootItem);
+                menu.Items.Add(wiki);
+                menu.Items.Add(quests);
+                button.ContextMenu = menu;
+            }
             return button;
         }
 

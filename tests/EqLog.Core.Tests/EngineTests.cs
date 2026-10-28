@@ -89,6 +89,64 @@ public class EngineTests
         Assert.Empty(engine.Snapshot(T0.AddSeconds(30)).Timers);
     }
 
+    [Theory]
+    [InlineData("You have slain Guardian Golem!")]
+    [InlineData("Guardian Golem has been slain by Gibarn!")]
+    [InlineData("Guardian Golem died.")]
+    public void KillClearsPendingTimerWithoutRecreatingIt(string death)
+    {
+        var store = new SpellDurationStore();
+        store.SetOverride("Mesmerization X", 60);
+        var engine = new LogEngine(store);
+        engine.ProcessLines([
+            L(0, "You slash Guardian Golem for 10 points of damage."),
+            L(1, "You begin casting Mesmerization X."),
+            L(3, death),
+        ]);
+
+        Assert.Empty(engine.Snapshot(T0.AddSeconds(4)).Timers);
+        Assert.Empty(engine.Snapshot(T0.AddSeconds(20)).Timers);
+    }
+
+    [Fact]
+    public void KillClearsAllVictimSpellsButPreservesOtherTargets()
+    {
+        var store = new SpellDurationStore();
+        store.SetOverride("Mesmerization X", 60);
+        store.SetOverride("Ignite Blood IX", 60);
+        var engine = new LogEngine(store);
+        engine.ProcessLines([
+            L(0, "You begin casting Mesmerization X."),
+            L(1, "Guardian Golem has been mesmerized."),
+            L(2, "You begin casting Ignite Blood IX."),
+            L(3, "Guardian Golem has taken 300 damage from your Ignite Blood IX."),
+            L(4, "You begin casting Mesmerization X."),
+            L(5, "an azarack has been mesmerized."),
+            L(6, "Guardian Golem has been slain by Gibarn!"),
+        ]);
+
+        var timer = Assert.Single(engine.Snapshot(T0.AddSeconds(20)).Timers);
+        Assert.Equal("An azarack", timer.Target);
+        Assert.Equal(TimerState.Running, timer.State);
+    }
+
+    [Fact]
+    public void CastAfterKillDoesNotGuessDeadTarget()
+    {
+        var store = new SpellDurationStore();
+        store.SetOverride("Mesmerization X", 60);
+        var engine = new LogEngine(store);
+        engine.ProcessLines([
+            L(0, "You slash Guardian Golem for 10 points of damage."),
+            L(1, "You have slain Guardian Golem!"),
+            L(2, "You begin casting Mesmerization X."),
+        ]);
+
+        var timer = Assert.Single(engine.Snapshot(T0.AddSeconds(20)).Timers);
+        Assert.Equal("(target)", timer.Target);
+        Assert.False(timer.TargetConfirmed);
+    }
+
     [Fact]
     public void WornOffShowsThenDisappears()
     {

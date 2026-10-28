@@ -37,6 +37,38 @@ public sealed partial class LogEventParser
             return ParseChat(t, m);
         }
 
+        if (m[0] == '[' && !string.IsNullOrWhiteSpace(CharacterName))
+        {
+            var who = WhoLoadoutRegex().Match(m);
+            if (who.Success && string.Equals(who.Groups["name"].Value, CharacterName, StringComparison.OrdinalIgnoreCase))
+            {
+                string classes = who.Groups["classes"].Value.ToUpperInvariant();
+                return new WhoLoadoutEvent(t, CharacterName,
+                    int.Parse(who.Groups["level"].Value, CultureInfo.InvariantCulture), classes);
+            }
+        }
+
+        if (m.StartsWith("This creature would ", StringComparison.Ordinal))
+        {
+            return new ConsiderAssessmentEvent(t, m);
+        }
+
+        if (m.Contains(" -- ", StringComparison.Ordinal) && m.Contains("(Lvl:", StringComparison.Ordinal))
+        {
+            var con = ConsiderRegex().Match(m);
+            if (con.Success)
+            {
+                string mob = con.Groups["mob"].Value;
+                bool rare = mob.EndsWith(" - a rare creature -", StringComparison.OrdinalIgnoreCase);
+                if (rare)
+                {
+                    mob = mob[..^" - a rare creature -".Length];
+                }
+                return new ConsiderEvent(t, Name(mob), con.Groups["faction"].Value,
+                    con.Groups["difficulty"].Value, int.Parse(con.Groups["level"].Value, CultureInfo.InvariantCulture), rare);
+            }
+        }
+
         if (m.Contains(" damage", StringComparison.Ordinal))
         {
             return ParseDamage(t, m);
@@ -257,6 +289,12 @@ public sealed partial class LogEventParser
             hm.Groups["ot"].Success,
             hm.Groups["m"].Success ? hm.Groups["m"].Value : null);
     }
+
+    [GeneratedRegex(@"^(?<mob>.+?) (?<faction>regards you .+?|judges you .+?|looks .+?|glowers at you .+?|glares at you .+?|scowls at you, ready to attack) -- (?<difficulty>.+?) \(Lvl:\s*(?<level>\d{1,3})\)$")]
+    private static partial Regex ConsiderRegex();
+
+    [GeneratedRegex(@"^\[(?<level>[1-9]\d{0,2})\s+(?<classes>(?:WAR|CLR|PAL|RNG|SHD|DRU|MNK|BRD|ROG|SHM|NEC|WIZ|MAG|ENC|BST|BER)(?:/(?:WAR|CLR|PAL|RNG|SHD|DRU|MNK|BRD|ROG|SHM|NEC|WIZ|MAG|ENC|BST|BER))*)\]\s+(?<name>[A-Za-z]+)(?:\s|$)", RegexOptions.IgnoreCase)]
+    private static partial Regex WhoLoadoutRegex();
 
     private KillEvent? ParseKill(DateTime t, string m)
     {

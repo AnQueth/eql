@@ -24,7 +24,8 @@ public sealed record SpawnTimerSnapshot(
     DateTime? SeenAt,
     double? RespawnSeconds,
     double? RemainingSeconds,
-    int Samples);
+    int Samples,
+    bool UsesWiki = false);
 
 public sealed record SpawnSnapshot(string? Zone, IReadOnlyList<SpawnTimerSnapshot> Timers);
 
@@ -297,7 +298,8 @@ public sealed class SpawnTracker
                 state = SpawnState.Up;
             }
 
-            timers.Add(new SpawnTimerSnapshot(info.Mob, state, lastKill, lastSeen, respawn, remaining, info.Samples));
+            timers.Add(new SpawnTimerSnapshot(info.Mob, state, lastKill, lastSeen, respawn, remaining, info.Samples,
+                info.OverrideSeconds is null && info.LearnedSeconds is null && info.WikiSeconds is not null));
         }
 
         return new SpawnSnapshot(_zone, timers);

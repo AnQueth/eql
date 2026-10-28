@@ -13,6 +13,8 @@ public partial class MainWindow
 {
     private SkyQuestCatalog? _skyCatalog;
     private bool _skyLoading;
+    private WikiPriority _skyLoadPriority;
+    private bool _skyForceRefresh;
     private bool _skyOverlayLoadAttempted;
     private ComboBox? _skyOverlayClass;
     private string _skyInventorySignature = "";
@@ -26,8 +28,8 @@ public partial class MainWindow
 
     private async void SkyTab_Selected(object sender, RoutedEventArgs e)
     {
-        if (e.Source == Tabs && SkyTab?.IsSelected == true && !_skyLoading &&
-            (_skyCatalog is null || DateTime.UtcNow - _skyCatalog.CheckedUtc >= TimeSpan.FromDays(1)))
+        if (e.Source == Tabs && SkyTab?.IsSelected == true &&
+            (_skyLoading || _skyCatalog is null || DateTime.UtcNow - _skyCatalog.CheckedUtc >= TimeSpan.FromDays(1)))
         {
             await LoadSkyQuestsAsync(false);
         }
@@ -38,14 +40,22 @@ public partial class MainWindow
         await LoadSkyQuestsAsync(true);
     }
 
-    private async Task LoadSkyQuestsAsync(bool refresh)
+    private async Task LoadSkyQuestsAsync(bool refresh, WikiPriority priority = WikiPriority.Interactive)
     {
         if (_skyLoading)
         {
+            if (priority < _skyLoadPriority)
+            {
+                _skyLoadPriority = priority;
+            }
+            _skyForceRefresh |= refresh;
+            _wikiRepository.PromoteSky(priority);
             return;
         }
 
         _skyLoading = true;
+        _skyLoadPriority = priority;
+        _skyForceRefresh = refresh;
         SkyRefreshButton.IsEnabled = false;
         SkyStatus.Text = "Loading Plane of Sky class quests...";
         try
@@ -67,10 +77,15 @@ public partial class MainWindow
                 }
             }
 
-            if (refresh || _skyCatalog is null || _skyCatalog.Quests.Any(q => q.Requirements is null) ||
+            if (_skyForceRefresh || _skyCatalog is null ||
+                _skyCatalog.Quests.Any(q => q.Requirements is null || q.RuneLinks is null || q.ItemLinks is null) ||
                 DateTime.UtcNow - _skyCatalog.CheckedUtc >= TimeSpan.FromDays(1))
             {
-                _skyCatalog = await SkyQuests.FetchAsync(_wikiHttp, _wikiCts.Token);
+                if (_skyCatalog is not null)
+                {
+                    _wikiRepository.SeedSky(_skyCatalog);
+                }
+                _skyCatalog = await _wikiRepository.GetSkyAsync(_skyLoadPriority, _skyForceRefresh, _wikiCts.Token);
                 AtomicFile.WriteAllText(SkyCachePath, JsonSerializer.Serialize(_skyCatalog));
             }
             SkyStatus.Text = $"{_skyCatalog.Quests.Count} quests • EQLWiki • updated {_skyCatalog.CheckedUtc.ToLocalTime():g}";
@@ -150,7 +165,7 @@ public partial class MainWindow
         if (_skyCatalog is null && !_skyLoading && !_skyOverlayLoadAttempted)
         {
             _skyOverlayLoadAttempted = true;
-            _ = LoadSkyQuestsAsync(false);
+            _ = LoadSkyQuestsAsync(false, WikiPriority.Background);
         }
         var rows = new List<OverlayRow>();
         if (_skyCatalog is null)
@@ -164,7 +179,7 @@ public partial class MainWindow
                 var quest = entry.Quest;
                 rows.Add(new(quest.Name, Bold: true, QuestHeading: true, Wrap: true));
                 rows.Add(new($"Give to: {quest.Giver}", Wrap: true));
-                rows.Add(new($"Reward: {quest.Reward}", Wrap: true, Bold: true));
+                rows.Add(new($"Reward: {quest.Reward}", Wrap: true, Bold: true, LootItem: quest.Reward));
                 if (_settings.SkyClass == "All classes")
                 {
                     rows.Add(new($"Class: {quest.Class}"));
@@ -220,12 +235,12 @@ public partial class MainWindow
                 link.Click += (_, _) => OpenSkyWiki(quest.Url);
                 title.Inlines.Add(link);
                 content.Children.Add(title);
-                AddSkyField(content, "Reward", quest.Reward, (Brush)FindResource("Pumpkin"));
+                AddSkyField(content, "Reward", quest.Reward, (Brush)FindResource("Pumpkin"), [new(quest.Reward, quest.Reward)]);
                 AddSkyField(content, "Quest giver", quest.Giver);
                 AddSkyField(content, "Say", quest.Phrase);
-                AddSkyField(content, "Required rune", quest.Rune);
-                AddSkyField(content, "Required items / drop sources", quest.Items);
                 var progress = SkyQuests.Progress(quest, _questInventory, _characterName ?? "");
+                AddSkyField(content, "Required rune", quest.Rune, items: quest.RuneLinks ?? FallbackSkyLinks(quest.Rune));
+                AddSkyField(content, "Required items / drop sources", quest.Items, items: quest.ItemLinks ?? FallbackSkyLinks(quest.Items));
                 bool ready = progress.Count > 0 && progress.All(p => p.Satisfied);
                 AddSkyField(content, "Inventory progress",
                     progress.Count == 0 ? "Requirements unavailable; refresh wiki data." :
@@ -245,13 +260,14 @@ public partial class MainWindow
                     };
                     DockPanel.SetDock(count, Dock.Right);
                     heading.Children.Add(count);
-                    heading.Children.Add(new TextBlock
+                    var itemName = new TextBlock
                     {
-                        Text = item.Item,
                         TextWrapping = TextWrapping.Wrap,
                         FontWeight = FontWeights.SemiBold,
                         Foreground = (Brush)FindResource("NightText"),
-                    });
+                    };
+                    itemName.Inlines.Add(ItemWikiLink(item.Item, item.Item));
+                    heading.Children.Add(itemName);
                     requirement.Children.Add(heading);
                     string detail = $"Carried / equipped {item.Carried}  |  Bank {item.Bank}";
                     if (!item.Satisfied)
@@ -324,12 +340,48 @@ public partial class MainWindow
         RenderSkyQuests();
     }
 
-    private void AddSkyField(StackPanel parent, string label, string value, Brush? color = null)
+    private void AddSkyField(StackPanel parent, string label, string value, Brush? color = null,
+        IReadOnlyList<SkyItemLink>? items = null)
     {
         var text = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = color ?? (Brush)FindResource("NightText"), Margin = new Thickness(0, 7, 0, 0) };
         text.Inlines.Add(new Run(label + ": ") { FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("NightMuted") });
-        text.Inlines.Add(new Run(value));
+        if (items is null)
+        {
+            text.Inlines.Add(new Run(value));
+        }
+        else
+        {
+            for (int i = 0; i < items.Count; i++)
+            {
+                if (i > 0)
+                {
+                    text.Inlines.Add(new LineBreak());
+                }
+                text.Inlines.Add(ItemWikiLink(items[i].Label, items[i].Item));
+            }
+        }
         parent.Children.Add(text);
+    }
+
+    private static IReadOnlyList<SkyItemLink> FallbackSkyLinks(string value)
+    {
+        return value.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => new SkyItemLink(line.Trim(), line.Trim())).ToArray();
+    }
+
+    private Hyperlink ItemWikiLink(string label, string item)
+    {
+        var link = new Hyperlink(new Run(label))
+        {
+            ToolTip = $"Open {QuestLookup.ItemTitle(item)} on EQLWiki",
+        };
+        link.SetResourceReference(TextElement.ForegroundProperty, "Pumpkin");
+        link.Click += (_, e) =>
+        {
+            OpenSkyWiki(QuestLookup.PageUrl(QuestLookup.ItemTitle(item)));
+            e.Handled = true;
+        };
+        return link;
     }
 
     private void SkySource_Click(object sender, RoutedEventArgs e)

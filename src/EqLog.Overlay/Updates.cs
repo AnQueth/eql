@@ -15,13 +15,12 @@ public partial class MainWindow
     private UpdateInfo? _availableUpdate;
     private bool _updateBusy;
     private bool _updateDownloaded;
+    private static readonly string AppVersion = typeof(App).Assembly
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "unknown";
 
     private async Task InitializeUpdatesAsync()
     {
-        string version = typeof(App).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
-            .InformationalVersion.Split('+')[0] ?? "unknown";
-        AppVersionText.Text = $"EverQuest Log Overlay {version}";
-        _dock.Title = $"EverQuest Log Overlay - v{version}";
+        AppVersionText.Text = $"EverQuest Log Overlay {AppVersion}";
         CheckUpdatesBox.IsChecked = _settings.CheckForUpdatesOnStartup;
         DownloadUpdatesBox.IsChecked = _settings.AutomaticallyDownloadUpdates;
         try
@@ -202,13 +201,16 @@ public partial class MainWindow
             // Verify persistence before stopping anything; refuse to restart if data cannot be saved.
             SaveAll(throwOnError: true);
             await StopTailingAsync();
+            await _wikiCts.CancelAsync();
+            await _wikiRepository.DisposeAsync();
             SaveAll(throwOnError: true);
             _updater.WaitExitThenApplyUpdates(_availableUpdate, restart: true);
             _dock.Close();
         }
         catch (Exception ex)
         {
-            UpdateStatusText.Text = $"Update was not applied: {ex.Message} If log reading stopped, select the log again using Browse.";
+            UpdateStatusText.Text = $"Update was not applied: {ex.Message} If log reading stopped, select the log again using Browse. " +
+                "If wiki lookups stopped, restart the app to resume them.";
             SetUpdateBusy(false);
         }
     }

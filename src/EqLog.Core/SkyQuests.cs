@@ -6,7 +6,9 @@ using System.Text.RegularExpressions;
 namespace EqLog.Core;
 
 public sealed record SkyQuest(string Class, string Name, string Reward, string Giver, string Phrase,
-    string Rune, string Items, string Url, IReadOnlyList<SkyRequirement>? Requirements = null);
+    string Rune, string Items, string Url, IReadOnlyList<SkyRequirement>? Requirements = null,
+    IReadOnlyList<SkyItemLink>? RuneLinks = null, IReadOnlyList<SkyItemLink>? ItemLinks = null);
+public sealed record SkyItemLink(string Label, string Item);
 public sealed record SkyRequirement(string Item, int Quantity);
 public sealed record SkyRequirementProgress(string Item, int Required, int Owned, int Carried, int Bank, int Historical,
     int Collection = 0, int Installed = 0)
@@ -86,7 +88,8 @@ public static partial class SkyQuests
                 var requirements = Requirements(cells[3]).Concat(Requirements(cells[4]))
                     .GroupBy(r => r.Item, ItemNames.Comparer)
                     .Select(g => new SkyRequirement(g.Key, g.Sum(r => r.Quantity))).ToArray();
-                quests.Add(new(className, name, reward, giver, Clean(cells[2]), Clean(cells[3]), Clean(cells[4]), url, requirements));
+                quests.Add(new(className, name, reward, giver, Clean(cells[2]), Clean(cells[3]), Clean(cells[4]), url,
+                    requirements, ItemLinks(cells[3]).ToArray(), ItemLinks(cells[4]).ToArray()));
             }
         }
         if (quests.Count == 0)
@@ -121,6 +124,15 @@ public static partial class SkyQuests
 
     private static IEnumerable<SkyRequirement> Requirements(string cell)
     {
+        foreach (var item in ItemLinks(cell))
+        {
+            var quantity = Regex.Match(item.Label, @"^\s*(\d+)\s*(?:x\s*|×\s*)", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
+            yield return new(item.Item, quantity.Success ? int.Parse(quantity.Groups[1].Value) : 1);
+        }
+    }
+
+    private static IEnumerable<SkyItemLink> ItemLinks(string cell)
+    {
         var entries = Regex.Matches(cell, @"<li\b[^>]*>(.*?)</li>", RegexOptions.Singleline | RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
         foreach (string entry in entries.Count > 0 ? entries.Select(m => m.Groups[1].Value) : new[] { cell })
         {
@@ -130,9 +142,7 @@ public static partial class SkyQuests
                 throw new FormatException("Sky requirement has no identifiable item link.");
             }
 
-            string clean = Clean(entry);
-            var quantity = Regex.Match(clean, @"^\s*(\d+)\s*(?:x\s*|×\s*)", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
-            yield return new(link.Groups[1].Value, quantity.Success ? int.Parse(quantity.Groups[1].Value) : 1);
+            yield return new(Clean(entry), link.Groups[1].Value);
         }
     }
 

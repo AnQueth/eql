@@ -39,7 +39,26 @@ With **Follow newest log** checked, it switches to whichever `eqlog_*` file is w
 such as when you change characters. Startup history does not fire alert triggers.
 
 If floating overlays are missing while arranging them, temporarily turn off
-**Only show overlays while EverQuest is visible**.
+**Only show floating overlays while EverQuest is active**.
+
+### Legends class loadouts
+
+Use **/who** so your own entry appears in the log, for example
+`[50 DRU/WIZ/ENC] Quethrosar (Erudite)`. The app matches your character name exactly
+(ignoring case), tracks the listed classes in their logged order and level, and updates them
+when another entry for you appears. Other players' entries and anonymous entries do not change
+your loadout. The character, detected class loadout, and level appear in the **app title bar**,
+as well as the **Session** overlay and log status. The title bar retains the app version and
+updates automatically when your own /who entry changes.
+
+Learned normal spell damage is kept separate by **character, class loadout, level, and exact
+spell rank**, so different Legends builds do not distort each other's reduced-damage estimates.
+Use **/who after changing loadouts**: the app cannot detect an unlogged switch and uses the
+last reported loadout until updated. After a login or changing character, classes are unknown
+until your own /who entry is read; damage learning waits rather than guessing. Historical
+/who entries are read in order on startup, reconstructing the last reported loadout.
+Saved damage samples retain their loadout context across restarts. Earlier samples collected
+before loadout tracking cannot be assigned to a class build retroactively.
 
 ## Appearance and themes
 
@@ -105,7 +124,8 @@ The **Loot** overlay selector offers **Recent drops**, **Grouped: most recent**,
 **Grouped: item name (A-Z)**. Grouped rows show the session quantity and last-looted time,
 combine numeric upgrade variants, and keep different looters separate. Counts cover all
 observed session drops, not just the recent-drop buffer, and reset with session statistics.
-Your selected grouping is saved across restarts. Clicking a grouped item still opens quest lookup.
+Your selected grouping is saved across restarts. Clicking a grouped item opens its EQLWiki page;
+right-click for quest references.
 
 Click a combatant in **DPS** for an ability breakdown of that fight, or click the target row
 for all attackers combined. Recent fight rows also open a combined breakdown. In **Healing**,
@@ -127,6 +147,8 @@ as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels r
 | Chat | Selected chat channels |
 | Spells | Casts per spell, interrupts, resists and fizzles |
 | Alerts | Text from your custom alert triggers (see below) |
+| Mob info | Your latest live /consider result, wiki stats, and saved Magic/Fire/Cold/Poison/Disease observations |
+| NPC compendium | Search saved NPCs by name/zone; browse wiki stats, per-spell resists, encounter history and average DPS |
 | Spawn Timers | Respawn countdowns for the named mobs you track in the current zone (see below) |
 | Motes | Motes of Potential looted per tier (session and all time), motes/hr, recent drops, drop rates here (see below) |
 
@@ -134,8 +156,10 @@ as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels r
   When unlocked they have a gold border; drag to move and drag the edges to resize.
   A dash in the checkbox means some overlays are locked; clicking it or pressing the hotkey locks all.
   When all are locked, the same control unlocks all. Docked panels remain interactive.
-- **Only show overlays while EverQuest is visible** (on by default): floating overlays hide while `eqgame.exe`
-  isn't running, is minimized, or is mostly covered by another app's window, and come back when the game does.
+- **Only show floating overlays while EverQuest is active** (on by default): floating overlays hide
+  when you Alt+Tab to another app (including the dock/settings), even if the game is still visible
+  on another monitor. They return when EverQuest has focus again. An unlocked floating overlay
+  can keep focus while you interact with it. A minimized or unavailable game never enables them.
   Docked panels always stay visible. Turn this off to arrange overlays without the game running.
 - Expand **General > Overlays > Individual overlay appearance and locks**, then an overlay's name,
   to adjust its text size, background opacity, and floating-window lock independently.
@@ -154,8 +178,151 @@ Each panel also has its own button: **Dock** on a floating overlay (visible whil
 **Pop out** on a docked tile, to move just that one panel.
 **Dock all** docks everything except Alerts; **Float all** turns every panel back into an overlay.
 Drag a tile anywhere on the canvas and drag its gold bottom-right corner to resize it.
+Docked panels use fantasy-style metallic frames with beveled edges, inset content, raised
+title strips, and corner studs. Frame colors follow your theme; floating overlays keep their
+compact appearance.
+
 Canvas positions and panel sizes, the window's position, and the side panel's width and visibility
 are saved.
+## Mob info and resistance observations
+
+The **Mob info** overlay is enabled by default. A **new /consider result** in the live log shows
+the mob's name, level, faction reaction, difficulty text, and any following creature assessment.
+The same window updates for your next target; reading startup history does not open it.
+
+Five color-coded rows show **Magic, Fire, Cold, Poison, and Disease**:
+
+- **Wiki** is an explicit resistance stat from EQLWiki, when available. `?` means unknown, not zero.
+  Many NPC pages, including Heart harpie and A Spinechiller Spider, do not list resistance stats.
+  Wiki race, class, level, **HP and AC**, damage per hit, attacks per round, attack speed,
+  HP/mana regeneration, aggro radius, run speed, respawn time, and location are also shown.
+  These are reference stats, not live remaining health; estimates and ranges stay as written on
+  the wiki. Missing values show `?`. The cache date is displayed, and older caches automatically
+  refresh on the next consider to include the additional stats.
+  **Special (wiki)** highlights listed traits such as Cyndreela's **Immune to Flee, See Invis**.
+  These traits are separate from elemental resistance values. Use **Refresh wiki** to update
+  an older cached page that does not yet include special traits.
+- **Observed result** shows a plain label followed by the percentage and resisted/assessed counts,
+  for example **Partial — 65% (13/20)**. Estimated reduced-damage resists are included in the
+  resisted count; hits still awaiting a baseline and other-spell resists are not in this denominator.
+  With no assessed outcomes it shows **Unknown — no assessed outcomes**.
+  **Resists** (all recorded outcomes resisted), **Partial** (more than half but not all),
+  **Partially Resistant** (10% through 50%), and **Not Resistant** (less than 10%).
+  **Unknown** means no comparable observations, not zero resistance.
+  Labels cover your spells whose wiki metadata identifies
+  single-target instant direct damage, including instant **Lifetap** spells such as Life Leech.
+  Ranked spells fall back to their base wiki page if needed.
+  A successful outcome must match a recent, uninterrupted personal cast.
+  Repeated damage lines for that cast and target do not inflate the count.
+  Reduced-damage hits now count as **estimated partial resists** if they deal less than **90%**
+  of learned normal damage. Normal damage is learned separately for each character, reported
+  class loadout, level, and exact spell rank from non-critical, unmodified hits. At least three hits within 90% of the highest
+  observed damage are needed before using that baseline. Until then, damage observations stay
+  unassessed rather than being assumed full hits; saved samples are re-evaluated as learning improves.
+  Each estimated partial resist counts as one resisted outcome for the labels above.
+  Buff changes, mitigation, and an entirely partially resisted training sample can skew this
+  estimate, so it is not proof of a resist.
+  Damage observations wait briefly for death messages. The latest candidate hit on that mob is
+  excluded from both learning and resistance outcomes when a death is logged within **3 seconds**,
+  even if another player gets the kill. Without a death message (or with one delayed longer than
+  this window), finishing blows cannot be identified reliably. Very recent buffered hits may be
+  omitted if the app closes before they can be checked.
+  Previously saved landed counts contain no damage amounts and cannot be reclassified retroactively.
+- Resists of DoTs, debuffs, area spells, and other spells appear as separate counts with an **unknown rate**.
+  DoT ticks and guessed landings are not counted as successful casts. Spells with missing or
+  unrecognized wiki resistance types remain unclassified rather than being assumed Magic.
+
+Observed labels are **not exact NPC resistance values or guaranteed immunity**. Your level, debuffs, spell modifiers,
+missed log messages, and small sample sizes affect them. Same-name mobs in the same zone share
+observations; logs do not identify individual NPC instances. Different logged zones (including
+difficulty/instance suffixes) stay separate. Wiki values may not reflect a custom rank or zone variant.
+Observations accumulate across characters and sessions; **Reset session** does not clear them.
+Reopening the same log does not count its recorded history again. Moving a log to a different
+path can reimport its observations.
+
+Under **General > Consider / mob information**, set the display timeout (default **5 seconds**;
+`0` keeps it until your next consider). Mob info supports the usual docking, independent text
+size, opacity, and lock controls. Timed expiry hides it in both docked and floating modes.
+The normal EverQuest visibility rule still applies to floating windows.
+
+Unlock the panel to use **Wiki** or **Refresh wiki**; docked buttons are always interactive.
+NPC lookups are cached for one day and spell metadata for seven days. Only mob and spell names
+are sent to EQLWiki, never the log file. Lookup failures keep cached data and show an error;
+use **Refresh wiki** to retry. New observations are still saved while offline.
+
+Spell metadata is also fetched **automatically in the background as spells appear in the log**:
+casts, named spell damage/DoT ticks, heals, targeted resists, and wear-off messages. This works
+during startup history import and live reading, even with both NPC overlays hidden; no consider
+or NPC selection is required. Repeated names share one lookup, fresh saved entries are reused,
+and requests run one at a time with at least one second between requests. Results are saved
+as they arrive and reused across character/log switches. Failed automatic lookups preserve
+cached data and report an error under General; another observation can retry after five minutes,
+or **Refresh wiki** retries explicitly. Closing the app cancels unfinished work; replaying the
+log rediscovers any spells that still need metadata.
+
+All automatic wiki lookups share a single paced queue. **Live /consider information goes
+first**, followed by NPC/item selections and manual refreshes, then background spell,
+quest, and Sky lookups. Selecting something already queued promotes that lookup instead of
+downloading it twice. A download already in progress finishes before the next request;
+long quest searches yield between pages. Occasional turns for older background work keep
+it progressing without letting a backlog block live considers.
+
+Temporary connection failures, timeouts, and busy-server responses retry automatically
+up to three times, with increasing delays and respect for the server's requested wait.
+Waiting retries do not hold up other wiki work. If retries are exhausted, the existing
+cached data stays available and the lookup error is shown.
+
+## NPC compendium
+
+Enable **NPC compendium** under **General > Overlays**. It starts docked and is off by default;
+it can also float over the game with its own size, opacity, text size, and lock settings.
+Unlike **Mob info**, it stays open until you hide it: searching never changes or reopens the
+timed /consider panel. Unlock a floating compendium to type and interact; docking keeps it interactive.
+The search text, selected NPC/zone, and selected view are remembered. Use **Overview** for combat
+totals, NPC stats, and resistance-school summaries; **Spell resists** for individual spell cards;
+and **Encounters** for paged fight history. Cards wrap on narrow panels instead of squeezing
+spell names against long status text.
+
+- Type part of a name to filter recorded NPCs, then choose the **name and zone** in the list.
+  Full logged zones, including difficulty/instance suffixes, remain separate.
+- **Look up name** opens the exact typed NPC even without local history. Wiki stats, HP, AC,
+  special traits, resistance labels/numbers, and cached spell metadata are shared with Mob info.
+  **Open wiki** opens the page; **Refresh wiki** retries or refreshes cached data. Missing values stay unknown.
+- Historical considers retain the faction reaction, level, difficulty, and supplemental assessment.
+  They are identified as historical, not your currently selected game target.
+- The selected log's history is imported automatically, followed by new live interactions.
+  Use **Browse...** to import another log; previous NPC history remains saved.
+- Encounter summaries include the date, character, reported loadout/level, duration,
+  your damage/DPS, other attackers' damage, incoming damage, and a logged death or end reason.
+  Use **Older** / **Newer** in the **Encounters** view to page through history.
+- **Your average DPS** is total damage divided by summed durations of encounters where you
+  dealt damage, not a simple average of fight DPS values. Durations use last activity minus
+  start plus one second, minimum one second. Other-attacker damage/DPS is separate and includes
+  all observed attackers, not guaranteed group members. These are log-observed damage rates,
+  not estimates of NPC health or remaining HP.
+- **Per-spell resistance history** separates full resists, estimated reduced-damage resists,
+  full/near-full landings, and hits awaiting a reliable baseline. It uses the same saved
+  observations and finishing-hit exclusions as Mob info. Encounter spell rows separately show
+  damage, confirmed direct landings (including partial/finishing hits), and explicit resists;
+  DoT ticks contribute damage, not additional direct landings.
+- A known **school** does not mean a reliable **damage rating** is available. Denon's Desperate
+  Dirge and Frost Storm use **Targeted AE** on the wiki; their cards show Magic/Cold, saved
+  landings/resists, and the AE limitation instead of incorrectly implying their schools are unknown.
+  Multi-target/wave spells and DoTs do not get a fabricated full/partial rating.
+  Missing wiki details and insufficient normal-damage samples have separate explanations.
+  Older cached spell metadata refreshes automatically when observed or selected after an app upgrade;
+  saved observations are preserved. Earlier landings lack damage amounts and cannot be
+  checked retrospectively for reduced damage.
+
+Summaries end on a logged death, zone/login/loadout/level change, or more than 15 seconds
+without interaction. Missing deaths show **Timed out**, not an assumed kill. Active summaries
+are saved too. Reopening or reimporting the **same log path** does not duplicate its encounters;
+moving/copying a log to a different path counts as a different source. Overlapping same-name
+NPCs cannot be distinguished: they merge until a death/end boundary, and subsequent interaction
+starts a new summary. Unknown/unlogged class changes still require **/who**.
+No raw log lines are stored in the compendium. Saved history survives **Reset session** and restart.
+Corrupt history is reported and protected from overwrites; new observations then stay session-only.
+
 ## Loot quest lookup
 
 ### Plane of Sky class quests
@@ -224,10 +391,15 @@ quest references automatically. **Look up quests** repeats the selected row's lo
 opens that same item's page. Select a result and click **Open selected quest**.
 References may describe requirements, rewards, or other mentions; check the linked quest before selling
 an item. No results means no linked quest pages were found, not that the item has no quest use.
+“Wiki references checked” means the lookup succeeded. This list shows wiki mentions, not a
+ready-to-turn-in checklist; hover the explanation beneath the progress text for details.
 
-You can also **click an item directly in the Loot or Quest opportunities panel** to open the Loot quests
-tab, select its inventory row, scroll to it, and start its lookup. Matching ignores numeric upgrades.
-Items not yet in the inventory grid are added as zero-owned lookup candidates; clicking someone else's
+**Click item names to open their EQLWiki pages** in Loot, Quest opportunities, inventory,
+Sky rewards/runes/requirements, and Motes (including tier summaries and recent drops).
+Numeric upgrades are removed from wiki page names; Sky's displayed aliases retain their actual wiki targets.
+In an overlay, **right-click > Look up quest references** opens the Loot quests tab, selects its
+inventory row, scrolls to it, and starts its lookup. Matching ignores numeric upgrades.
+Items not yet in the inventory grid are added as zero-owned lookup candidates; looking up someone else's
 loot never adds ownership. Quickly changing selection cannot replace the latest item's results with an older response.
 This works in the docked panel and in unlocked floating overlays. Press **Ctrl+Shift+L** to unlock a
 floating overlay first; locked overlays pass clicks through to the game.
@@ -288,7 +460,16 @@ earlier sessions. Tick **Show all mobs** to include "a skeleton" style mobs and 
 a player or mercenary.
 
 - **Track** adds the mob to the Spawn Timers overlay for that zone.
-- **Override** sets the respawn yourself as seconds, m:ss or h:mm:ss. Clear it to use the learned value.
+- **Override** sets the respawn yourself as seconds, m:ss or h:mm:ss. Clear it to use the learned value or wiki fallback.
+- **Wiki** shows a fallback respawn time from the mob's EQLWiki page. Tracked mobs in your
+  current zone are checked in the background when no learned time or override exists, even
+  when the settings tab is closed. Existing one-day NPC wiki caches are reused across restarts.
+  Only explicit durations are used (for example `6min 40sec` or `16:00`); missing values,
+  ranges and conditional descriptions remain unknown. Wiki values may differ on Legends or
+  instance variants. Lookup errors appear under General and retry after five minutes.
+
+Timer priority is **Override > Learned > Wiki**. Wiki countdowns are marked **(wiki)** and
+never count as learned samples. Once local learning supplies a time, it takes precedence.
 
 The overlay shows each tracked mob as a countdown after you kill it, then **DUE** once the time has
 passed, **up** once it's been seen alive again, and the learned time when it hasn't been killed yet.
@@ -308,6 +489,10 @@ counted, so reading the same log again on the next launch doesn't count drops tw
 
 ## Spell durations
 
+Spell timers for a mob are removed when its death appears in the log, including kills by
+other players. Timers on other targets are kept. Unconfirmed casts do not recreate timers for
+the dead target; deaths outside your log's visibility cannot be detected.
+
 The log doesn't say how long a spell lasts, so the app learns durations from the gap between an
 effect landing and its "worn off" message. Mez and charm often break early, so the estimate is the
 80th percentile of the last 25 samples. Re-reading the same history doesn't count the same wear-off twice.
@@ -324,6 +509,8 @@ Settings are stored in `%AppData%\EqLogOverlay\`:
 - `spell-durations.json`: learned samples and overrides
 - `spawn-timers.json`: respawn samples, overrides, tracked mobs and the last kill/sighting per zone, so countdowns keep running across restarts and new log files
 - `motes.json`: all-time mote totals per character and mote drops/kills per zone and mob
+- `mob-resistances.json`: resistance observations by zone/mob, replay watermarks, and cached EQLWiki NPC/spell data
+- `npc-compendium.json`: NPC name/zone catalog, historical considers, active/completed encounter summaries, per-spell damage/outcome counts, and import watermarks (no raw log lines)
 - `quest-inventory.json`: quest inventory counts and completions per character
 - `quest-lookups.json`: cached item quest references
 - `sky-quests.json`: cached Plane of Sky quest catalog

@@ -21,7 +21,8 @@ public sealed record EngineSnapshot(
     IReadOnlyList<SpellTimerSnapshot> Timers,
     SpawnSnapshot Spawns,
     MoteSnapshot Motes,
-    long ChatVersion);
+    long ChatVersion,
+    WhoLoadoutEvent? CurrentLoadout = null);
 
 /// <summary>
 /// Parses log lines and feeds every tracker. All public members are thread-safe:
@@ -30,6 +31,9 @@ public sealed record EngineSnapshot(
 public sealed class LogEngine
 {
     public event Action<LootEvent, long>? LootObserved;
+    public event Action<ConsiderEvent, string>? MobConsidered;
+    public event Action<ConsiderAssessmentEvent>? ConsiderAssessment;
+    public event Action<string>? SpellObserved;
     private readonly object _gate = new();
     private readonly LogEventParser _parser = new();
     private readonly FightTracker _fights = new();
@@ -42,14 +46,26 @@ public sealed class LogEngine
     private readonly SpellTimerTracker _timers;
     private readonly SpawnTracker _spawns;
     private readonly MoteTracker _motes;
+    private readonly MobResistanceTracker? _resistances;
+    private readonly NpcInteractionTracker? _npcs;
     private long _lines;
     private DateTime? _lastLogTime;
+    private WhoLoadoutEvent? _loadout;
 
-    public LogEngine(SpellDurationStore? durations = null, SpawnStore? spawns = null, MoteStore? motes = null)
+    public LogEngine(SpellDurationStore? durations = null, SpawnStore? spawns = null, MoteStore? motes = null,
+        MobResistanceStore? resistances = null, string? logIdentity = null, NpcCompendium? npcs = null)
     {
         _motes = new MoteTracker(motes ?? new MoteStore());
         _timers = new SpellTimerTracker(durations ?? new SpellDurationStore());
         _spawns = new SpawnTracker(spawns ?? new SpawnStore());
+        if (resistances is not null && logIdentity is not null)
+        {
+            _resistances = new MobResistanceTracker(resistances, logIdentity);
+        }
+        if (npcs is not null && logIdentity is not null)
+        {
+            _npcs = new NpcInteractionTracker(npcs, logIdentity);
+        }
     }
 
     /// <summary>When true, session statistics reset each time the log shows a new login.</summary>
@@ -68,6 +84,10 @@ public sealed class LogEngine
         {
             lock (_gate)
             {
+                if (!string.Equals(_parser.CharacterName, value, StringComparison.OrdinalIgnoreCase))
+                {
+                    _loadout = null;
+                }
                 _parser.CharacterName = value;
             }
         }
@@ -132,14 +152,61 @@ public sealed class LogEngine
         _motes.OnFirstLine(line.Timestamp);
 
         var ev = _parser.Parse(line);
+        string? spell = ev switch
+        {
+            CastBeginEvent cast => cast.Spell,
+            SpellResistedEvent resisted => resisted.Spell,
+            SpellWornOffEvent worn => worn.Spell,
+            DamageEvent { Kind: DamageKind.DirectSpell or DamageKind.DamageOverTime } damage => damage.Source,
+            HealEvent heal => heal.Spell,
+            _ => null,
+        };
+        if (!string.IsNullOrWhiteSpace(spell))
+        {
+            SpellObserved?.Invoke(spell);
+        }
+        switch (ev)
+        {
+            case WhoLoadoutEvent who:
+                _loadout = who;
+                break;
+            case LevelEvent level when _loadout is not null:
+                _loadout = _loadout with
+                {
+                    Level = level.Level
+                };
+                break;
+            case LoginEvent:
+                _loadout = null;
+                break;
+        }
         if (ev is not null)
         {
             _spawns.OnEvent(ev);
             _motes.OnEvent(ev, MoteCharacter);
+            if (_resistances is not null)
+            {
+                _resistances.CharacterName = _parser.CharacterName;
+                _resistances.DamageProfile = _loadout is null ? "" :
+                    $"{_parser.CharacterName}\n{_loadout.Classes}\n{_loadout.Level}";
+            }
+            _resistances?.OnEvent(ev, _lines);
+            _npcs?.OnEvent(ev, _lines, _parser.CharacterName, _loadout);
+        }
+        else
+        {
+            _resistances?.OnUnparsedLine(line.Timestamp, line.Message);
+            _npcs?.OnUnparsedLine(line, _lines, _parser.CharacterName, _loadout);
         }
 
         switch (ev)
         {
+            case ConsiderEvent con:
+                MobConsidered?.Invoke(con, _session.Snapshot(line.Timestamp, 0).Zone ?? "(unknown zone)");
+                break;
+            case ConsiderAssessmentEvent assessment:
+                ConsiderAssessment?.Invoke(assessment);
+                break;
             case DamageEvent d:
                 _fights.OnDamage(d);
                 _taken.OnDamage(d);
@@ -231,10 +298,15 @@ public sealed class LogEngine
         _spells.ResetSession();
     }
 
-    public EngineSnapshot Snapshot(DateTime now, int topRows = 12)
+    public EngineSnapshot Snapshot(DateTime now, int topRows = 12, bool advanceNpcIdle = true)
     {
         lock (_gate)
         {
+            _resistances?.Advance(now);
+            if (advanceNpcIdle)
+            {
+                _npcs?.Advance(now);
+            }
             _fights.Expire(now);
             return new EngineSnapshot(
                 now,
@@ -254,7 +326,8 @@ public sealed class LogEngine
                 _timers.Snapshot(now),
                 _spawns.Snapshot(now),
                 _motes.Snapshot(MoteCharacter, 10),
-                _chat.Version);
+                _chat.Version,
+                _loadout);
         }
     }
 
@@ -324,6 +397,14 @@ public sealed class LogEngine
         lock (_gate)
         {
             _spawns.Store.SetOverride(zone, mob, seconds);
+        }
+    }
+
+    public void SetSpawnWikiRespawn(string mob, double? seconds)
+    {
+        lock (_gate)
+        {
+            _spawns.Store.SetWikiRespawn(mob, seconds);
         }
     }
 

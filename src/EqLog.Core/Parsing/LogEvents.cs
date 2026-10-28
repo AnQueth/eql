@@ -41,6 +41,14 @@ public sealed record HealEvent(
 /// <summary>A creature died. <see cref="Killer"/> may be null when unknown.</summary>
 public sealed record KillEvent(DateTime Time, string? Killer, string Victim) : LogEvent(Time);
 
+/// <summary>A /consider result. The following assessment line may provide additional difficulty information.</summary>
+public sealed record ConsiderEvent(DateTime Time, string Mob, string Faction, string Difficulty, int Level, bool Rare) : LogEvent(Time);
+
+public sealed record ConsiderAssessmentEvent(DateTime Time, string Text) : LogEvent(Time);
+
+/// <summary>The logging character's class loadout and level reported by /who.</summary>
+public sealed record WhoLoadoutEvent(DateTime Time, string Character, int Level, string Classes) : LogEvent(Time);
+
 public enum ExperienceKind
 {
     Solo,

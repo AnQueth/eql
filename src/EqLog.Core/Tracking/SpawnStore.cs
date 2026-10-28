@@ -4,13 +4,13 @@ using System.Text.RegularExpressions;
 
 namespace EqLog.Core.Tracking;
 
-public sealed record SpawnInfo(string Zone, string Mob, double? LearnedSeconds, int Samples, double? OverrideSeconds, bool Tracked, DateTime? LastKill = null, DateTime? LastSeen = null)
+public sealed record SpawnInfo(string Zone, string Mob, double? LearnedSeconds, int Samples, double? OverrideSeconds, bool Tracked, DateTime? LastKill = null, DateTime? LastSeen = null, double? WikiSeconds = null)
 {
     public double? RespawnSeconds
     {
         get
         {
-            return OverrideSeconds ?? LearnedSeconds;
+            return OverrideSeconds ?? LearnedSeconds ?? WikiSeconds;
         }
     }
 }
@@ -25,6 +25,51 @@ public sealed partial class SpawnStore
     private const int MaxSamples = 30;
 
     private readonly Dictionary<string, Dictionary<string, Entry>> _zones = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, double> _wikiRespawns = new(StringComparer.OrdinalIgnoreCase);
+
+    public void SetWikiRespawn(string mob, double? seconds)
+    {
+        if (seconds is > 0 && double.IsFinite(seconds.Value))
+        {
+            _wikiRespawns[MobResistanceStore.MobKey(mob)] = seconds.Value;
+        }
+        else
+        {
+            _wikiRespawns.Remove(MobResistanceStore.MobKey(mob));
+        }
+    }
+
+    /// <summary>Accepts explicit durations only, never guesses from ranges or spawn-condition prose.</summary>
+    public static bool TryParseWikiRespawn(string? text, out double seconds)
+    {
+        seconds = 0;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+        text = text.Trim();
+        if (Regex.IsMatch(text, @"^\d+:\d{2}(?::\d{2})?$", RegexOptions.None, TimeSpan.FromSeconds(1)))
+        {
+            return TryParseDuration(text, out seconds) && double.IsFinite(seconds);
+        }
+        const string part = @"(?<value>\d+(?:\.\d+)?)\s*(?<unit>days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)";
+        if (!Regex.IsMatch(text, @"^(?:" + part + @"\s*)+$", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1)))
+        {
+            return false;
+        }
+        foreach (Match match in Regex.Matches(text, part, RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1)))
+        {
+            double value = double.Parse(match.Groups["value"].Value, CultureInfo.InvariantCulture);
+            seconds += value * (char.ToLowerInvariant(match.Groups["unit"].Value[0]) switch
+            {
+                'd' => 86400,
+                'h' => 3600,
+                'm' => 60,
+                _ => 1,
+            });
+        }
+        return seconds > 0 && double.IsFinite(seconds) && seconds <= TimeSpan.MaxValue.TotalSeconds;
+    }
 
     public bool IsDirty
     {
@@ -120,9 +165,10 @@ public sealed partial class SpawnStore
             : [];
     }
 
-    private static SpawnInfo Info(string zone, string mob, Entry e)
+    private SpawnInfo Info(string zone, string mob, Entry e)
     {
-        return new(zone, mob, Estimate(e.Samples.Select(x => x.Seconds)), e.Samples.Count, e.Override, e.Tracked, e.LastKill, e.LastSeen);
+        return new(zone, mob, Estimate(e.Samples.Select(x => x.Seconds)), e.Samples.Count, e.Override, e.Tracked,
+            e.LastKill, e.LastSeen, _wikiRespawns.TryGetValue(MobResistanceStore.MobKey(mob), out double wiki) ? wiki : null);
     }
 
     /// <summary>

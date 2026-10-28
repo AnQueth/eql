@@ -29,8 +29,8 @@
                 <WrapPanel x:Name="OverlayToggles" />
                 <CheckBox x:Name="LockBox" Content="Lock all overlays (click-through)    Ctrl+Shift+L" Margin="0,6,0,0" FontWeight="Bold" Click="Lock_Click"
                           ToolTip="Checked: all locked. Dash: mixed locks. Click or use the hotkey to lock all; when all are locked, unlock all." />
-                <CheckBox x:Name="GameVisibleBox" Content="Only show overlays while EverQuest (eqgame.exe) is visible on screen" Margin="0,6,0,0" Click="GameVisible_Click"
-                          ToolTip="Floating overlays hide when EverQuest isn't running, is minimized or is covered by another window. Docked panels always show." />
+                <CheckBox x:Name="GameVisibleBox" Content="Only show floating overlays while EverQuest (eqgame.exe) is active" Margin="0,6,0,0" Click="GameVisible_Click"
+                          ToolTip="Floating overlays hide when you switch to another app or the dock. An unlocked floating overlay can keep focus for interaction. Docked panels always show." />
                 <Expander Header="Individual overlay appearance and locks" Margin="0,8,0,0">
                     <StackPanel x:Name="OverlayAppearance" Margin="0,6,0,0" />
                 </Expander>
@@ -46,6 +46,17 @@
 
         <GroupBox Header="Chat channels" DockPanel.Dock="Top">
             <WrapPanel x:Name="ChatToggles" />
+        </GroupBox>
+        <GroupBox Header="Consider / mob information">
+            <StackPanel>
+                <TextBlock Text="Use /consider in game to show Mob info. Resistance observations are saved by zone and mob name." TextWrapping="Wrap" />
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                    <TextBlock Text="Show for (seconds):" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <TextBox x:Name="MobTimeoutBox" Width="65" LostFocus="MobTimeout_Changed" />
+                    <TextBlock Text="0 = until next consider" VerticalAlignment="Center" Margin="8,0,0,0" />
+                </StackPanel>
+                <TextBlock x:Name="MobInfoStatusText" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="{DynamicResource NightMuted}" />
+            </StackPanel>
         </GroupBox>
         <GroupBox Header="Application updates">
             <StackPanel>
@@ -146,7 +157,7 @@
                         <TextBlock x:Name="SpawnZoneText" Foreground="{DynamicResource Pumpkin}" FontWeight="Bold" VerticalAlignment="Center" Text="Zone: -" />
                     </DockPanel>
                     <TextBlock DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap"
-                               Text="Mobs killed in your current zone. Tick Track to time them in the Spawn Timers overlay. Respawn is learned from kill to the next time the mob shows up alive while you stay in the zone (instances share what is learned). Override accepts seconds or m:ss; clear it to use the learned value." />
+                               Text="Tick Track to time mobs in the Spawn Timers overlay. Priority: Override, then Learned, then Wiki. Until a time is learned, tracked mobs are checked on EQLWiki in the background. Wiki times may differ on Legends or instance variants. Override accepts seconds or m:ss; clear it to use Learned or Wiki. Learning measures kill to next sighting without zoning; instances share learned times." />
                     <DataGrid x:Name="SpawnsGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
                               HeadersVisibility="Column" GridLinesVisibility="Horizontal"
                               CellEditEnding="Spawns_CellEditEnding">
@@ -162,6 +173,7 @@
                             <DataGridTextColumn Header="Kills" Binding="{Binding Kills}" IsReadOnly="True" Width="45" />
                             <DataGridTextColumn Header="Last killed" Binding="{Binding LastKilled}" IsReadOnly="True" Width="80" />
                             <DataGridTextColumn Header="Learned" Binding="{Binding Learned}" IsReadOnly="True" Width="70" />
+                            <DataGridTextColumn Header="Wiki" Binding="{Binding Wiki}" IsReadOnly="True" Width="70" />
                             <DataGridTextColumn Header="Samples" Binding="{Binding Samples}" IsReadOnly="True" Width="60" />
                             <DataGridTextColumn Header="Override" Binding="{Binding Override}" Width="70" />
                         </DataGrid.Columns>
@@ -201,7 +213,18 @@
                                   SelectionMode="Single" SelectionUnit="FullRow" SelectionChanged="QuestItem_Selected"
                                   Grid.Row="1" CellEditEnding="QuestOwned_Edit" MinColumnWidth="70">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Item" Binding="{Binding Item}" IsReadOnly="True" Width="*" MinWidth="190" />
+                                <DataGridTemplateColumn Header="Item" IsReadOnly="True" Width="*" MinWidth="190" SortMemberPath="Item">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock TextTrimming="CharacterEllipsis" VerticalAlignment="Center">
+                                                <Hyperlink Tag="{Binding Item}" Click="ItemWikiLink_Click"
+                                                           Foreground="{DynamicResource Pumpkin}" ToolTip="Open item on EQLWiki">
+                                                    <Run Text="{Binding Item}" />
+                                                </Hyperlink>
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
                                 <DataGridTextColumn Header="History" Binding="{Binding Historical}" IsReadOnly="True" />
                                 <DataGridTextColumn Header="Owned" Binding="{Binding Owned}" Width="60" />
                                 <DataGridTextColumn Header="Carried" Binding="{Binding Carried}" IsReadOnly="True" />

@@ -40,6 +40,8 @@ public sealed class DurationRow
 
 public sealed class SpawnRow
 {
+    public string Wiki { get; init; } = "-";
+
     public required string Zone
     {
         get; init;
@@ -135,6 +137,8 @@ public partial class MainWindow : Window
         InitializeThemes();
         InitializeLootQuests();
         InitializeQuestInventory();
+        InitializeMobInfo();
+        InitializeNpcCompendium();
         _chatChannels = [.. _settings.ChatChannels];
         DurationsGrid.ItemsSource = _durationRows;
         SpawnsGrid.ItemsSource = _spawnRows;
@@ -210,6 +214,14 @@ public partial class MainWindow : Window
             {
                 ConfigureSkyToolbar(panel);
             }
+            if (def.Key == "mobinfo")
+            {
+                ConfigureMobToolbar(panel);
+            }
+            if (def.Key == "npcs")
+            {
+                ConfigureNpcToolbar(panel);
+            }
 
             if (def.Key == "loot")
             {
@@ -224,6 +236,7 @@ public partial class MainWindow : Window
                 panel.SetToolbar(grouping);
             }
             panel.LootLookupRequested += async item => await LookupLootItemAsync(item);
+            panel.ItemWikiRequested += item => OpenWiki(QuestLookup.PageUrl(QuestLookup.ItemTitle(item)));
             panel.BreakdownRequested += breakdown => new AbilityBreakdownWindow(breakdown) { Owner = _dock }.Show();
             panel.DockToggleRequested += pnl =>
                 Dispatcher.BeginInvoke(() => SetDocked(pnl.Key, !_settings.Overlays[pnl.Key].Docked));
@@ -338,11 +351,12 @@ public partial class MainWindow : Window
     {
         var p = _settings.Overlays[key];
         var w = _overlays[key];
+        bool visible = p.Visible && (key != "mobinfo" || MobInfoActive);
         if (p.Docked)
         {
             w.Hide();
             w.DetachPanel();
-            if (p.Visible)
+            if (visible)
             {
                 _dock.AddPanel(w.Panel, p);
             }
@@ -356,7 +370,7 @@ public partial class MainWindow : Window
 
         _dock.RemovePanel(key);
         w.AttachPanel();
-        if (p.Visible && (FloatingAllowed || (key == "alerts" && DateTime.Now < _alertTestVisibleUntil)))
+        if (visible && (FloatingAllowed || (key == "alerts" && DateTime.Now < _alertTestVisibleUntil)))
         {
             w.Show();
             w.SetLocked(p.Locked == true);
@@ -411,7 +425,7 @@ public partial class MainWindow : Window
     private bool IsShowing(string key)
     {
         var p = _settings.Overlays[key];
-        return p.Visible && (p.Docked || _overlays[key].IsVisible);
+        return p.Visible && (key != "mobinfo" || MobInfoActive) && (p.Docked || _overlays[key].IsVisible);
     }
 
     private void SetDocked(string key, bool docked)
@@ -455,6 +469,31 @@ public partial class MainWindow : Window
 
     private static OverlayPlacement DefaultPlacement(OverlayDefinition def, int index, Rect work)
     {
+        if (def.Key == "npcs")
+        {
+            return new OverlayPlacement
+            {
+                Left = work.Left + 40,
+                Top = work.Top + 40,
+                Width = def.Width,
+                Height = def.Height,
+                Visible = false,
+                Docked = true,
+                Locked = false,
+            };
+        }
+        if (def.Key == "mobinfo")
+        {
+            return new OverlayPlacement
+            {
+                Left = work.Right - def.Width - 20,
+                Top = work.Top + 40,
+                Width = def.Width,
+                Height = def.Height,
+                Visible = true,
+            };
+        }
+
         if (def.Key == "alerts")
         {
             // Alerts go near the top middle of the screen, where they're hard to miss.
@@ -561,9 +600,11 @@ public partial class MainWindow : Window
     private async Task SwitchToAsync(string path)
     {
         await StopTailingAsync();
+        SaveNpcCompendium(throwOnError: false);
+        ResetMobInfo();
 
         var info = LogFileLocator.Describe(path);
-        _engine = new LogEngine(_durations, _spawnStore, _moteStore)
+        _engine = new LogEngine(_durations, _spawnStore, _moteStore, _mobResistances, Path.GetFullPath(path), _npcCompendium)
         {
             CharacterName = info.CharacterName,
             ResetOnLogin = _settings.ResetOnLogin,
@@ -593,6 +634,21 @@ public partial class MainWindow : Window
 
         // Both callbacks run on the tailer thread. Lines delivered after the first catch-up are new, so only those fire alerts.
         bool live = false;
+        engine.SpellObserved += _wikiRepository.ObserveSpell;
+        engine.MobConsidered += (con, zone) =>
+        {
+            if (live)
+            {
+                _mobEvents.Enqueue((con, zone));
+            }
+        };
+        engine.ConsiderAssessment += assessment =>
+        {
+            if (live)
+            {
+                _mobEvents.Enqueue((assessment, ""));
+            }
+        };
         string questCharacter = _characterName ?? "";
         engine.LootObserved += (loot, lineNumber) =>
         {
@@ -654,11 +710,29 @@ public partial class MainWindow : Window
 
     private void Render()
     {
+        PumpMobInfo();
+        TailProgress p;
+        lock (_progressGate)
+        {
+            p = _progress;
+        }
         var real = DateTime.Now;
         var last = _engine.LastLogTime;
         bool replay = last is DateTime l && real - l > ReplayThreshold;
         var now = replay ? last!.Value : real;
-        var snap = _engine.Snapshot(now);
+        var snap = _engine.Snapshot(now, advanceNpcIdle: p.CaughtUp);
+        RefreshNpcChoices();
+        string title = $"EverQuest Log Overlay - v{AppVersion}";
+        if (!string.IsNullOrWhiteSpace(snap.CharacterName))
+        {
+            title += $" - {snap.CharacterName}";
+            title += snap.CurrentLoadout is { } current
+                ? $" [{current.Level} {current.Classes}]" : " [classes unknown - use /who]";
+        }
+        if (_dock.Title != title)
+        {
+            _dock.Title = title;
+        }
         PumpQuestLoot();
         RefreshSkyInventory();
         var view = new OverlayView(_chatChannels, UpdateAlerts(real), _settings.LootGrouping);
@@ -678,15 +752,11 @@ public partial class MainWindow : Window
             {
                 "quests" => QuestOpportunities(),
                 "sky" => SkyOverlayContent(),
+                "mobinfo" => MobInfoContent(),
+                "npcs" => NpcCompendiumContent(),
                 _ => def.Render(snap, _engine, view),
             };
             _overlays[def.Key].Panel.Update(content.Title, content.Subtitle, content.Rows);
-        }
-
-        TailProgress p;
-        lock (_progressGate)
-        {
-            p = _progress;
         }
 
         HistoryProgress.Value = p.TotalBytes > 0 ? (double)p.BytesRead / p.TotalBytes : 0;
@@ -707,12 +777,15 @@ public partial class MainWindow : Window
         string zone = snap.Session.Zone is { } z ? $" in {z}" : "";
         string when = last is DateTime lt ? $"last line {lt:g}" : "no lines yet";
         string replayNote = replay ? "  (log is not being written; showing it as of the last line)" : "";
-        StatusText.Text = $"{phase}: {snap.CharacterName}{zone} - {snap.LinesProcessed:N0} lines, {when}{replayNote}";
+        string loadout = snap.CurrentLoadout is { } profile
+            ? $" [{profile.Level} {profile.Classes}]" : " [classes unknown - use /who]";
+        StatusText.Text = $"{phase}: {snap.CharacterName}{loadout}{zone} - {snap.LinesProcessed:N0} lines, {when}{replayNote}";
     }
 
     private void Housekeeping()
     {
         _ = CheckInventoryAsync();
+        CheckSpawnWiki();
         _houseTicks++;
         foreach (var w in _overlays.Values)
         {
@@ -844,6 +917,8 @@ public partial class MainWindow : Window
         SaveSpawns(throwOnError);
         SaveMotes(throwOnError);
         SaveQuestInventory(throwOnError);
+        SaveMobResistances(throwOnError);
+        SaveNpcCompendium(throwOnError);
     }
 
     private void SaveDurations(bool throwOnError = false)
@@ -909,13 +984,30 @@ public partial class MainWindow : Window
 
         _shutDown = true;
         _wikiCts.Cancel();
+        _npcWikiCts?.Cancel();
+        _wikiRepository.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _renderTimer.Stop();
         _houseTimer.Stop();
         _gameTimer.Stop();
         NativeMethods.UnregisterHotKey(new WindowInteropHelper(this).Handle, LockHotkeyId);
 
-        SaveAll();
         _cts?.Cancel();
+        if (_tailTask is { } tail)
+        {
+            try
+            {
+                // Tail callbacks never wait on the dispatcher; finish the current batch before the final save.
+                tail.GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text = $"Log reader stopped during shutdown: {ex.Message}";
+            }
+        }
+        SaveAll();
         foreach (var w in _overlays.Values)
         {
             w.Close();
@@ -1329,7 +1421,7 @@ public partial class MainWindow : Window
             .OrderByDescending(c => c.Info?.Tracked == true)
             .ThenBy(c => c.Mob, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        string signature = zone + "|" + all + "|" + string.Join('|', list.Select(c => $"{c.Mob}:{c.Kills}:{c.LastKilled:O}:{c.Info?.Samples}:{c.Info?.LearnedSeconds}:{c.Info?.OverrideSeconds}:{c.Info?.Tracked}"));
+        string signature = zone + "|" + all + "|" + string.Join('|', list.Select(c => $"{c.Mob}:{c.Kills}:{c.LastKilled:O}:{c.Info?.Samples}:{c.Info?.LearnedSeconds}:{c.Info?.WikiSeconds}:{c.Info?.OverrideSeconds}:{c.Info?.Tracked}"));
         if (!force && signature == _spawnsSignature)
         {
             return;
@@ -1352,6 +1444,7 @@ public partial class MainWindow : Window
                 Kills = c.Kills,
                 LastKilled = c.LastKilled is DateTime k ? k.ToString("HH:mm:ss", CultureInfo.CurrentCulture) : "",
                 Learned = c.Info?.LearnedSeconds is double s ? OverlayPresenters.Clock(s) : "-",
+                Wiki = c.Info?.WikiSeconds is double wiki ? OverlayPresenters.Clock(wiki) : "-",
                 Samples = c.Info?.Samples ?? 0,
                 Override = c.Info?.OverrideSeconds is double o ? OverlayPresenters.Clock(o) : "",
                 Tracked = c.Info?.Tracked == true,
@@ -1369,6 +1462,7 @@ public partial class MainWindow : Window
         if (sender is FrameworkElement { DataContext: SpawnRow row } && sender is CheckBox box)
         {
             _engine.SetSpawnTracked(row.Zone, row.Mob, box.IsChecked == true);
+            CheckSpawnWiki();
             SaveSpawns();
         }
     }
@@ -1392,7 +1486,7 @@ public partial class MainWindow : Window
         else
         {
             e.Cancel = true;
-            MessageBox.Show(_dock, "Enter a respawn time as seconds (960) or minutes:seconds (16:00), or leave it empty to use the learned value.", "Override");
+            MessageBox.Show(_dock, "Enter a respawn time as seconds (960) or minutes:seconds (16:00), or leave it empty to use the learned time or wiki fallback.", "Override");
             return;
         }
 

@@ -166,6 +166,20 @@ public sealed class AppSettings
     public bool ResetOnLogin { get; set; } = true;
     public bool CheckForUpdatesOnStartup { get; set; } = true;
     public bool AutomaticallyDownloadUpdates { get; set; } = true;
+    public double MobInfoTimeoutSeconds { get; set; } = 5;
+    public string NpcSearch { get; set; } = "";
+    public int NpcView
+    {
+        get; set;
+    }
+    public string? NpcSelectedMob
+    {
+        get; set;
+    }
+    public string? NpcSelectedZone
+    {
+        get; set;
+    }
     public string SkyClass { get; set; } = "All classes";
     public bool QuestRecentFirst { get; set; } = true;
     public string QuestFilter { get; set; } = "";

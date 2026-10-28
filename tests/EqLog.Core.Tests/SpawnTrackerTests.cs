@@ -4,6 +4,81 @@ namespace EqLog.Core.Tests;
 
 public class SpawnTrackerTests
 {
+    [Theory]
+    [InlineData("6 minutes 40 seconds", 400)]
+    [InlineData("6m 40s", 400)]
+    [InlineData("16:06", 966)]
+    [InlineData("1:02:03", 3723)]
+    [InlineData("2 hours", 7200)]
+    [InlineData("6.5 mins", 390)]
+    [InlineData("7 days", 604800)]
+    public void ParsesExplicitWikiRespawnDurations(string text, double expected)
+    {
+        Assert.True(SpawnStore.TryParseWikiRespawn(text, out double seconds));
+        Assert.Equal(expected, seconds);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("Unknown")]
+    [InlineData("6-12 hours")]
+    [InlineData("6 minutes or 12 minutes")]
+    [InlineData("16 minutes (placeholder)")]
+    [InlineData("0 seconds")]
+    [InlineData("NaN")]
+    [InlineData("960")]
+    public void DoesNotGuessAmbiguousWikiRespawnDurations(string? text)
+    {
+        Assert.False(SpawnStore.TryParseWikiRespawn(text, out _));
+    }
+
+    [Fact]
+    public void WikiFallbackTimesExistingDeathButNeverReplacesLearningOrOverride()
+    {
+        var store = new SpawnStore();
+        store.SetTracked("Kedge Keep", "Shellara Ebbhunter", true);
+        var engine = new LogEngine(spawns: store);
+        engine.ProcessLines([L(0, "You have entered Kedge Keep."), L(10, "You have slain Shellara Ebbhunter!")]);
+        engine.SetSpawnWikiRespawn("Shellara Ebbhunter", 400);
+        var timer = Assert.Single(engine.Snapshot(T0.AddSeconds(100)).Spawns.Timers);
+        Assert.True(timer.UsesWiki);
+        Assert.Equal(310, timer.RemainingSeconds);
+        Assert.Equal(0, timer.Samples);
+        Assert.Null(store.Get("Kedge Keep", "Shellara Ebbhunter")!.LearnedSeconds);
+        store.AddSample("Kedge Keep", "Shellara Ebbhunter", T0, 500);
+        timer = Assert.Single(engine.Snapshot(T0.AddSeconds(100)).Spawns.Timers);
+        Assert.False(timer.UsesWiki);
+        Assert.Equal(410, timer.RemainingSeconds);
+        engine.SetSpawnOverride("Kedge Keep", "Shellara Ebbhunter", 600);
+        Assert.Equal(600, Assert.Single(engine.Snapshot(T0).Spawns.Timers).RespawnSeconds);
+        engine.SetSpawnOverride("Kedge Keep", "Shellara Ebbhunter", null);
+        Assert.Equal(500, Assert.Single(engine.Snapshot(T0).Spawns.Timers).RespawnSeconds);
+    }
+
+    [Fact]
+    public void WikiFallbackCanBeRemovedAndRehydratedWithoutBecomingLearnedData()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"spawn-wiki-{Guid.NewGuid():N}.json");
+        try
+        {
+            var store = new SpawnStore();
+            store.SetTracked("Kedge Keep", "Shellara Ebbhunter", true);
+            store.SetWikiRespawn("Shellara Ebbhunter", 400);
+            store.Save(path);
+            var reloaded = SpawnStore.Load(path);
+            Assert.Null(reloaded.Get("Kedge Keep", "Shellara Ebbhunter")!.RespawnSeconds);
+            reloaded.SetWikiRespawn("Shellara Ebbhunter", 400);
+            Assert.Equal(400, reloaded.Get("Kedge Keep", "Shellara Ebbhunter")!.RespawnSeconds);
+            reloaded.SetWikiRespawn("Shellara Ebbhunter", null);
+            Assert.Null(reloaded.Get("Kedge Keep", "Shellara Ebbhunter")!.RespawnSeconds);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     private static readonly DateTime T0 = new(2026, 10, 21, 18, 0, 0);
 
     private static string L(int seconds, string msg)

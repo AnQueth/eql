@@ -85,8 +85,17 @@ public sealed class OverlayWindow : Window
             return;
         }
 
-        int always = NativeMethods.WS_EX_TOOLWINDOW | NativeMethods.WS_EX_NOACTIVATE | NativeMethods.WS_EX_LAYERED;
-        NativeMethods.SetExStyle(hwnd, _locked ? always | NativeMethods.WS_EX_TRANSPARENT : always, _locked ? 0 : NativeMethods.WS_EX_TRANSPARENT);
+        int always = NativeMethods.WS_EX_TOOLWINDOW | NativeMethods.WS_EX_LAYERED;
+        if (_locked || Panel.Key != "npcs")
+        {
+            always |= NativeMethods.WS_EX_NOACTIVATE;
+        }
+        int remove = _locked ? 0 : NativeMethods.WS_EX_TRANSPARENT;
+        if (!_locked && Panel.Key == "npcs")
+        {
+            remove |= NativeMethods.WS_EX_NOACTIVATE;
+        }
+        NativeMethods.SetExStyle(hwnd, _locked ? always | NativeMethods.WS_EX_TRANSPARENT : always, remove);
     }
 
     /// <summary>Games that grab topmost (borderless fullscreen) can cover us; push ourselves back on top.</summary>

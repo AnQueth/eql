@@ -61,6 +61,8 @@ public static class OverlayPresenters
         new("motes", "Motes", 300, 320, false, Motes),
         new("quests", "Quest opportunities", 420, 320, false, (_, _, _) => new("Quest opportunities", null, [])),
         new("sky", "Sky quest tracker", 380, 420, false, (_, _, _) => new("Sky quest tracker", null, [])),
+        new("mobinfo", "Mob info", 540, 620, false, (_, _, _) => new("Mob info", null, [])),
+        new("npcs", "NPC compendium", 620, 720, false, (_, _, _) => new("NPC compendium", null, [])),
     ];
 
     private static OverlayContent Motes(EngineSnapshot s, LogEngine _, OverlayView __)
@@ -78,7 +80,8 @@ public static class OverlayPresenters
         foreach (var tier in tiers)
         {
             int n = session.GetValueOrDefault(tier);
-            rows.Add(new(tier, $"{n}  ({allTime.GetValueOrDefault(tier)})", Foreground: n > 0 ? Good : Dim));
+            rows.Add(new(tier, $"{n}  ({allTime.GetValueOrDefault(tier)})", Foreground: n > 0 ? Good : Dim,
+                LootItem: $"Mote of {tier} Potential"));
         }
 
         rows.Add(new("Total", $"{m.SessionTotal}  ({m.AllTimeTotal})", Bold: true));
@@ -90,7 +93,8 @@ public static class OverlayPresenters
             {
                 string who = d.Looter == Names.You ? "" : $"[{d.Looter}] ";
                 string qty = d.Quantity > 1 ? $" x{d.Quantity}" : "";
-                rows.Add(new($"{who}{d.Tier}{qty}  {d.Source}", d.Time.ToString("HH:mm"), Foreground: d.Looter == Names.You ? null : Dim));
+                rows.Add(new($"{who}{d.Tier}{qty}  {d.Source}", d.Time.ToString("HH:mm"),
+                    Foreground: d.Looter == Names.You ? null : Dim, LootItem: $"Mote of {d.Tier} Potential"));
             }
         }
 
@@ -118,13 +122,14 @@ public static class OverlayPresenters
             .ThenBy(t => t.Mob, StringComparer.OrdinalIgnoreCase);
         foreach (var t in ordered)
         {
+            string source = t.UsesWiki ? " (wiki)" : "";
             switch (t.State)
             {
                 case SpawnState.Due:
-                    rows.Add(new(t.Mob, $"DUE +{Clock(-(t.RemainingSeconds ?? 0))}", 1, WarnBar, Foreground: Warn, Bold: true));
+                    rows.Add(new(t.Mob, $"DUE +{Clock(-(t.RemainingSeconds ?? 0))}{source}", 1, WarnBar, Foreground: Warn, Bold: true));
                     break;
                 case SpawnState.Dead when t.RemainingSeconds is double rem && t.RespawnSeconds is double r:
-                    rows.Add(new(t.Mob, Clock(rem), 1 - (rem / r), rem <= 60 ? WarnBar : TimerBar));
+                    rows.Add(new(t.Mob, Clock(rem) + source, 1 - (rem / r), rem <= 60 ? WarnBar : TimerBar));
                     break;
                 case SpawnState.Dead:
                     double ago = t.KilledAt is DateTime k ? (s.Now - k).TotalSeconds : 0;
@@ -134,7 +139,7 @@ public static class OverlayPresenters
                     rows.Add(new(t.Mob, $"up  seen {t.SeenAt:HH:mm}", Foreground: Good));
                     break;
                 default:
-                    rows.Add(new(t.Mob, t.RespawnSeconds is double rs ? $"~{Clock(rs)}" : "-", Foreground: Dim));
+                    rows.Add(new(t.Mob, t.RespawnSeconds is double rs ? $"~{Clock(rs)}{source}" : "-", Foreground: Dim));
                     break;
             }
         }
@@ -348,6 +353,9 @@ public static class OverlayPresenters
         var x = s.Session;
         var now = s.Now;
         var rows = new List<OverlayRow>();
+        rows.Add(s.CurrentLoadout is { } loadout
+            ? new("Classes (/who)", $"{loadout.Classes}  (level {loadout.Level})", Bold: true)
+            : new("Classes", "Unknown - use /who", Foreground: Dim));
         if (x.ZoneEnteredAt is DateTime z)
         {
             rows.Add(new("In zone", Clock((now - z).TotalSeconds)));

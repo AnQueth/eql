@@ -1,20 +1,17 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Windows.Interop;
 
 namespace EqLog.Overlay;
 
 /// <summary>
-/// Works out whether the EverQuest window (eqgame.exe) is visible on screen: running, not minimized and
-/// not mostly covered by another application's window. Windows belonging to this app never count as covering it.
+/// Floating overlays require an active EverQuest window, or focus in one of our floating overlays.
 /// </summary>
 internal static partial class GameWindowWatcher
 {
     private const string ProcessName = "eqgame";
-    private const uint GW_HWNDPREV = 3;
     private const int DWMWA_CLOAKED = 14;
-    private const int WS_EX_TOPMOST = 0x00000008;
 
-    private static readonly uint OwnPid = (uint)Environment.ProcessId;
     private static HashSet<uint> _gamePids = [];
     private static DateTime _pidsCheckedAt = DateTime.MinValue;
 
@@ -26,9 +23,18 @@ internal static partial class GameWindowWatcher
             return false;
         }
 
+        IntPtr foreground = GetForegroundWindow();
+        GetWindowThreadProcessId(foreground, out uint foregroundPid);
+        bool overlayFocused = HwndSource.FromHwnd(foreground)?.RootVisual is OverlayWindow { IsVisible: true };
+        if (!_gamePids.Contains(foregroundPid) && !overlayFocused)
+        {
+            return false;
+        }
+
         foreach (var hwnd in GameWindows())
         {
-            if (!IsIconic(hwnd) && GetWindowRect(hwnd, out var rect) && rect.Area > 0 && !IsCovered(hwnd, rect))
+            if (!IsIconic(hwnd) && !IsCloaked(hwnd) && GetWindowRect(hwnd, out var rect) && rect.Area > 0 &&
+                (overlayFocused || GetWindowThreadProcessId(hwnd, out uint pid) != 0 && pid == foregroundPid))
             {
                 return true;
             }
@@ -71,44 +77,6 @@ internal static partial class GameWindowWatcher
         return found;
     }
 
-    /// <summary>True when windows above the game in z-order cover more than half of it.</summary>
-    private static bool IsCovered(IntPtr game, Rect gameRect)
-    {
-        long covered = 0;
-        for (var h = GetWindow(game, GW_HWNDPREV); h != IntPtr.Zero; h = GetWindow(h, GW_HWNDPREV))
-        {
-            if (!IsWindowVisible(h) || IsIconic(h) || IsCloaked(h))
-            {
-                continue;
-            }
-
-            GetWindowThreadProcessId(h, out uint pid);
-            if (pid == OwnPid || _gamePids.Contains(pid))
-            {
-                continue;
-            }
-
-            // Skip always-on-top helpers (other overlays, tooltips, notifications) and click-through windows.
-            long ex = NativeMethods.GetWindowLongPtr(h, NativeMethods.GWL_EXSTYLE).ToInt64();
-            if ((ex & (WS_EX_TOPMOST | NativeMethods.WS_EX_TRANSPARENT | NativeMethods.WS_EX_TOOLWINDOW | NativeMethods.WS_EX_NOACTIVATE)) != 0)
-            {
-                continue;
-            }
-
-            if (GetWindowRect(h, out var r))
-            {
-                // Overlapping windows can double count, which only errs towards "covered" when it really is.
-                covered += gameRect.Intersect(r);
-                if (covered * 2 > gameRect.Area)
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
     private static bool IsCloaked(IntPtr hwnd)
     {
         return DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, out int cloaked, sizeof(int)) == 0 && cloaked != 0;
@@ -127,10 +95,6 @@ internal static partial class GameWindowWatcher
             }
         }
 
-        public readonly long Intersect(Rect o)
-        {
-            return Math.Max(0L, Math.Min(Right, o.Right) - Math.Max(Left, o.Left)) * Math.Max(0L, Math.Min(Bottom, o.Bottom) - Math.Max(Top, o.Top));
-        }
     }
 
     private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
@@ -155,7 +119,7 @@ internal static partial class GameWindowWatcher
     private static partial uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
 
     [LibraryImport("user32.dll")]
-    private static partial IntPtr GetWindow(IntPtr hwnd, uint cmd);
+    private static partial IntPtr GetForegroundWindow();
 
     [LibraryImport("dwmapi.dll")]
     private static partial int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);

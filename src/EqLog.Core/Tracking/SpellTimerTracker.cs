@@ -153,7 +153,13 @@ public sealed class SpellTimerTracker(SpellDurationStore store)
 
     public void OnKill(KillEvent e)
     {
+        // Resolve guessed casts before removal so a later snapshot cannot recreate the dead target's timer.
+        FinalizePending(e.Time, force: true);
         _timers.RemoveAll(t => string.Equals(t.Target, e.Victim, StringComparison.OrdinalIgnoreCase));
+        if (string.Equals(_lastEngaged, e.Victim, StringComparison.OrdinalIgnoreCase))
+        {
+            _lastEngaged = null;
+        }
     }
 
     public void Clear()

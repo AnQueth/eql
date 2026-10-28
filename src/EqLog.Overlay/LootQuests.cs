@@ -33,7 +33,7 @@ public partial class MainWindow
     }
 
     private readonly System.Collections.Concurrent.ConcurrentQueue<Action> _questLoot = new();
-    private readonly SemaphoreSlim _questLookupGate = new(1, 1);
+    private readonly SemaphoreSlim _questSaveGate = new(1, 1);
     private readonly HashSet<string> _questAttempted = new(StringComparer.OrdinalIgnoreCase);
     private bool _questWorking;
     private bool _questDirty;
@@ -99,18 +99,17 @@ public partial class MainWindow
         }
     }
 
-    private async Task<QuestLookupResult> GetQuestResultAsync(string item)
+    private async Task<QuestLookupResult> GetQuestResultAsync(string item, WikiPriority priority = WikiPriority.Interactive)
     {
         item = QuestLookup.ItemTitle(item);
-        await _questLookupGate.WaitAsync(_wikiCts.Token);
+        var result = await _wikiRepository.GetQuestAsync(item, priority, false, _wikiCts.Token);
+        await _questSaveGate.WaitAsync(_wikiCts.Token);
         try
         {
-            if (_questCache.TryGetValue(item, out var cached) && DateTime.UtcNow - cached.CheckedUtc < TimeSpan.FromDays(7))
+            if (_questCache.GetValueOrDefault(item) == result)
             {
-                return cached;
+                return result;
             }
-
-            var result = await Task.Run(() => new QuestLookup(_wikiHttp).FindAsync(item, _wikiCts.Token), _wikiCts.Token);
             var snapshot = _questCache.Values.Where(r => !QuestLookup.ItemTitle(r.Item).Equals(item,
                 StringComparison.OrdinalIgnoreCase)).Append(result).ToArray();
             await Task.Run(() => AtomicFile.WriteAllText(QuestCachePath, JsonSerializer.Serialize(snapshot)), _wikiCts.Token);
@@ -119,7 +118,7 @@ public partial class MainWindow
         }
         finally
         {
-            _questLookupGate.Release();
+            _questSaveGate.Release();
         }
     }
 
@@ -130,11 +129,10 @@ public partial class MainWindow
         _questProgress = $"Looking up {item}...";
         try
         {
-            await GetQuestResultAsync(item);
+            await GetQuestResultAsync(item, WikiPriority.Background);
             _questFailed.Remove(QuestLookup.ItemTitle(item));
             _questActiveItem = null;
-            _questProgress = $"Checked {item}. Requirements not verified.";
-            await Task.Delay(1000, _wikiCts.Token);
+            _questProgress = $"Wiki references checked: {item}.";
         }
         catch (OperationCanceledException) when (_wikiCts.IsCancellationRequested) { }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or IOException or
@@ -221,7 +219,15 @@ public partial class MainWindow
         };
         _questCurrentText.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
         toolbar.Children.Add(_questCurrentText);
-        var caveat = new TextBlock { Text = "Quest references, not verified turn-ins", FontSize = 11 };
+        var caveat = new TextBlock
+        {
+            Text = "Matches are wiki mentions, not a ready-to-turn-in checklist.",
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 11,
+            ToolTip = "An item may be an ingredient, a reward, or a walkthrough mention. " +
+                "This list does not analyze required quantities, other ingredients, faction, or prerequisites. " +
+                "Use the dedicated Sky tracker for parsed Plane of Sky ingredient counts.",
+        };
         caveat.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
         toolbar.Children.Add(caveat);
         panel.SetToolbar(toolbar);
@@ -468,6 +474,15 @@ public partial class MainWindow
         else
         {
             QuestLookupStatus.Text = "Select an inventory row first.";
+        }
+    }
+
+    private void ItemWikiLink_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Documents.Hyperlink { Tag: string item })
+        {
+            OpenWiki(QuestLookup.PageUrl(QuestLookup.ItemTitle(item)));
+            e.Handled = true;
         }
     }
 
