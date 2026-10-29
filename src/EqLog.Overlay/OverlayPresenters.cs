@@ -15,7 +15,8 @@ public sealed record ActiveAlert(string Text, Brush Color, DateTime Expires, Ale
 
 /// <summary>Per-render options the presenters need from the app.</summary>
 public sealed record OverlayView(ISet<ChatChannel> ChatChannels, IReadOnlyList<ActiveAlert> Alerts, int LootGrouping = 0,
-    QuestInventory? Inventory = null, WikiActivitySnapshot? WikiActivity = null, QuestWikiActivity? QuestWiki = null);
+    QuestInventory? Inventory = null, WikiActivitySnapshot? WikiActivity = null, QuestWikiActivity? QuestWiki = null,
+    IReadOnlyList<ChatEvent>? RecentChat = null);
 
 /// <summary>Quest enrichment work waiting outside the shared HTTP scheduler.</summary>
 public sealed record QuestWikiActivity(string Summary, string Status, string? ActiveItem, IReadOnlyList<string> Queued, bool HasError);
@@ -582,7 +583,7 @@ public static class OverlayPresenters
     private static OverlayContent Chat(EngineSnapshot s, LogEngine engine, OverlayView view)
     {
         var rows = new List<OverlayRow>();
-        foreach (var c in engine.RecentChat(60, view.ChatChannels))
+        foreach (var c in view.RecentChat ?? engine.RecentChat(60, view.ChatChannels))
         {
             string where = c.Channel switch
             {

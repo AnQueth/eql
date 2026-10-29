@@ -40,6 +40,7 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
+            UsageTelemetry.TrackError(ex, UsageErrorSource.Updates);
             // Update failures must not prevent the log reader or overlay windows from starting.
             UpdateStatusText.Text = $"Could not initialize updates: {ex.Message}";
             CheckUpdateButton.IsEnabled = false;
@@ -51,6 +52,16 @@ public partial class MainWindow
         _settings.CheckForUpdatesOnStartup = CheckUpdatesBox.IsChecked == true;
         _settings.AutomaticallyDownloadUpdates = DownloadUpdatesBox.IsChecked == true;
         SaveSettingsInBackground(error => UpdateStatusText.Text = $"Could not save update preferences: {error}");
+    }
+
+    private void TelemetryPreferences_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.ShareUsageTelemetry = UsageTelemetryBox.IsChecked == true;
+        UsageTelemetry.SetEnabled(_settings.ShareUsageTelemetry);
+        TelemetryStatusText.Text = _settings.ShareUsageTelemetry
+            ? "Usage and error telemetry is enabled."
+            : "Usage and error telemetry is disabled.";
+        SaveSettingsInBackground(error => TelemetryStatusText.Text = $"Could not save telemetry preference: {error}");
     }
 
     private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
@@ -93,6 +104,7 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
+            UsageTelemetry.TrackError(ex, UsageErrorSource.Updates);
             UpdateStatusText.Text = $"Update check failed: {ex.Message}";
         }
         finally
@@ -115,6 +127,7 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
+            UsageTelemetry.TrackError(ex, UsageErrorSource.Updates);
             UpdateStatusText.Text = $"Update download failed: {ex.Message}";
         }
         finally
@@ -239,6 +252,7 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
+            UsageTelemetry.TrackError(ex, UsageErrorSource.Updates);
             UpdateStatusText.Text = $"Update was not applied: {ex.Message} If log reading stopped, select the log again using Browse. " +
                 "If wiki lookups stopped, restart the app to resume them.";
             SetUpdateBusy(false);

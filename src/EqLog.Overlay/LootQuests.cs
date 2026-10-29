@@ -197,6 +197,7 @@ public partial class MainWindow
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or IOException or
             UnauthorizedAccessException or JsonException or InvalidOperationException)
         {
+            UsageTelemetry.TrackError(ex, UsageErrorSource.Wiki);
             _questFailed.Add(QuestLookup.ItemTitle(item));
             _questProgress = $"Lookup failed for {item}: {ex.Message}. Use Retry lookups.";
             QuestLookupStatus.Text = _questProgress;
@@ -406,24 +407,36 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Snapshots the inventory now and writes it asynchronously without returning to the UI thread.
+    /// Applies queued loot in short slices, then snapshots the inventory for an asynchronous write.
     /// The caller marks the inventory dirty again if the write fails.
     /// </summary>
-    private Task StartQuestInventorySave()
+    private async Task StartQuestInventorySave()
     {
-        while (_questLoot.TryDequeue(out var note))
-        {
-            note();
-            _questDirty = true;
-        }
+        await DrainQuestLootAsync();
         if (!_questDirty)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         var snapshot = _questInventory.Clone();
         _questDirty = false;
-        return WriteQuestInventoryAsync(snapshot, Interlocked.Increment(ref _questInventorySaveSequence));
+        await WriteQuestInventoryAsync(snapshot, Interlocked.Increment(ref _questInventorySaveSequence)).ConfigureAwait(false);
+    }
+
+    private async Task DrainQuestLootAsync()
+    {
+        var budget = Stopwatch.StartNew();
+        while (_questLoot.TryDequeue(out var note))
+        {
+            note();
+            _questDirty = true;
+            // Session-ending saves run on a worker while the dispatcher is parked.
+            if (budget.ElapsedMilliseconds >= 5 && Dispatcher.CheckAccess())
+            {
+                await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
+                budget.Restart();
+            }
+        }
     }
 
     private async Task WriteQuestInventoryAsync(QuestInventory snapshot, long sequence)
@@ -534,6 +547,7 @@ public partial class MainWindow
 
     private async Task LookupLootItemAsync(string item)
     {
+        UsageTelemetry.TrackFeature(UsageFeature.LootQuestLookup);
         ShowInventoryOverlay(InventoryItemsTab);
         var selected = _questInventory.Items.FirstOrDefault(i =>
             i.Character.Equals(_characterName, StringComparison.OrdinalIgnoreCase) && ItemNames.Comparer.Equals(i.Item, item));
@@ -596,6 +610,7 @@ public partial class MainWindow
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or IOException or
             UnauthorizedAccessException or JsonException or InvalidOperationException)
         {
+            UsageTelemetry.TrackError(ex, UsageErrorSource.Wiki);
             if (version == _questSelectionVersion)
             {
                 QuestLookupStatus.Text = $"Wiki lookup failed: {ex.Message}";

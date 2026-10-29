@@ -128,11 +128,12 @@ public sealed class LogEngine
 
     public void ProcessLines(IReadOnlyList<string> rawLines)
     {
-        lock (_gate)
+        foreach (string raw in rawLines)
         {
-            foreach (string raw in rawLines)
+            if (LogLine.TryParse(raw, out var line))
             {
-                if (LogLine.TryParse(raw, out var line))
+                // Let UI snapshots and controls run between lines instead of waiting for a full history batch.
+                lock (_gate)
                 {
                     ProcessCore(line);
                 }

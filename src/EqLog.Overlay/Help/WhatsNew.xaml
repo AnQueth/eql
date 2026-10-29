@@ -1,7 +1,62 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.13" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.14" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.14
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Smoother log loading and inventory updates, plus a usage and error telemetry preference.
+        This release history ships with your installed version and works offline.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Keep using the app while history loads
+        </Paragraph>
+        <Paragraph>
+            Choose a log using General &gt; Log file &gt; Browse... or Choose folder....
+            Loading history continues to show progress and partial panel results, while tracker
+            snapshots run in the background and panel updates give input time to run.
+            Log discovery and floating-overlay visibility checks remain active.
+        </Paragraph>
+        <Paragraph>
+            Routine inventory checks, tracker maintenance, and periodic saves resume after the
+            reader catches up. Closing the app still saves tracking data. Large logs and busy
+            panels can still take time to finish; history does not fire alert triggers.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Less waiting after loading
+        </Paragraph>
+        <Paragraph>
+            Inventory export reconciliation now uses indexed item lookups instead of repeatedly
+            scanning your saved inventory. Export parsing and tracker save preparation run in
+            the background, and queued loot is applied in short batches so it does not all block
+            the interface at once.
+        </Paragraph>
+        <Paragraph>
+            Run /outputfile inventory in game to refresh owned counts in Inventory &amp; loot quests,
+            Ready to merge, and the Mote upgrade planner. Item upgrade variants are still combined
+            for ownership counts, with storage locations and loot newer than the export preserved.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Choose whether to share usage and error events
+        </Paragraph>
+        <Paragraph>
+            General &gt; Application updates now includes Share usage and error telemetry.
+            It is enabled by default and sends app starts, fixed feature labels, and error types
+            and sources to Azure Application Insights. Untick it to stop collecting new events;
+            your choice is saved for future starts.
+        </Paragraph>
+        <Paragraph>
+            Game and log contents, character and item names, file paths, exception messages,
+            and stack traces are not sent. Azure Monitor may process standard service and
+            network metadata. Errors use custom events rather than detailed crash reports.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.13
     </Paragraph>

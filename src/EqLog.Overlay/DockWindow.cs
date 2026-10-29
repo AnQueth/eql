@@ -258,6 +258,7 @@ public sealed class DockWindow : Window
 
     private void ShowWhatsNew()
     {
+        UsageTelemetry.TrackFeature(UsageFeature.WhatsNewOpened);
         if (_whatsNew is null)
         {
             _whatsNew = new WhatsNewWindow { Owner = this };

@@ -42,16 +42,20 @@ public partial class MainWindow
                 InventoryStatus.Text = $"Inventory export detected; waiting for writing to finish: {path}";
                 return;
             }
-            string text = await File.ReadAllTextAsync(path, _wikiCts.Token);
-            var items = InventoryExport.Parse(text);
+            var items = await Task.Run(async () =>
+            {
+                string text = await File.ReadAllTextAsync(path, _wikiCts.Token).ConfigureAwait(false);
+                return InventoryExport.Parse(text);
+            });
             if (await Task.Run(() => Stamp(path)) != stamp || _currentFile != log)
             {
                 return;
             }
             // Apply queued loot first so the snapshot can reconcile it by export time.
-            while (_questLoot.TryDequeue(out var note))
+            await DrainQuestLootAsync();
+            if (await Task.Run(() => Stamp(path)) != stamp || _currentFile != log || _wikiCts.IsCancellationRequested)
             {
-                note();
+                return;
             }
 
             _questInventory.ApplyExport(character, items, stamp.Written);
@@ -71,6 +75,7 @@ public partial class MainWindow
         catch (OperationCanceledException) when (_wikiCts.IsCancellationRequested) { }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException)
         {
+            UsageTelemetry.TrackError(ex, UsageErrorSource.InventoryImport);
             InventoryStatus.Text = $"Inventory import failed (previous counts kept): {ex.Message}. Retrying automatically.";
         }
         finally

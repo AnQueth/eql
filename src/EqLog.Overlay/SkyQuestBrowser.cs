@@ -92,6 +92,7 @@ public partial class MainWindow
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or
             HttpRequestException or OperationCanceledException or InvalidOperationException or FormatException)
         {
+            UsageTelemetry.TrackError(ex, UsageErrorSource.Wiki);
             _skyStatus = $"Sky quest load failed: {ex.Message}" +
                 (_skyCatalog is null ? " Click Refresh to retry." : " Showing previously loaded data.");
         }
@@ -184,6 +185,7 @@ public partial class MainWindow
 
     private void ToggleSkyWatch(string key)
     {
+        UsageTelemetry.TrackFeature(UsageFeature.SkyQuestWatchChanged);
         int index = _settings.SkyWatched.FindIndex(k => string.Equals(k, key, StringComparison.OrdinalIgnoreCase));
         if (index >= 0)
         {

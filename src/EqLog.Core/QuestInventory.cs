@@ -123,8 +123,10 @@ public sealed class QuestInventory : IJsonOnDeserialized
     public void ApplyExport(string character, IReadOnlyList<InventoryExportItem> rows, DateTime writtenUtc)
     {
         string key = character.ToUpperInvariant();
+        var byName = new Dictionary<string, QuestInventoryItem>(ItemNames.Comparer);
         foreach (var item in Items.Where(i => i.Character.Equals(character, StringComparison.OrdinalIgnoreCase)))
         {
+            byName.TryAdd(item.Item, item);
             item.Owned = 0;
             item.Carried = 0;
             item.Bank = 0;
@@ -136,9 +138,7 @@ public sealed class QuestInventory : IJsonOnDeserialized
         }
         foreach (var group in rows.GroupBy(r => r.Name, ItemNames.Comparer))
         {
-            var item = Items.FirstOrDefault(i => i.Character.Equals(character, StringComparison.OrdinalIgnoreCase) &&
-                ItemNames.Comparer.Equals(i.Item, group.Key));
-            if (item is null)
+            if (!byName.TryGetValue(group.Key, out var item))
             {
                 item = new()
                 {
@@ -146,6 +146,7 @@ public sealed class QuestInventory : IJsonOnDeserialized
                     Item = group.Key
                 };
                 Items.Add(item);
+                byName.Add(group.Key, item);
             }
             var loose = group.Where(r => !r.Collection && !r.Installed).ToArray();
             item.Carried = loose.Where(r => r.Storage == InventoryStorage.Carried).Sum(r => r.Count);
@@ -160,8 +161,7 @@ public sealed class QuestInventory : IJsonOnDeserialized
         RecentLoot.RemoveAll(d => d.Character.Equals(character, StringComparison.OrdinalIgnoreCase) && d.TimeUtc <= writtenUtc);
         foreach (var delta in RecentLoot.Where(d => d.Character.Equals(character, StringComparison.OrdinalIgnoreCase)))
         {
-            Items.First(i => i.Character.Equals(character, StringComparison.OrdinalIgnoreCase) &&
-                ItemNames.Comparer.Equals(i.Item, delta.Item)).Owned += delta.Quantity;
+            byName[delta.Item].Owned += delta.Quantity;
         }
 
         ExportTimes[key] = writtenUtc;

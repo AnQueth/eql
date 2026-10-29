@@ -21,6 +21,9 @@
                 <TextBlock x:Name="AppVersionText" FontWeight="Bold" />
                 <CheckBox x:Name="CheckUpdatesBox" Content="Check for updates at startup" Margin="0,6,0,0" Click="UpdatePreferences_Click" />
                 <CheckBox x:Name="DownloadUpdatesBox" Content="Automatically download new stable releases" Margin="0,6,0,0" Click="UpdatePreferences_Click" />
+                <CheckBox x:Name="UsageTelemetryBox" Content="Share usage and error telemetry" Margin="0,6,0,0" Click="TelemetryPreferences_Click"
+                          ToolTip="Sends app starts, feature usage, and error types to Application Insights. Game/log content, names, file paths, exception messages, and stack traces are not sent." />
+                <local:FixedLineTextBlock x:Name="TelemetryStatusText" Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" />
                 <WrapPanel Margin="0,8,0,0">
                     <Button x:Name="CheckUpdateButton" Content="Check for updates" Click="CheckUpdate_Click" />
                     <Button x:Name="DownloadUpdateButton" Content="Download update" IsEnabled="False" Click="DownloadUpdate_Click" />

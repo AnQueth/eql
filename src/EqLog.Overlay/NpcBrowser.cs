@@ -96,6 +96,7 @@ public partial class MainWindow
                 _npcWikiStatus = "Enter an NPC name before looking it up.";
                 return;
             }
+            UsageTelemetry.TrackFeature(UsageFeature.NpcLookup);
             var matches = _npcCompendium.Search(name);
             var exact = matches.FirstOrDefault(e => string.Equals(e.Mob, name, StringComparison.OrdinalIgnoreCase));
             SelectNpc(exact?.Mob ?? name, exact?.Zone ?? "(unknown zone)");
@@ -103,7 +104,11 @@ public partial class MainWindow
         };
         var buttons = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
         var refresh = new Button { Content = "Refresh wiki", FontSize = 11, Padding = new Thickness(10, 5, 10, 5) };
-        refresh.Click += (_, _) => StartNpcWikiLookup(true);
+        refresh.Click += (_, _) =>
+        {
+            UsageTelemetry.TrackFeature(UsageFeature.NpcWikiRefresh);
+            StartNpcWikiLookup(true);
+        };
         var wiki = new Button { Content = "Open wiki", FontSize = 11, Padding = new Thickness(10, 5, 10, 5) };
         wiki.Click += (_, _) =>
         {

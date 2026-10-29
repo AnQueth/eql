@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <PackageReference Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.9.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.20.1" />
     <PackageReference Include="Velopack" Version="1.2.161" />
     <ProjectReference Include="..\EqLog.Core\EqLog.Core.csproj" />
     <Resource Include="AppIcon.ico" />
@@ -16,7 +18,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>EqLogOverlay</AssemblyName>
     <ApplicationIcon>AppIcon.ico</ApplicationIcon>
-    <Version>1.0.13</Version>
+    <Version>1.0.14</Version>
     <StartupObject>EqLog.Overlay.Program</StartupObject>
   </PropertyGroup>
 

@@ -94,6 +94,17 @@ such as when you change characters. Startup history does not fire alert triggers
 If floating overlays are missing while arranging them, temporarily turn off
 **Only show floating overlays while EverQuest is active**.
 
+## Usage and error telemetry
+
+EqLog Overlay sends app-start, feature-use, and error events to Azure Application Insights.
+Events include only fixed feature labels and, for errors, the exception type and source. The app
+does not send game or log contents, character or item names, file paths, exception messages, or
+stack traces. Azure Monitor may still process standard service/network metadata. Turn off
+**Share usage and error telemetry** in **General > Application updates** to prevent new events
+from being collected.
+Telemetry uses the configured Application Insights connection string; the
+`APPLICATIONINSIGHTS_CONNECTION_STRING` environment variable overrides the built-in default.
+
 ### Legends class loadouts
 
 Use **/who** so your own entry appears in the log, for example

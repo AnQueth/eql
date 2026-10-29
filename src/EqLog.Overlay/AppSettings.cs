@@ -179,6 +179,7 @@ public sealed class AppSettings
     public bool ResetOnLogin { get; set; } = true;
     public bool CheckForUpdatesOnStartup { get; set; } = true;
     public bool AutomaticallyDownloadUpdates { get; set; } = true;
+    public bool ShareUsageTelemetry { get; set; } = true;
     public double MobInfoTimeoutSeconds { get; set; } = 5;
     public string NpcSearch { get; set; } = "";
     public int NpcView

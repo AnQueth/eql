@@ -152,6 +152,7 @@ public partial class MainWindow : Window
     private TailProgress _progress;
     private string _durationsSignature = "";
     private int _houseTicks;
+    private bool _rendering;
 
     public MainWindow(StartupState state)
     {
@@ -177,6 +178,7 @@ public partial class MainWindow : Window
         FollowNewestBox.IsChecked = _settings.FollowNewest;
         LockBox.IsChecked = _settings.Locked;
         GameVisibleBox.IsChecked = _settings.OnlyWhenGameVisible;
+        UsageTelemetryBox.IsChecked = _settings.ShareUsageTelemetry;
         _gameVisible = GameWindowWatcher.IsGameVisible();
         ResetOnLoginBox.IsChecked = _settings.ResetOnLogin;
 
@@ -185,7 +187,7 @@ public partial class MainWindow : Window
         CreateChatToggles();
 
         Application.Current.SessionEnding += (_, _) => SaveAllBlocking();
-        _renderTimer.Tick += (_, _) => Render();
+        _renderTimer.Tick += async (_, _) => await RenderAsync();
         _houseTimer.Tick += (_, _) => Housekeeping();
         _gameTimer.Tick += (_, _) => CheckGameVisible();
 
@@ -273,7 +275,11 @@ public partial class MainWindow : Window
             panel.LootLookupRequested += async item => await LookupLootItemAsync(item);
             panel.ItemWikiRequested += item => OpenWiki(QuestLookup.PageUrl(QuestLookup.ItemTitle(item)));
             panel.LinkRequested += url => OpenWiki(url);
-            panel.BreakdownRequested += breakdown => new AbilityBreakdownWindow(breakdown) { Owner = _dock }.Show();
+            panel.BreakdownRequested += breakdown =>
+            {
+                UsageTelemetry.TrackFeature(UsageFeature.AbilityBreakdown);
+                new AbilityBreakdownWindow(breakdown) { Owner = _dock }.Show();
+            };
             panel.DockToggleRequested += pnl =>
                 Dispatcher.BeginInvoke(() => SetDocked(pnl.Key, !_settings.Overlays[pnl.Key].Docked));
             var w = new OverlayWindow(panel);
@@ -310,6 +316,10 @@ public partial class MainWindow : Window
             OverlayAppearance.Children.Add(CreateOverlayAppearance(w, p));
 
             ApplyMode(def.Key);
+            if (p.Visible)
+            {
+                UsageTelemetry.TrackPanelOpened(def.Key);
+            }
         }
     }
 
@@ -597,6 +607,11 @@ public partial class MainWindow : Window
 
     private void SetOverlayVisible(string key, bool visible)
     {
+        if (visible)
+        {
+            UsageTelemetry.TrackPanelOpened(key);
+        }
+
         _settings.Overlays[key].Visible = visible;
         ApplyMode(key);
         if (visible && _settings.Overlays[key].Docked)
@@ -801,7 +816,25 @@ public partial class MainWindow : Window
         _tailTask = null;
     }
 
-    private void Render()
+    private async Task RenderAsync()
+    {
+        if (_rendering || _shutDown)
+        {
+            return;
+        }
+
+        _rendering = true;
+        try
+        {
+            await RenderFrameAsync();
+        }
+        finally
+        {
+            _rendering = false;
+        }
+    }
+
+    private async Task RenderFrameAsync()
     {
         PumpMobInfo();
         TailProgress p;
@@ -809,11 +842,37 @@ public partial class MainWindow : Window
         {
             p = _progress;
         }
+        HistoryProgress.Value = p.TotalBytes > 0 ? (double)p.BytesRead / p.TotalBytes : 0;
+        HistoryProgress.Visibility = p.CaughtUp ? Visibility.Hidden : Visibility.Visible;
+        if (!p.CaughtUp && _currentFile is not null)
+        {
+            StatusText.Text = $"Loading history {HistoryProgress.Value:P0} - {p.LinesRead:N0} lines";
+        }
+
+        var engine = _engine;
+        var channels = new HashSet<ChatChannel>(_chatChannels);
+        bool includeChat = IsShowing("chat");
+        var frame = await Task.Run(() =>
+        {
+            // Waiting for the parser and building detached tracker snapshots must not park the dispatcher.
+            var wallTime = DateTime.Now;
+            var lastLogTime = engine.LastLogTime;
+            var snapshotTime = lastLogTime is DateTime time && wallTime - time > ReplayThreshold
+                ? time
+                : wallTime;
+            var snapshot = engine.Snapshot(snapshotTime, advanceNpcIdle: p.CaughtUp);
+            IReadOnlyList<ChatEvent> chat = includeChat ? engine.RecentChat(60, channels) : [];
+            return (Snapshot: snapshot, Chat: chat);
+        });
+        if (_shutDown || !ReferenceEquals(engine, _engine))
+        {
+            return;
+        }
+
+        var snap = frame.Snapshot;
         var real = DateTime.Now;
-        var last = _engine.LastLogTime;
+        var last = snap.LastLogTime;
         bool replay = last is DateTime l && real - l > ReplayThreshold;
-        var now = replay ? last!.Value : real;
-        var snap = _engine.Snapshot(now, advanceNpcIdle: p.CaughtUp);
         RefreshNpcChoices();
         string title = $"EverQuest Log Overlay - v{AppVersion}";
         if (!string.IsNullOrWhiteSpace(snap.CharacterName))
@@ -835,12 +894,13 @@ public partial class MainWindow : Window
         }
         var view = new OverlayView(_chatChannels, UpdateAlerts(real), _settings.LootGrouping, _questInventory,
             renderWiki ? _wikiRepository.GetActivity() : null,
-            renderWiki ? GetQuestWikiActivity() : null);
+            renderWiki ? GetQuestWikiActivity() : null, frame.Chat);
         if (LogLinesTab.IsSelected)
         {
             RefreshRawLines();
         }
 
+        var renderBudget = System.Diagnostics.Stopwatch.StartNew();
         foreach (var def in OverlayPresenters.All)
         {
             if (!IsShowing(def.Key))
@@ -868,10 +928,16 @@ public partial class MainWindow : Window
                     : row).ToArray()
                 : content.Rows;
             _overlays[def.Key].Panel.Update(content.Title, content.Subtitle, rows, content.TitleLink);
+            if (!p.CaughtUp && renderBudget.ElapsedMilliseconds >= 8)
+            {
+                await System.Windows.Threading.Dispatcher.Yield(DispatcherPriority.Background);
+                if (_shutDown || !ReferenceEquals(engine, _engine))
+                {
+                    return;
+                }
+                renderBudget.Restart();
+            }
         }
-
-        HistoryProgress.Value = p.TotalBytes > 0 ? (double)p.BytesRead / p.TotalBytes : 0;
-        HistoryProgress.Visibility = p.CaughtUp ? Visibility.Hidden : Visibility.Visible;
 
         if (_tailTask is { IsFaulted: true } t)
         {
@@ -895,9 +961,6 @@ public partial class MainWindow : Window
 
     private void Housekeeping()
     {
-        _ = CheckInventoryAsync();
-        CheckSpawnWiki();
-        CheckMotePlan();
         _houseTicks++;
         foreach (var w in _overlays.Values)
         {
@@ -907,6 +970,23 @@ public partial class MainWindow : Window
             }
         }
 
+        if (_houseTicks % 3 == 0)
+        {
+            CheckForNewerLog();
+        }
+
+        lock (_progressGate)
+        {
+            if (_tailTask is { IsCompleted: false } && !_progress.CaughtUp)
+            {
+                return;
+            }
+        }
+
+        _ = CheckInventoryAsync();
+        CheckSpawnWiki();
+        CheckMotePlan();
+
         if (SpawnsTab.IsSelected)
         {
             RefreshSpawns();
@@ -915,7 +995,6 @@ public partial class MainWindow : Window
         if (_houseTicks % 3 == 0)
         {
             RefreshDurations();
-            CheckForNewerLog();
         }
 
         if (_houseTicks % 5 == 0)
@@ -1138,18 +1217,19 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Starts every save. Each store snapshots its data when started and writes asynchronously; stores order their
-    /// own writes, so overlapping saves never put older data on disk last. <c>Report</c> runs on the UI thread
+    /// Starts every save. Thread-safe tracker stores prepare and write on workers; UI-owned state is captured
+    /// on the caller's thread. Stores order writes so older saves cannot win. <c>Report</c> runs on the UI thread
     /// with the error message, or null on success.
     /// </summary>
     private List<(Task Task, Action<string?>? Report)> StartSaves()
     {
+        var engine = _engine;
         var saves = new List<(Task Task, Action<string?>? Report)>
         {
             (_settings.SaveAsync(), null),
-            (_engine.SaveSpellDurationsAsync(AppSettings.DurationsPath), null),
-            (_engine.SaveSpawnsAsync(AppSettings.SpawnsPath), null),
-            (_engine.SaveMotesAsync(AppSettings.MotesPath), null),
+            (Task.Run(() => engine.SaveSpellDurationsAsync(AppSettings.DurationsPath)), null),
+            (Task.Run(() => engine.SaveSpawnsAsync(AppSettings.SpawnsPath)), null),
+            (Task.Run(() => engine.SaveMotesAsync(AppSettings.MotesPath)), null),
             (StartQuestInventorySave(), error =>
             {
                 if (error is not null)
@@ -1161,7 +1241,7 @@ public partial class MainWindow : Window
         };
         if (_mobSaveEnabled)
         {
-            saves.Add((_mobResistances.SaveAsync(MobResistancePath), error =>
+            saves.Add((Task.Run(() => _mobResistances.SaveAsync(MobResistancePath)), error =>
             {
                 if (error is not null)
                 {
@@ -1171,7 +1251,7 @@ public partial class MainWindow : Window
         }
         if (_npcSaveEnabled)
         {
-            saves.Add((_npcCompendium.SaveAsync(NpcCompendiumFolder), error =>
+            saves.Add((Task.Run(() => _npcCompendium.SaveAsync(NpcCompendiumFolder)), error =>
             {
                 _npcStorageError = error is null ? null : $"NPC compendium save failed: {error}";
                 if (_npcStorageError is not null)

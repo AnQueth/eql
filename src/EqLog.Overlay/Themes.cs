@@ -43,6 +43,7 @@ public partial class MainWindow
                 }
                 catch (FormatException ex)
                 {
+                    UsageTelemetry.TrackError(ex, UsageErrorSource.StartupData);
                     _settings.Theme = null;
                     ThemeStatus.Text = $"Saved theme is invalid: {ex.Message}. Using Halloween.";
                 }
@@ -60,6 +61,7 @@ public partial class MainWindow
         }
         catch (Exception ex) when (ex is InvalidOperationException or FormatException)
         {
+            UsageTelemetry.TrackError(ex, UsageErrorSource.StartupData);
             ThemeStatus.Text = $"Could not load themes: {ex.Message}";
         }
         finally
@@ -90,6 +92,7 @@ public partial class MainWindow
                 overlay.Panel.SetBackgroundOpacity(_settings.Overlays[overlay.Panel.Key].BackgroundOpacity ?? _settings.BackgroundOpacity);
             }
 
+            UsageTelemetry.TrackFeature(UsageFeature.ThemeChanged);
             ThemeStatus.Text = $"{theme.Name} applied and saved for future starts.";
             _themeEditor?.LoadPalette(theme);
             return true;

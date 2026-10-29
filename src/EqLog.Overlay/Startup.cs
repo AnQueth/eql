@@ -67,10 +67,12 @@ public partial class MainWindow
             get; init;
         }
 
-        public static async Task<StartupState> LoadAsync()
+        public static async Task<StartupState> LoadAsync(AppSettings? initialSettings = null)
         {
             // Everything starts on the thread pool, so even the File.Exists probes stay off the UI thread.
-            var settings = Task.Run(() => AppSettings.LoadAsync());
+            var settings = initialSettings is null
+                ? Task.Run(() => AppSettings.LoadAsync())
+                : Task.FromResult(initialSettings);
             var themes = Attempt(LoadThemesAsync);
             var durations = Task.Run(() => SpellDurationStore.LoadAsync(AppSettings.DurationsPath));
             var spawns = Task.Run(() => SpawnStore.LoadAsync(AppSettings.SpawnsPath));
@@ -110,6 +112,7 @@ public partial class MainWindow
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or FormatException)
                 {
+                    UsageTelemetry.TrackError(ex, UsageErrorSource.StartupData);
                     return (default(T), ex);
                 }
             });

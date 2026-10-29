@@ -30,6 +30,20 @@ explicit alert-test previews retain their existing behavior.
 Quest opportunities and Sky overlays use recycling virtualized lists. Other overlays update
 changed rows incrementally. This avoids rebuilding all row visuals on progress-only updates.
 
+Log parsing releases the engine lock between lines, so controls do not wait for an entire
+2,000-line history batch. The render timer allows only one frame in flight: tracker and chat
+snapshots are captured on the thread pool, then applied on the dispatcher only if their engine
+is still current. Progress updates precede snapshot capture. During initial history replay,
+panel updates yield to input and layout between panels after an 8 ms work budget.
+Housekeeping defers inventory reconciliation, tracker maintenance and periodic saves until
+catch-up; log discovery, window visibility, progress and partial panel updates remain active.
+Log-switch, close and session-ending saves still run.
+
+After catch-up, inventory export parsing and tracker save preparation run on the thread pool.
+Inventory reconciliation indexes existing items by normalized name rather than rescanning the
+whole inventory per export row. Saves and export reconciliation drain queued loot in 5 ms
+dispatcher slices, preserving loot order without one unbounded UI-thread catch-up pass.
+
 ## Quest processing and inventory
 
 Quest references come from EQLWiki's public MediaWiki API: quest-category pages that link to
