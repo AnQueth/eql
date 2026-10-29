@@ -6,7 +6,9 @@ small borderless, always-on-top overlay windows over the game.
 Track damage, healing, loot, spell and spawn timers, quest ingredients, chat, and custom alerts.
 Use floating overlays over the game or arrange panels in the main window on another monitor.
 
-## Dashboard preview
+## Screenshots
+
+### Dashboard preview
 
 ![Docked dashboard showing combat stats, loot, motes, NPC encounter history, Sky quests, quest opportunities, and inventory.](docs/images/docked-dashboard.png)
 
@@ -33,6 +35,22 @@ Highlights from the screenshot:
   loot. Historical loot is unconfirmed, not proof that you still own an item.
 - **[Spawn timers](#spawn-timers):** countdowns for mobs you choose to track in the current
   zone. The screenshot shows the empty state before any mobs are selected.
+
+### Floating overlay example
+
+![Unlocked Motes, Spell Timers, and Alerts overlays arranged over EverQuest.](docs/images/floating-overlays.png)
+
+Floating overlays can be positioned and resized over the game while unlocked; their gold borders
+and **Dock** buttons are visible in this example. Lock them to pass clicks through to the game.
+See [Overlays](#overlays) for the available panels and controls.
+
+### Spell countdowns
+
+![Spell Timers overlay showing three active effects on A thunder spirit and their remaining times.](docs/images/spell-timer-countdowns.png)
+
+Each active timer shows the spell, its target, and the time remaining. Here, three spells on
+**A thunder spirit** have **0:46**, **0:54**, and **1:21** remaining. These are estimated countdowns;
+see [Spell durations](#spell-durations) for how durations are learned and adjusted.
 
 ## Installation
 
