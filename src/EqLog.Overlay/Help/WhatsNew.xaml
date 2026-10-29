@@ -1,7 +1,45 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.14" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.15" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.15
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        A calmer first launch with neutral colors that follow your Windows app appearance.
+        This release history ships with your installed version and works offline.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Follow Windows light or dark mode
+        </Paragraph>
+        <Paragraph>
+            New installs use Neutral Light or Neutral Dark automatically, with simple gray
+            surfaces, readable text, and restrained blue accents. Changes to Windows app mode
+            also update the theme while the overlay app is running.
+        </Paragraph>
+        <Paragraph>
+            Existing saved theme choices are preserved. In Settings &gt; Appearance &gt; Theme,
+            check Follow Windows light/dark mode to use automatic switching.
+            Windows app mode, rather than the separate Windows shell mode, controls the choice.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Keep a fixed palette if you prefer
+        </Paragraph>
+        <Paragraph>
+            In Settings &gt; Appearance &gt; Theme, uncheck Follow Windows light/dark mode,
+            then choose Neutral Light, Neutral Dark, Halloween, or another bundled theme.
+            Import JSON... and the theme editor's Apply &amp; save also select a fixed palette.
+            Your choice is saved for future starts; check the Windows option again to resume following it.
+        </Paragraph>
+        <Paragraph>
+            Both neutral palettes provide at least 4.5:1 text contrast on their opaque surfaces.
+            Floating-overlay transparency and the game behind it can reduce actual contrast.
+            Chat channel colors and custom alert colors remain separate from the selected theme.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.14
     </Paragraph>

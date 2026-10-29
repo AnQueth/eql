@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Media;
 using EqLog.Core;
+using Microsoft.Win32;
 
 namespace EqLog.Overlay;
 
@@ -18,6 +19,15 @@ public static class ThemeManager
     public static async Task<ThemePalette> LoadAsync(string path, CancellationToken ct = default)
     {
         return ThemePalette.Parse(await File.ReadAllTextAsync(path, ct).ConfigureAwait(false));
+    }
+
+    internal static ThemePalette GetSystemTheme(IEnumerable<ThemePalette> themes)
+    {
+        var preference = Registry.GetValue(
+            @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+            "AppsUseLightTheme", 1);
+        string name = preference is int value && value == 0 ? "Neutral Dark" : "Neutral Light";
+        return themes.Single(t => t.Name == name);
     }
 
     public static void Apply(ThemePalette theme)

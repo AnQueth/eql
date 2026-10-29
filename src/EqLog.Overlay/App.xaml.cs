@@ -34,19 +34,21 @@ public partial class App : Application
         }
         UsageTelemetry.TrackApplicationStarted();
 
-        var fallback = state.Themes.FirstOrDefault(t => t.Name == "Halloween");
+        var fallback = state.Themes.FirstOrDefault(t => t.Name == "Neutral Light");
         try
         {
-            if ((state.Settings.Theme ?? fallback) is { } theme)
+            if ((state.Settings.Theme ?? ThemeManager.GetSystemTheme(state.Themes)) is { } theme)
             {
                 ThemeManager.Apply(theme);
             }
         }
-        catch (FormatException ex)
+        catch (Exception ex) when (ex is FormatException or InvalidOperationException or
+            System.IO.IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
             UsageTelemetry.TrackError(ex, UsageErrorSource.Startup);
-            MessageBox.Show($"Could not load the saved theme: {ex.Message}\nThe default theme will be used.",
+            MessageBox.Show($"Could not load the theme: {ex.Message}\nThe default theme will be used.",
                 "Theme error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            state.Settings.Theme = null;
             if (fallback is not null)
             {
                 ThemeManager.Apply(fallback);

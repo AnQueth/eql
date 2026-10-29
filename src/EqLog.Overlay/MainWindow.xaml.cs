@@ -1351,6 +1351,11 @@ public partial class MainWindow : Window
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        if (msg == NativeMethods.WM_SETTINGCHANGE && !_shuttingDown && _settings.Theme is null)
+        {
+            Dispatcher.BeginInvoke(RefreshSystemTheme, DispatcherPriority.Background);
+        }
+
         if (msg == NativeMethods.WM_HOTKEY && wParam.ToInt32() == LockHotkeyId)
         {
             SetLocked(!_settings.Locked);

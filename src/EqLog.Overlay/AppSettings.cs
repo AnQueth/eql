@@ -209,6 +209,7 @@ public sealed class AppSettings
     {
         get; set;
     }
+    /// <summary>Null follows Windows app appearance; a palette fixes the user's selected theme.</summary>
     public EqLog.Core.ThemePalette? Theme
     {
         get; set;

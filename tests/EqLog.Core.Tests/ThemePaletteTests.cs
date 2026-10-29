@@ -6,6 +6,8 @@ public class ThemePaletteTests
 {
     [Theory]
     [InlineData("Halloween.json", "Halloween")]
+    [InlineData("NeutralDark.json", "Neutral Dark")]
+    [InlineData("NeutralLight.json", "Neutral Light")]
     [InlineData("Midnight.json", "Midnight Ocean")]
     [InlineData("Forest.json", "Enchanted Forest")]
     [InlineData("Crimson.json", "Crimson Ember")]
@@ -28,6 +30,8 @@ public class ThemePaletteTests
     [InlineData("HighContrastLight.json", 7.0)]
     [InlineData("ColorblindRedGreen.json", 4.5)]
     [InlineData("ColorblindBlueYellow.json", 4.5)]
+    [InlineData("NeutralDark.json", 4.5)]
+    [InlineData("NeutralLight.json", 4.5)]
     public void AccessibilityTheme_TextMeetsWcagContrast(string file, double minimum)
     {
         var theme = ThemePalette.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Themes", file)));
@@ -46,6 +50,16 @@ public class ThemePaletteTests
             double ratio = Contrast(theme.Colors[keys[0]], theme.Colors[keys[1]]);
             Assert.True(ratio >= minimum, $"{pair} contrast {ratio:0.00} is below {minimum}");
         });
+        if (theme.Name.StartsWith("Neutral ", StringComparison.Ordinal))
+        {
+            foreach (string background in new[] { "NightRaised", "Selection", "Hover", "Pressed" })
+            {
+                Assert.True(Contrast(theme.Colors["NightMuted"], theme.Colors[background]) >= minimum,
+                    $"Muted text on {background} must meet {minimum}:1 contrast.");
+                Assert.True(Contrast(theme.Colors["NightText"], theme.Colors[background]) >= minimum,
+                    $"Text on {background} must meet {minimum}:1 contrast.");
+            }
+        }
     }
 
     private static double Contrast(string a, string b)

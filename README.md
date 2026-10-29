@@ -144,7 +144,15 @@ persists it across restarts. **Export JSON...** writes an importable theme file 
 the active theme. **Reset draft** discards edits and reloads the last selected/applied palette;
 choosing a different theme also replaces the draft. Invalid colors are reported and block apply/export.
 
-Use **Settings → Appearance → Theme** to switch between **Halloween** (the default), **Midnight Ocean**,
+New installs default to **Follow Windows light/dark mode**, using **Neutral Light** or **Neutral Dark**:
+simple gray surfaces, readable text, and restrained blue accents. Changes to Windows **app mode**
+apply while the app is running. Both palettes provide at least 4.5:1 text contrast on their opaque
+surfaces; overlay transparency and the game behind it can reduce actual contrast.
+Existing saved theme choices are preserved. Uncheck **Follow Windows light/dark mode** to keep a
+fixed palette; check it again to resume automatic switching. Applying an edited draft or importing
+a palette also selects a fixed theme.
+
+Use **Settings → Appearance → Theme** to switch between **Neutral Light**, **Neutral Dark**, **Halloween**, **Midnight Ocean**,
 **Enchanted Forest**, **Crimson Ember** (warm red), **Royal Amethyst** (purple),
 **Arctic Frost** (light blue), and **Desert Sand** (light sand), or choose **Import JSON...** for a
 custom palette.

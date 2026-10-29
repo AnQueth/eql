@@ -1,0 +1,24 @@
+{
+  "Name": "Neutral Light",
+  "Colors": {
+    "NightBackground": "#F7F8FA",
+    "NightSurface": "#FFFFFF",
+    "NightRaised": "#EAEDF1",
+    "NightBorder": "#7D838B",
+    "NightText": "#202124",
+    "NightMuted": "#51565D",
+    "Pumpkin": "#2459A6",
+    "Hover": "#E5EBF3",
+    "Pressed": "#CAD8EB",
+    "Selection": "#D2E3FC",
+    "Alternate": "#F0F2F5",
+    "GridLine": "#C2C7CE",
+    "ScrollThumb": "#727982",
+    "AccentText": "#FFFFFF",
+    "OverlayHeader": "#2459A6",
+    "OverlayDim": "#51565D",
+    "OverlayGood": "#226638",
+    "OverlayWarn": "#795000",
+    "OverlayBad": "#A52B25"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "Name": "Neutral Dark",
+  "Colors": {
+    "NightBackground": "#202124",
+    "NightSurface": "#292A2D",
+    "NightRaised": "#333539",
+    "NightBorder": "#74777C",
+    "NightText": "#F1F3F4",
+    "NightMuted": "#BDC1C6",
+    "Pumpkin": "#A8C7FA",
+    "Hover": "#3B4048",
+    "Pressed": "#454C58",
+    "Selection": "#394C68",
+    "Alternate": "#2D3034",
+    "GridLine": "#55595F",
+    "ScrollThumb": "#93999F",
+    "AccentText": "#17243B",
+    "OverlayHeader": "#A8C7FA",
+    "OverlayDim": "#BDC1C6",
+    "OverlayGood": "#A8DAB5",
+    "OverlayWarn": "#FDD663",
+    "OverlayBad": "#F6AEA9"
+  }
+}

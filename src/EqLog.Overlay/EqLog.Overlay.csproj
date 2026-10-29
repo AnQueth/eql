@@ -18,7 +18,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>EqLogOverlay</AssemblyName>
     <ApplicationIcon>AppIcon.ico</ApplicationIcon>
-    <Version>1.0.14</Version>
+    <Version>1.0.15</Version>
     <StartupObject>EqLog.Overlay.Program</StartupObject>
   </PropertyGroup>
 

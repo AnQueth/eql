@@ -12,6 +12,7 @@ public partial class MainWindow
     private bool _changingTheme;
     private readonly List<ThemePalette> _themes = [];
     private ThemeEditor? _themeEditor;
+    private ThemePalette? _appliedTheme;
 
     private void InitializeThemes(StartupState state)
     {
@@ -45,21 +46,22 @@ public partial class MainWindow
                 {
                     UsageTelemetry.TrackError(ex, UsageErrorSource.StartupData);
                     _settings.Theme = null;
-                    ThemeStatus.Text = $"Saved theme is invalid: {ex.Message}. Using Halloween.";
+                    ThemeStatus.Text = $"Saved theme is invalid: {ex.Message}. Following Windows appearance.";
                 }
             }
             ThemePicker.ItemsSource = _themes;
-            ThemePicker.SelectedItem = _settings.Theme ??
-                _themes.Single(t => t.Name == "Halloween");
             _themeEditor = new ThemeEditor { ApplyRequested = ApplyEditedThemeAsync };
             ThemeEditorHost.Content = _themeEditor;
-            _themeEditor.LoadPalette((ThemePalette)ThemePicker.SelectedItem);
+            var theme = _settings.Theme ?? ThemeManager.GetSystemTheme(_themes);
+            ApplyTheme(theme);
+            ShowSelectedTheme(theme);
             if (string.IsNullOrEmpty(ThemeStatus.Text))
             {
-                ThemeStatus.Text = "Choose a theme or import a JSON palette. Changes are saved immediately.";
+                ThemeStatus.Text = "Follow Windows appearance, choose a fixed theme, or import a JSON palette. Changes are saved immediately.";
             }
         }
-        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException or
+            IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
             UsageTelemetry.TrackError(ex, UsageErrorSource.StartupData);
             ThemeStatus.Text = $"Could not load themes: {ex.Message}";
@@ -67,6 +69,78 @@ public partial class MainWindow
         finally
         {
             _changingTheme = false;
+        }
+    }
+
+    private void ShowSelectedTheme(ThemePalette theme)
+    {
+        _appliedTheme = theme;
+        bool changingTheme = _changingTheme;
+        _changingTheme = true;
+        try
+        {
+            FollowWindowsThemeBox.IsChecked = _settings.Theme is null;
+            ThemePicker.IsEnabled = _settings.Theme is not null;
+            if (_themes.Contains(theme))
+            {
+                ThemePicker.SelectedItem = theme;
+            }
+            _themeEditor?.LoadPalette(theme);
+        }
+        finally
+        {
+            _changingTheme = changingTheme;
+        }
+    }
+
+    private void ApplyTheme(ThemePalette theme)
+    {
+        ThemeManager.Apply(theme);
+        foreach (var overlay in _overlays.Values)
+        {
+            overlay.Panel.SetBackgroundOpacity(_settings.Overlays[overlay.Panel.Key].BackgroundOpacity ?? _settings.BackgroundOpacity);
+        }
+    }
+
+    private void RefreshSystemTheme()
+    {
+        if (_shuttingDown || _settings.Theme is not null || _themes.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var theme = ThemeManager.GetSystemTheme(_themes);
+            if (ReferenceEquals(_appliedTheme, theme))
+            {
+                return;
+            }
+            ApplyTheme(theme);
+            ShowSelectedTheme(theme);
+            ThemeStatus.Text = $"Following Windows appearance: {theme.Name}.";
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException or
+            IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            UsageTelemetry.TrackError(ex, UsageErrorSource.StartupData);
+            ThemeStatus.Text = $"Could not follow Windows appearance: {ex.Message}";
+        }
+    }
+
+    private async void FollowWindowsTheme_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_changingTheme)
+        {
+            return;
+        }
+        if (FollowWindowsThemeBox.IsChecked == true)
+        {
+            await SelectThemeAsync(null);
+        }
+        else if (ThemePicker.SelectedItem is ThemePalette theme)
+        {
+            await SelectThemeAsync(theme);
         }
     }
 
@@ -78,30 +152,33 @@ public partial class MainWindow
         }
     }
 
-    private async Task<bool> SelectThemeAsync(ThemePalette theme)
+    private async Task<bool> SelectThemeAsync(ThemePalette? theme)
     {
         var previous = _settings.Theme;
+        var previousSelection = _appliedTheme;
         try
         {
-            theme.Validate();
+            var applied = theme ?? ThemeManager.GetSystemTheme(_themes);
+            applied.Validate();
             _settings.Theme = theme;
             await _settings.SaveAsync();
-            ThemeManager.Apply(theme);
-            foreach (var overlay in _overlays.Values)
-            {
-                overlay.Panel.SetBackgroundOpacity(_settings.Overlays[overlay.Panel.Key].BackgroundOpacity ?? _settings.BackgroundOpacity);
-            }
+            ApplyTheme(applied);
 
             UsageTelemetry.TrackFeature(UsageFeature.ThemeChanged);
-            ThemeStatus.Text = $"{theme.Name} applied and saved for future starts.";
-            _themeEditor?.LoadPalette(theme);
+            ThemeStatus.Text = theme is null
+                ? $"Following Windows appearance: {applied.Name}. Saved for future starts."
+                : $"{theme.Name} applied and saved for future starts.";
+            ShowSelectedTheme(applied);
             return true;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or FormatException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or
+            FormatException or InvalidOperationException or System.Security.SecurityException)
         {
             _settings.Theme = previous;
             _changingTheme = true;
-            ThemePicker.SelectedItem = previous ?? _themes.FirstOrDefault(t => t.Name == "Halloween");
+            FollowWindowsThemeBox.IsChecked = previous is null;
+            ThemePicker.IsEnabled = previous is not null;
+            ThemePicker.SelectedItem = previous ?? previousSelection;
             _changingTheme = false;
             ThemeStatus.Text = $"Theme was not changed: {ex.Message}";
             return false;

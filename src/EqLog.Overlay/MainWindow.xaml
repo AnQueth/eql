@@ -418,6 +418,8 @@
                 <DockPanel Margin="8">
                     <GroupBox Header="Theme" DockPanel.Dock="Top">
                         <StackPanel>
+                            <CheckBox x:Name="FollowWindowsThemeBox" Content="Follow Windows light/dark mode"
+                                      Margin="0,0,0,8" Checked="FollowWindowsTheme_Changed" Unchecked="FollowWindowsTheme_Changed" />
                             <DockPanel>
                                 <Button Content="Import JSON..." DockPanel.Dock="Right" Margin="8,0,0,0" Click="ImportTheme_Click" />
                                 <ComboBox x:Name="ThemePicker" DisplayMemberPath="Name" SelectionChanged="Theme_Changed" />
