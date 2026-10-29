@@ -241,7 +241,7 @@ public sealed class OverlayPanel : ContentControl
         layout.Children.Add(_titleFrame);
         DockPanel.SetDock(_toolbar, Dock.Top);
         layout.Children.Add(_toolbar);
-        if (key is "quests" or "sky" or "npcs")
+        if (key is "quests" or "sky" or "npcs" or "exaltations")
         {
             _virtualList = new VirtualRowList(BuildRow)
             {

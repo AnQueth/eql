@@ -102,6 +102,7 @@ public static class OverlayPresenters
         new("wiki", "Wiki activity", 480, 360, false, WikiActivity),
         new("inventory", "Inventory & loot quests", 680, 620, false, (_, _, _) => new("Inventory & loot quests", null, [])),
         new("moteplan", "Mote upgrade planner", 520, 560, false, (_, _, _) => new("Mote upgrade planner", null, [])),
+        new("exaltations", "Exaltations", 620, 560, false, (_, _, _) => new("Exaltations", null, [])),
     ];
 
     private const int MaxRequestRows = 15;

@@ -1,4 +1,6 @@
+using System.Reflection;
 using Azure.Monitor.OpenTelemetry.Exporter;
+using EqLog.Core;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry.Logs;
 
@@ -31,6 +33,7 @@ internal enum UsageFeature
     WikiActivityPanel,
     InventoryPanel,
     MoteUpgradePlannerPanel,
+    ExaltationsPanel,
     OtherPanel,
 }
 
@@ -55,8 +58,16 @@ internal static class UsageTelemetry
     private static ILoggerFactory? _loggerFactory;
     private static ILogger? _logger;
     private static bool _enabled;
+    private static string _sessionId = "";
+    private static readonly string AppVersion = typeof(UsageTelemetry).Assembly
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "unknown";
 
     public static void SetEnabled(bool enabled)
+    {
+        SetEnabled(enabled, CreateLoggerFactory);
+    }
+
+    internal static void SetEnabled(bool enabled, Func<ILoggerFactory> createLoggerFactory)
     {
         ILoggerFactory? factoryToDispose = null;
         lock (Gate)
@@ -68,26 +79,9 @@ internal static class UsageTelemetry
 
             if (enabled)
             {
-                string? configured = Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING");
-                string connectionString = string.IsNullOrWhiteSpace(configured)
-                    ? DefaultConnectionString
-                    : configured;
-
-                _loggerFactory = LoggerFactory.Create(builder =>
-                {
-                    builder.SetMinimumLevel(LogLevel.Information);
-                    builder.AddOpenTelemetry(logging =>
-                    {
-                        logging.ParseStateValues = true;
-                        logging.IncludeFormattedMessage = false;
-                        logging.IncludeScopes = false;
-                        logging.AddAzureMonitorLogExporter(options =>
-                        {
-                            options.ConnectionString = connectionString;
-                        });
-                    });
-                });
+                _loggerFactory = createLoggerFactory();
                 _logger = _loggerFactory.CreateLogger("EqLogOverlay.Usage");
+                _sessionId = Guid.NewGuid().ToString("N");
                 _enabled = true;
             }
             else
@@ -109,12 +103,60 @@ internal static class UsageTelemetry
 
     public static void TrackFeature(UsageFeature feature)
     {
-        TrackEvent("feature_used", feature.ToString());
+        TrackEvent("feature_used", [new("feature", feature.ToString())]);
+    }
+
+    public static void TrackAction(UsageAction action)
+    {
+        if (action == UsageAction.None)
+        {
+            return;
+        }
+
+        if (!Enum.IsDefined(action))
+        {
+            throw new ArgumentOutOfRangeException(nameof(action));
+        }
+
+        TrackEvent("feature_action", [new("action", action.ToString())]);
+    }
+
+    public static void TrackTheme(ThemePalette theme, bool followsWindows,
+        IReadOnlyCollection<ThemePalette> bundledThemes, bool changed)
+    {
+        // Never send imported/edited palette names. Only exact shipped palettes get a name.
+        bool bundled = bundledThemes.Any(candidate => candidate.Name == theme.Name &&
+            ThemePalette.AllColorKeys.All(key => string.Equals(candidate.GetColor(key), theme.GetColor(key),
+                StringComparison.OrdinalIgnoreCase)));
+        string name = (bundled ? theme.Name : "") switch
+        {
+            "Neutral Light" or "Neutral Dark" or "High Contrast Dark" or "High Contrast Light" or
+            "Enchanted Forest" or "Arctic Frost" or "Midnight Ocean" or "Halloween" or
+            "Desert Sand" or "Crimson Ember" or "Royal Amethyst" or
+            "Colorblind Safe (Red-Green)" or "Colorblind Safe (Blue-Yellow)" => theme.Name,
+            _ => "Custom",
+        };
+        TrackEvent(changed ? "theme_changed" : "theme_state",
+            new("theme", name),
+            new("theme.mode", followsWindows ? "Windows" : "Fixed"));
+    }
+
+    public static void TrackPanelState(string panelKey, bool visible, bool docked, bool changed)
+    {
+        TrackEvent(changed ? "panel_changed" : "panel_state",
+            new("feature", PanelFeature(panelKey).ToString()),
+            new("panel.visible", visible),
+            new("panel.placement", docked ? "Docked" : "Floating"));
     }
 
     public static void TrackPanelOpened(string panelKey)
     {
-        UsageFeature feature = panelKey switch
+        TrackFeature(PanelFeature(panelKey));
+    }
+
+    private static UsageFeature PanelFeature(string panelKey)
+    {
+        return panelKey switch
         {
             "dps" => UsageFeature.DpsPanel,
             "taken" => UsageFeature.DamageTakenPanel,
@@ -134,27 +176,16 @@ internal static class UsageTelemetry
             "wiki" => UsageFeature.WikiActivityPanel,
             "inventory" => UsageFeature.InventoryPanel,
             "moteplan" => UsageFeature.MoteUpgradePlannerPanel,
+            "exaltations" => UsageFeature.ExaltationsPanel,
             _ => UsageFeature.OtherPanel,
         };
-
-        TrackFeature(feature);
     }
 
     public static void TrackError(Exception exception, UsageErrorSource source)
     {
-        lock (Gate)
-        {
-            if (!_enabled || _logger is null)
-            {
-                return;
-            }
-
-            _logger.LogInformation(
-                "{microsoft.custom_event.name} {error.type} {error.source}",
-                "app_error",
-                exception.GetType().Name,
-                source.ToString());
-        }
+        TrackEvent("app_error",
+            new("error.type", exception.GetType().Name),
+            new("error.source", source.ToString()));
     }
 
     public static void Shutdown()
@@ -162,20 +193,29 @@ internal static class UsageTelemetry
         SetEnabled(false);
     }
 
-    private static void TrackEvent(string eventName)
+    private static ILoggerFactory CreateLoggerFactory()
     {
-        lock (Gate)
+        string? configured = Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING");
+        string connectionString = string.IsNullOrWhiteSpace(configured)
+            ? DefaultConnectionString
+            : configured;
+        return LoggerFactory.Create(builder =>
         {
-            if (!_enabled || _logger is null)
+            builder.SetMinimumLevel(LogLevel.Information);
+            builder.AddOpenTelemetry(logging =>
             {
-                return;
-            }
-
-            _logger.LogInformation("{microsoft.custom_event.name}", eventName);
-        }
+                logging.ParseStateValues = true;
+                logging.IncludeFormattedMessage = false;
+                logging.IncludeScopes = false;
+                logging.AddAzureMonitorLogExporter(options =>
+                {
+                    options.ConnectionString = connectionString;
+                });
+            });
+        });
     }
 
-    private static void TrackEvent(string eventName, string feature)
+    private static void TrackEvent(string eventName, params KeyValuePair<string, object?>[] properties)
     {
         lock (Gate)
         {
@@ -184,10 +224,14 @@ internal static class UsageTelemetry
                 return;
             }
 
-            _logger.LogInformation(
-                "{microsoft.custom_event.name} {feature}",
-                eventName,
-                feature);
+            KeyValuePair<string, object?>[] state =
+            [
+                new("microsoft.custom_event.name", eventName),
+                new("app.version", AppVersion),
+                new("session.id", _sessionId),
+                .. properties,
+            ];
+            _logger.Log(LogLevel.Information, new EventId(0), state, null, static (_, _) => "");
         }
     }
 }

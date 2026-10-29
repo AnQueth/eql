@@ -48,6 +48,9 @@ jobs:
       - name: Test
         run: dotnet test tests\EqLog.Core.Tests\EqLog.Core.Tests.csproj -c Release --no-restore --logger trx --results-directory artifacts\tests
 
+      - name: Test overlay telemetry
+        run: dotnet test tests\EqLog.Overlay.Tests\EqLog.Overlay.Tests.csproj -c Release --no-restore --logger trx --results-directory artifacts\tests
+
       - name: Publish self-contained Windows x64 app
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.version }}

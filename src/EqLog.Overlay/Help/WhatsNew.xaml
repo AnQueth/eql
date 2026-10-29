@@ -1,7 +1,69 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.18" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.19" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.19
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Find exaltations by what they do, not just by the item name.
+        This release history ships with your installed version and works offline.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Search exaltation effects and locations
+        </Paragraph>
+        <Paragraph>
+            Enable Exaltations in Settings &gt; General &gt; Overlays. It starts docked;
+            you can also float it over the game. Run /outputfile inventory in game, then
+            search for an effect such as percussion, string, bard instruments, or haste.
+            Each card separates the exaltation, its effects, its host item, and its exported
+            location. Loose copies and exalt storage are included; Installed only limits
+            results to installations confirmed by the export.
+        </Paragraph>
+        <Paragraph>
+            Effects and descriptions come from the original item's EQLWiki page and are
+            cached locally. Lookups fill in progressively and need internet access for
+            uncached items; large inventories can take time. Refresh effects rechecks the
+            wiki, not your inventory. Only base-item and effect names are sent to the wiki;
+            host items and locations stay local. Click-only effects are not included.
+        </Paragraph>
+        <Paragraph>
+            The game export can omit exaltations installed in Equipment storage.
+            Original equipment with supported wiki effects can appear as Expected exaltation
+            (unverified), separately from confirmed copies. These are wiki defaults, not proof
+            of ownership or current installation; their export-entry numbers are not in-game
+            slots. A missing search result does not mean you do not own an exaltation.
+            Check the in-game Find Item window, and re-export after moving or swapping items.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            More useful optional usage reporting
+        </Paragraph>
+        <Paragraph>
+            Share usage and error telemetry remains off by default. If enabled under
+            Settings &gt; General &gt; Application updates, it now reports bundled theme
+            choices, configured overlay visibility and docked or floating placement, and
+            fixed feature-action labels. Custom theme contents, inventory, game logs,
+            character names, and file paths are not included. Session identifiers are
+            temporary, not persistent user or device identifiers.
+        </Paragraph>
+        <Paragraph>
+            Placement reports describe configuration, not time actually visible over the game.
+            Existing saved telemetry preferences are preserved.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Inventory pane resizing
+        </Paragraph>
+        <Paragraph>
+            The horizontal splitter between inventory and quest results now resizes both
+            panes instead of making the lower pane shrink upward. Both panes retain their
+            minimum usable heights.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.18
     </Paragraph>

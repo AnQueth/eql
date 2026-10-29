@@ -22,12 +22,12 @@
                 <CheckBox x:Name="CheckUpdatesBox" Content="Check for updates at startup" Margin="0,6,0,0" Click="UpdatePreferences_Click" />
                 <CheckBox x:Name="DownloadUpdatesBox" Content="Automatically download new stable releases" Margin="0,6,0,0" Click="UpdatePreferences_Click" />
                 <CheckBox x:Name="UsageTelemetryBox" Content="Share usage and error telemetry" Margin="0,6,0,0" Click="TelemetryPreferences_Click"
-                          ToolTip="Sends app starts, feature usage, and error types to Application Insights. Game/log content, names, file paths, exception messages, and stack traces are not sent." />
+                          ToolTip="Sends app starts, app version, feature actions, bundled theme choices (custom themes are labeled Custom), panel visibility and docked/floating placement, and error types to Application Insights. Game/log content, personal names, file paths, exception messages, and stack traces are not sent." />
                 <local:FixedLineTextBlock x:Name="TelemetryStatusText" Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" />
                 <WrapPanel Margin="0,8,0,0">
-                    <Button x:Name="CheckUpdateButton" Content="Check for updates" Click="CheckUpdate_Click" />
-                    <Button x:Name="DownloadUpdateButton" Content="Download update" IsEnabled="False" Click="DownloadUpdate_Click" />
-                    <Button x:Name="RestartUpdateButton" Content="Restart to update" IsEnabled="False" Click="RestartUpdate_Click" />
+                    <Button x:Name="CheckUpdateButton" Content="Check for updates" Click="CheckUpdate_Click" local:UsageTracking.Action="CheckUpdates" />
+                    <Button x:Name="DownloadUpdateButton" Content="Download update" IsEnabled="False" Click="DownloadUpdate_Click" local:UsageTracking.Action="DownloadUpdate" />
+                    <Button x:Name="RestartUpdateButton" Content="Restart to update" IsEnabled="False" Click="RestartUpdate_Click" local:UsageTracking.Action="RestartToUpdate" />
                 </WrapPanel>
                 <ProgressBar x:Name="UpdateProgress" Maximum="100" Height="8" Visibility="Hidden" />
                 <local:FixedLineTextBlock x:Name="UpdateStatusText" Margin="0,6,0,0" Foreground="{DynamicResource NightMuted}" />
@@ -36,8 +36,8 @@
         <GroupBox Header="Log file" DockPanel.Dock="Top">
             <StackPanel>
                 <DockPanel>
-                    <Button Content="Browse..." DockPanel.Dock="Right" Margin="6,0,0,0" Click="Browse_Click" ToolTip="Pick a single eqlog file" />
-                    <Button x:Name="ChooseFolderButton" Content="Choose folder..." DockPanel.Dock="Right" Margin="6,0,0,0" Click="ChooseFolder_Click"
+                    <Button Content="Browse..." DockPanel.Dock="Right" Margin="6,0,0,0" Click="Browse_Click" local:UsageTracking.Action="BrowseLog" ToolTip="Pick a single eqlog file" />
+                    <Button x:Name="ChooseFolderButton" Content="Choose folder..." DockPanel.Dock="Right" Margin="6,0,0,0" Click="ChooseFolder_Click" local:UsageTracking.Action="ChooseLogFolder"
                             ToolTip="Pick your EverQuest Logs folder (or the EverQuest install folder); the newest eqlog file in it is used" />
                     <TextBox x:Name="LogPathBox" IsReadOnly="True" VerticalContentAlignment="Center" />
                 </DockPanel>
@@ -58,10 +58,10 @@
                     <StackPanel x:Name="OverlayAppearance" Margin="0,6,0,0" />
                 </Expander>
                 <WrapPanel Margin="0,8,0,0">
-                    <Button Content="Reset session stats" Click="ResetSession_Click" />
-                    <Button Content="Reset overlay positions" Click="ResetPositions_Click" />
-                    <Button Content="Dock all" Click="DockAll_Click" ToolTip="Move every panel except Alerts into the docked window" />
-                    <Button Content="Float all" Click="FloatAll_Click" ToolTip="Show every panel as a floating overlay again" />
+                    <Button Content="Reset session stats" Click="ResetSession_Click" local:UsageTracking.Action="ResetSession" />
+                    <Button Content="Reset overlay positions" Click="ResetPositions_Click" local:UsageTracking.Action="ResetOverlayPositions" />
+                    <Button Content="Dock all" Click="DockAll_Click" local:UsageTracking.Action="DockAll" ToolTip="Move every panel except Alerts into the docked window" />
+                    <Button Content="Float all" Click="FloatAll_Click" local:UsageTracking.Action="FloatAll" ToolTip="Show every panel as a floating overlay again" />
                     <CheckBox x:Name="ResetOnLoginBox" Content="Reset stats when you log in" VerticalAlignment="Center" Margin="6,0,0,0" Click="ResetOnLogin_Click" />
                 </WrapPanel>
             </StackPanel>
@@ -72,7 +72,7 @@
                 <TextBlock Text="Back up and reset learned tracking data, then close. Open the app again to reprocess the selected log. Settings and alert triggers are kept."
                            TextWrapping="Wrap" />
                 <Button x:Name="ResetTrackingDataButton" Content="Reset tracking data..." HorizontalAlignment="Left"
-                        Margin="0,8,0,0" Click="ResetTrackingData_Click" />
+                        Margin="0,8,0,0" Click="ResetTrackingData_Click" local:UsageTracking.Action="ResetTrackingData" />
                 <local:FixedLineTextBlock x:Name="ResetTrackingDataStatus" Foreground="{DynamicResource NightMuted}" Margin="0,4,0,0" />
             </StackPanel>
         </GroupBox>
@@ -109,15 +109,15 @@
                     <TextBlock DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap"
                                Text="Simple text matches anywhere in the line, ignoring case, with no special characters. Regex is matched (case-insensitive) against the text after the [timestamp]. A trigger fires when Simple text OR Regex matches; fill in either or both. {C} = your character name in both. In the alert text, $1 or ${name} insert regex captured groups. Only new lines fire alerts, not history. Use Add trigger for a new one. Click a trigger (or its left edge; Ctrl/Shift-click for several), then use Delete selected; confirmation is required." />
                     <DockPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
-                        <Button Content="Test" DockPanel.Dock="Right" Margin="6,0,0,0" Click="TestTrigger_Click" />
+                        <Button Content="Test" DockPanel.Dock="Right" Margin="6,0,0,0" Click="TestTrigger_Click" local:UsageTracking.Action="TestTrigger" />
                         <TextBlock Text="Test a line:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{DynamicResource NightText}" DockPanel.Dock="Left" />
                         <TextBox x:Name="TestLineBox" VerticalContentAlignment="Center" Text="Quethrosar has fallen to the ground." />
                     </DockPanel>
                     <TextBlock x:Name="TriggerStatusText" DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="#FF8080" TextWrapping="Wrap" />
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
-                        <Button Content="Add trigger" Click="AddTrigger_Click" ToolTip="Add a new, empty alert trigger" />
+                        <Button Content="Add trigger" Click="AddTrigger_Click" local:UsageTracking.Action="AddTrigger" ToolTip="Add a new, empty alert trigger" />
                         <Button x:Name="DeleteTriggersButton" Content="Delete selected" IsEnabled="False"
-                                Click="DeleteTriggers_Click"
+                                Click="DeleteTriggers_Click" local:UsageTracking.Action="DeleteTriggers"
                                 ToolTip="Delete the selected alert triggers after confirmation" />
                     </StackPanel>
                     <DataGrid x:Name="TriggersGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="True"
@@ -212,7 +212,7 @@
             <TabItem x:Name="LogLinesTab" Header="Log lines">
                 <DockPanel Margin="4">
                     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
-                        <Button Content="Make trigger" DockPanel.Dock="Right" Margin="6,0,0,0" Click="MakeTrigger_Click"
+                        <Button Content="Make trigger" DockPanel.Dock="Right" Margin="6,0,0,0" Click="MakeTrigger_Click" local:UsageTracking.Action="MakeTriggerFromLog"
                                 ToolTip="Create an alert trigger from the selected line (or double-click a line)" />
                         <CheckBox x:Name="PauseLinesBox" Content="Pause" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" Click="RawFilter_Changed" />
                         <CheckBox x:Name="RegexFilterBox" Content="Regex" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" Click="RawFilter_Changed"
@@ -267,7 +267,7 @@
                             <DataGridTemplateColumn Header="Action" Width="90" MinWidth="90">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <Button Content="Relearn" Click="RelearnSpawn_Click" Padding="8,1" Margin="0"
+                                        <Button Content="Relearn" Click="RelearnSpawn_Click" local:UsageTracking.Action="RelearnSpawn" Padding="8,1" Margin="0"
                                                 MinHeight="22" VerticalAlignment="Center" IsEnabled="{Binding HasSamples}"
                                                 ToolTip="Forget the learned respawn time and measure it again from your next kill" />
                                     </DataTemplate>
@@ -290,10 +290,10 @@
                                    Text="Waiting for the log file to locate its character inventory export." />
                         <WrapPanel>
                             <Button x:Name="LookupQuestButton" Content="Look up quests" Click="LookupQuest_Click" />
-                            <Button Content="Item wiki page" Click="OpenItemWiki_Click" />
-                            <Button Content="Open selected quest" Click="OpenQuest_Click" />
-                            <Button Content="Complete / reopen quest" Click="CompleteQuest_Click" />
-                            <Button Content="Retry lookups" Click="RetryQuests_Click" />
+                            <Button Content="Item wiki page" Click="OpenItemWiki_Click" local:UsageTracking.Action="OpenItemWiki" />
+                            <Button Content="Open selected quest" Click="OpenQuest_Click" local:UsageTracking.Action="OpenQuest" />
+                            <Button Content="Complete / reopen quest" Click="CompleteQuest_Click" local:UsageTracking.Action="CompleteQuest" />
+                            <Button Content="Retry lookups" Click="RetryQuests_Click" local:UsageTracking.Action="RetryQuestLookups" />
                         </WrapPanel>
                     </StackPanel>
                     <Grid>
@@ -301,7 +301,6 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="2*" MinHeight="90" />
                             <RowDefinition Height="10" />
-                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="3*" MinHeight="90" />
                         </Grid.RowDefinitions>
                         <TextBlock Text="YOUR INVENTORY" Foreground="{DynamicResource NightMuted}" FontSize="11" FontWeight="SemiBold" Margin="0,6" />
@@ -353,25 +352,27 @@
                         <GridSplitter Grid.Row="2" Height="4" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                                       Background="{DynamicResource NightBorder}" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
                                       ToolTip="Drag to resize the inventory and quest lists" />
-                        <StackPanel Grid.Row="3">
-                            <TextBlock Text="QUEST REFERENCES" Foreground="{DynamicResource NightMuted}" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,4" />
-                            <local:FixedLineTextBlock x:Name="QuestLookupStatus" Lines="2" Margin="0,0,0,6"
-                                       Foreground="{DynamicResource Pumpkin}"
-                                       Text="Lookups are cached for seven days. Enable the Quest opportunities panel to see all matching quests." />
-                        </StackPanel>
-                        <ListBox x:Name="QuestResults" Grid.Row="4" HorizontalContentAlignment="Stretch"
-                                 ToolTip="Click a quest name to open it on EQLWiki, or select a row for Complete / reopen. History is unconfirmed loot; Owned is editable. Carried includes equipped items.">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock TextTrimming="CharacterEllipsis">
-                                        <Hyperlink Tag="{Binding Url}" Click="UrlWikiLink_Click"
-                                                   Foreground="{DynamicResource Pumpkin}" ToolTip="Open quest on EQLWiki">
-                                            <Run Text="{Binding Title, Mode=OneWay}" />
-                                        </Hyperlink>
-                                    </TextBlock>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
+                        <DockPanel Grid.Row="3">
+                            <StackPanel DockPanel.Dock="Top">
+                                <TextBlock Text="QUEST REFERENCES" Foreground="{DynamicResource NightMuted}" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,4" />
+                                <local:FixedLineTextBlock x:Name="QuestLookupStatus" Lines="2" Margin="0,0,0,6"
+                                           Foreground="{DynamicResource Pumpkin}"
+                                           Text="Lookups are cached for seven days. Enable the Quest opportunities panel to see all matching quests." />
+                            </StackPanel>
+                            <ListBox x:Name="QuestResults" HorizontalContentAlignment="Stretch"
+                                     ToolTip="Click a quest name to open it on EQLWiki, or select a row for Complete / reopen. History is unconfirmed loot; Owned is editable. Carried includes equipped items.">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock TextTrimming="CharacterEllipsis">
+                                            <Hyperlink Tag="{Binding Url}" Click="UrlWikiLink_Click"
+                                                       Foreground="{DynamicResource Pumpkin}" ToolTip="Open quest on EQLWiki">
+                                                <Run Text="{Binding Title, Mode=OneWay}" />
+                                            </Hyperlink>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </DockPanel>
                     </Grid>
                 </DockPanel>
             </TabItem>
@@ -380,7 +381,7 @@
                 <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                     <TextBlock Text="Add a spell and its duration in seconds" Margin="0,0,0,4" />
                     <DockPanel>
-                        <Button DockPanel.Dock="Right" Content="Add / update" Click="AddDuration_Click" />
+                        <Button DockPanel.Dock="Right" Content="Add / update" Click="AddDuration_Click" local:UsageTracking.Action="AddDuration" />
                         <TextBox x:Name="NewDurationSecondsBox" DockPanel.Dock="Right" Width="75" Margin="4,0"
                                  ToolTip="Duration in seconds" AutomationProperties.Name="Spell duration in seconds" />
                         <TextBox x:Name="NewDurationSpellBox" ToolTip="Spell name, including rank if desired"
@@ -409,10 +410,10 @@
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Button Content="Relearn" Click="RelearnDuration_Click" Padding="8,1" Margin="0,0,6,0"
+                                        <Button Content="Relearn" Click="RelearnDuration_Click" local:UsageTracking.Action="RelearnDuration" Padding="8,1" Margin="0,0,6,0"
                                                 MinHeight="22" VerticalAlignment="Center" IsEnabled="{Binding HasSamples}"
                                                 ToolTip="Forget the learned duration and measure it again from your next casts" />
-                                        <Button Content="Remove" Click="RemoveDuration_Click" Padding="8,1" Margin="0"
+                                        <Button Content="Remove" Click="RemoveDuration_Click" local:UsageTracking.Action="RemoveDuration" Padding="8,1" Margin="0"
                                                 MinHeight="22" VerticalAlignment="Center"
                                                 ToolTip="Remove this spell/rank until manually added again" />
                                     </StackPanel>
@@ -430,7 +431,7 @@
                             <CheckBox x:Name="FollowWindowsThemeBox" Content="Follow Windows light/dark mode"
                                       Margin="0,0,0,8" Checked="FollowWindowsTheme_Changed" Unchecked="FollowWindowsTheme_Changed" />
                             <DockPanel>
-                                <Button Content="Import JSON..." DockPanel.Dock="Right" Margin="8,0,0,0" Click="ImportTheme_Click" />
+                                <Button Content="Import JSON..." DockPanel.Dock="Right" Margin="8,0,0,0" Click="ImportTheme_Click" local:UsageTracking.Action="ImportTheme" />
                                 <ComboBox x:Name="ThemePicker" DisplayMemberPath="Name" SelectionChanged="Theme_Changed" />
                             </DockPanel>
                             <local:FixedLineTextBlock x:Name="ThemeStatus" Foreground="{DynamicResource NightMuted}" Margin="0,6,0,0" />

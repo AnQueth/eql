@@ -110,8 +110,17 @@ the reset request remains for retry and already-backed-up files are not overwrit
 
 Usage and error telemetry is off by default. Enable **Share usage and error telemetry** in
 **General > Application updates** to send app-start, feature-use, and error events to Azure Application Insights.
-Events include only fixed feature labels and, for errors, the exception type and source. The app
-does not send game or log contents, character or item names, file paths, exception messages, or
+Events include fixed feature/action labels, app version, bundled theme choices (or `Custom` for
+imported/edited themes), Windows-following versus fixed theme mode, and each panel's enabled
+state and docked/floating placement. Current theme and panel settings are reported at startup
+and when telemetry is enabled; subsequent changes are reported separately. Floating means
+configured as an in-game overlay, not proof it is currently visible over the game.
+An anonymous random session ID groups events within one opted-in run; it changes on restart
+or re-enabling telemetry and is not a persistent user/device identifier. Counts describe
+opted-in sessions and actions, not unique people or time spent using features.
+For errors, only the exception type and source are included. The app
+does not send game or log contents, character or item names, custom theme names/colors,
+file paths, exception messages, or
 stack traces. Azure Monitor may still process standard service/network metadata. Turn off
 **Share usage and error telemetry** in **General > Application updates** to prevent new events
 from being collected.
@@ -275,6 +284,7 @@ as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels r
 | Mote upgrade planner | Motes and spare item copies needed for each step from an item's or spell's current +rank to +10 (see below) |
 | Sky quest tracker | Plane of Sky class quests, rewards, required items, drop sources, and watched quests |
 | Inventory & loot quests | Owned counts by storage location, item/quest wiki links, quest completion, and upgrade-rank merge candidates |
+| Exaltations | Search by effect to find installed and loose exaltations, their host items, and exact exported locations |
 | Quest opportunities | Searchable item-to-quest references with inventory counts and lookup progress |
 
 - **Lock all overlays** (or **Ctrl+Shift+L**): when locked, overlays are click-through so they don't block the game.
@@ -502,6 +512,8 @@ panel; unlock a floating copy to type in it). It has two tabs:
 
 - **Items & quests**: the inventory grid (editable Owned plus Carried, Bank, Hoard, Depot, Other,
   Collection and Installed counts), quest lookups, item wiki pages, and Complete / reopen.
+  Drag the horizontal divider to share space between the inventory and quest references.
+  The quest heading stays with its results, and both panes retain a minimum height.
 - **Ready to merge**: items you hold more than once at different `+N` ranks, grouped by name without the
   `+N`. Each copy shows its rank, quantity and exact location, for example
   `Worn Wrist, equipment slot 9`, `Inventory slot 4 (Spacious Rucksack), bag slot 6`,
@@ -510,6 +522,57 @@ panel; unlock a floating copy to type in it). It has two tabs:
   listed, because they look like stackable items. Collections and installed augments are left out.
   Repeated worn slots (ears, wrists, rings, Any Slot) are numbered by their order in the export.
   The filter box matches item names and locations.
+
+### Exaltations overlay
+
+Enable **Exaltations** under **Settings > General > Overlays**. It starts docked and can
+float like the other panels. Search by **what an exaltation does**—for example `string`,
+`bard instruments`, `haste`, `vampirism`, or a spell-effect name—without remembering the
+original item's name. All search words must match. Host names and locations are searchable
+too, and **Installed only** hides loose copies and copies in exalt storage.
+
+For each match the panel shows:
+
+- One card headed **Exaltation:**. **Effect** and **What it does** describe the bonus;
+  **Effect source** links to the original item's wiki page, not the item carrying the exaltation.
+  **Installed in** names the actual host, with **Host location** and **Socket** beneath it.
+  Multiple copies are numbered within the same card; loose copies say **Not installed**.
+- The original item's Focus, Worn, or Proc effects, plus supported instrument/skill and haste
+  modifiers, with linked wiki effect descriptions and spell-slot details when available.
+- The exaltation's name and a link to the original item page, without `(Exaltation)`.
+- Each installed copy's host item (including its `+N` rank), socket, and physical location:
+  worn equipment slot, inventory/bank bag and slot, shared bank, hoard, or depot.
+- Copies in **exalt storage** (the export's `Augmentation` section), labeled **Not installed
+  (in exalt storage)**, plus loose copies in bags/bank. Repeated storage entries count as
+  separate copies. Ordinary items in the `Equipment` collection are not exaltations.
+
+Locations reflect the **latest inventory export**, not live game memory. Run
+`/outputfile inventory` after moving, installing, or removing an exaltation. Unknown hosts,
+missing wiki pages, unsupported effect fields, and lookup failures are shown explicitly.
+The panel reports the base item's wiki effects; it does not guess whether click effects or
+every original-item stat transfer to exaltations. Click-only effects are excluded.
+
+**Export limitation:** exaltations installed in items in **Equipment storage** may be
+omitted by `/outputfile inventory`. The overlay's list and search can therefore be
+incomplete even after re-exporting. **No match does not mean you do not own it.**
+Check the in-game **Find Item** window for these copies. This warning stays visible
+above the overlay's search field.
+
+To help find these missing copies, the panel also researches the original items listed in
+**Equipment storage**. Their wiki Focus/Worn/Proc effects are cached and searchable as
+**Expected exaltation (unverified)**. These cards show the original item and its numbered
+export entry, not a confirmed host or socket. The export entry is not a verified in-game
+storage slot. Wiki defaults do not prove you still own or have installed that exaltation:
+it may have been moved or removed. They are counted separately from exported exaltations,
+hidden by **Installed only**, and shown only after a supported wiki effect is found.
+Confirmed exaltations are researched first; researching a large equipment store can take
+time in the shared paced queue. Results appear as lookups finish and are reused on restart.
+
+Lookups start when the panel is shown, use the shared paced wiki queue, and fill in effect
+search results as they complete. Only base-item and effect names are sent to EQLWiki—not
+host items, locations, character names, or the inventory file. Effects are cached locally
+for seven days (missing pages for one day). **Refresh effects** bypasses that cache;
+it does not refresh the inventory export.
 
 A **[Quest]** marker beside an inventory item or merge group means the cached wiki lookup found
 quest references. The same marker appears beside items in **Loot** and the **Wiki** work queue.
@@ -786,6 +849,7 @@ Settings are stored in `%AppData%\EqLogOverlay\`:
 - `quest-inventory.json`: non-zero quest inventory counts, completions and per-log loot watermarks per character
 - `quest-lookups.jsonl`: cached item quest references, appended one line per lookup (an older `quest-lookups.json` is migrated and removed automatically)
 - `sky-quests.json`: cached Plane of Sky quest catalog
+- `item-effects.json`: cached base-item effects and linked descriptions for the Exaltations overlay
 
 Tracking data is saved periodically, on exit, and on Windows logoff/shutdown.
 To back up your data, close the app and copy the entire `%AppData%\EqLogOverlay` folder.

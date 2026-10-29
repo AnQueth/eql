@@ -11,6 +11,7 @@ public partial class MainWindow
 {
     private bool _changingTheme;
     private readonly List<ThemePalette> _themes = [];
+    private readonly List<ThemePalette> _bundledThemes = [];
     private ThemeEditor? _themeEditor;
     private ThemePalette? _appliedTheme;
 
@@ -25,6 +26,7 @@ public partial class MainWindow
                 return;
             }
             _themes.AddRange(state.Themes);
+            _bundledThemes.AddRange(state.Themes.Select(theme => theme.Clone()));
 
             if (_settings.Theme is { } saved)
             {
@@ -118,6 +120,7 @@ public partial class MainWindow
             }
             ApplyTheme(theme);
             ShowSelectedTheme(theme);
+            UsageTelemetry.TrackTheme(theme, followsWindows: true, _bundledThemes, changed: true);
             ThemeStatus.Text = $"Following Windows appearance: {theme.Name}.";
         }
         catch (Exception ex) when (ex is InvalidOperationException or FormatException or
@@ -165,6 +168,7 @@ public partial class MainWindow
             ApplyTheme(applied);
 
             UsageTelemetry.TrackFeature(UsageFeature.ThemeChanged);
+            UsageTelemetry.TrackTheme(applied, theme is null, _bundledThemes, changed: true);
             ThemeStatus.Text = theme is null
                 ? $"Following Windows appearance: {applied.Name}. Saved for future starts."
                 : $"{theme.Name} applied and saved for future starts.";

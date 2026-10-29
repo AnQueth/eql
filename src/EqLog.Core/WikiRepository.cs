@@ -6,6 +6,7 @@ public sealed class WikiRepository : IAsyncDisposable
     private readonly object _gate = new();
     private readonly Dictionary<string, Operation> _operations = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, QuestLookupResult> _quests = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, ItemEffectInfo> _itemEffects = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _retryAfter = new(StringComparer.OrdinalIgnoreCase);
     private readonly MobResistanceStore _mobs;
     private readonly Func<Task> _saveMobs;
@@ -127,6 +128,41 @@ public sealed class WikiRepository : IAsyncDisposable
         {
             _sky = catalog;
         }
+    }
+
+    /// <summary>Seeds an item-effect cache entry loaded from local storage.</summary>
+    /// <param name="result">Previously fetched base-item effects.</param>
+    public void SeedItemEffects(ItemEffectInfo result)
+    {
+        lock (_gate)
+        {
+            _itemEffects[result.Item] = result;
+        }
+    }
+
+    /// <summary>Gets cached or scheduled base-item effects through the shared wiki HTTP lane.</summary>
+    /// <param name="item">Base item name without exaltation or upgrade suffixes.</param>
+    /// <param name="priority">Scheduler priority.</param>
+    /// <param name="force">Bypasses completed cache entries.</param>
+    /// <param name="token">Cancels this caller's wait.</param>
+    /// <returns>Explicit effect data and linked descriptions.</returns>
+    public Task<ItemEffectInfo> GetItemEffectsAsync(string item, WikiPriority priority, bool force, CancellationToken token)
+    {
+        item = ItemNames.Normalize(item);
+        return GetAsync("item-effects:" + item, priority, force, async operation =>
+        {
+            lock (_gate)
+            {
+                if (!operation.Force && _itemEffects.TryGetValue(item, out var cached) && !cached.NeedsRefresh)
+                {
+                    operation.CacheHit = true;
+                    return cached;
+                }
+            }
+            var result = await new ItemEffectLookup(_client).FindAsync(item, operation.Cancellation.Token).ConfigureAwait(false);
+            SeedItemEffects(result);
+            return result;
+        }, token);
     }
 
     public Task<SkyQuestCatalog> GetSkyAsync(WikiPriority priority, bool force, CancellationToken token)

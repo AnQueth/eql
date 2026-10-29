@@ -81,6 +81,7 @@ public sealed class DockWindow : Window
             Focusable = false,
         };
         _sideToggle.Click += (_, _) => SetSidePanelOpen(_sideToggle.IsChecked == true);
+        UsageTracking.SetAction(_sideToggle, UsageAction.ToggleSettings);
 
         var autoArrange = new CheckBox
         {
@@ -91,6 +92,7 @@ public sealed class DockWindow : Window
             ToolTip = "Automatically rearrange docked panels to fill empty space. Untick so panels only move when you drag or resize them.",
         };
         autoArrange.SetResourceReference(ForegroundProperty, "NightText");
+        UsageTracking.SetAction(autoArrange, UsageAction.ToggleAutoArrange);
 
         var whatsNew = new Button
         {

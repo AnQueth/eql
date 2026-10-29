@@ -120,7 +120,7 @@ public sealed class MobWikiLookup(HttpClient http)
         return Regex.IsMatch(text, @"\{\{\s*Spellpage(?:smart)?\b", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
     }
 
-    private async Task<(string Title, string Text)?> FindPageAsync(string name, CancellationToken token)
+    internal async Task<(string Title, string Text)?> FindPageAsync(string name, CancellationToken token)
     {
         string alternate = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(name.ToLowerInvariant());
         string url = "https://eqlwiki.com/api.php?action=query&format=json&formatversion=2&redirects=1&prop=revisions&rvprop=content&rvslots=main&maxlag=5&titles=" +

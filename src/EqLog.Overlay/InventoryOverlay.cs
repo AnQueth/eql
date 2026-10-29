@@ -73,6 +73,7 @@ public partial class MainWindow
     {
         _inventoryRows = items;
         _inventoryRowsCharacter = character;
+        _exaltationLocations = Exaltations.Locate(items).Concat(Exaltations.WikiDefaults(items)).ToArray();
         RefreshMergeView();
         RefreshMotePlan();
     }

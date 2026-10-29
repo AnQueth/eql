@@ -5,6 +5,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/EqLog.Core.Tests/EqLog.Core.Tests.csproj" />
+    <Project Path="tests/EqLog.Overlay.Tests/EqLog.Overlay.Tests.csproj" />
     <Project Path="tests/EqLog.UpdateSmoke/EqLog.UpdateSmoke.csproj" />
   </Folder>
 </Solution>

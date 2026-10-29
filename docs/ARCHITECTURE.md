@@ -77,6 +77,28 @@ rows are kept in memory. `InventoryExport.MergeGroups` groups loose rows by name
 location text is built from the export path. Worn slot numbers are assigned in `Parse` before empty
 rows are skipped, because repeated roots (Ear, Wrist, Fingers, Any Slot) are only distinguished by order.
 
+The `exaltations` overlay searches effects before item names. `Exaltations.Locate` maps each
+physical `(Exaltation)` row to its nearest preceding host using both the full export path and
+worn-slot number. The export's `Augmentation` storage entries are also searchable exaltations,
+marked as not installed in exalt storage, with repeated entries preserved as separate copies.
+Original `Equipment` storage items supply separate `WikiDefault` candidates for effect research;
+they never become confirmed installed/loose exaltations. Only candidates with supported cached
+effects are displayed, with explicit unverified ownership/installation labels, no socket or
+confirmed quantity, and an export-entry number that is not claimed to be an in-game slot.
+Defaults are counted separately and excluded by Installed only. Confirmed exaltations are
+researched before defaults, using the same normalized base-item cache for both.
+Mappings are rebuilt only when the export
+changes, not on each render. Search spans effect names/descriptions, instrument keywords,
+host names, and readable locations. The view uses the shared virtualized row list.
+`ItemEffectLookup` reads the original item page's explicit Focus/Worn/Proc fields and stat-block
+effects, instrument/skill modifiers and haste. Click-only effects and ordinary weapon skill
+types are not inferred to transfer. Linked effect pages provide descriptions and spell-slot
+details. The shared `WikiRepository` schedules, deduplicates, and caches `item-effects:` operations.
+Successful entries persist in `item-effects.json` for seven days, missing pages for one day;
+failures retain prior data, display errors, and retry after five minutes. A corrupt cache is
+not overwritten. Fetches begin only when the panel is shown; UI refresh bypasses completed
+cache entries. No host names, locations, or inventory files are transmitted to the wiki.
+
 Item comparisons remove numeric upgrade modifiers wherever they occur, collapse whitespace,
 and ignore case. Displays retain original names. The same normalization is used by loot totals,
 inventory grouping, Sky requirements, searches, wiki links, and cache keys.

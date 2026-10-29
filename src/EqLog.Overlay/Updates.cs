@@ -58,6 +58,10 @@ public partial class MainWindow
     {
         _settings.ShareUsageTelemetry = UsageTelemetryBox.IsChecked == true;
         UsageTelemetry.SetEnabled(_settings.ShareUsageTelemetry);
+        if (_settings.ShareUsageTelemetry)
+        {
+            TrackUsageState();
+        }
         TelemetryStatusText.Text = _settings.ShareUsageTelemetry
             ? "Usage and error telemetry is enabled."
             : "Usage and error telemetry is disabled.";

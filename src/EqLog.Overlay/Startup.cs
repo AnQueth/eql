@@ -66,6 +66,8 @@ public partial class MainWindow
         {
             get; init;
         }
+        public IReadOnlyList<ItemEffectInfo> ItemEffects { get; init; } = [];
+        public Exception? ItemEffectsError { get; init; }
 
         public static async Task<StartupState> LoadAsync(AppSettings? initialSettings = null)
         {
@@ -81,7 +83,8 @@ public partial class MainWindow
             var npcs = Attempt(() => NpcCompendium.LoadAsync(NpcCompendiumFolder, LegacyNpcCompendiumPath));
             var inventory = Attempt(LoadQuestInventoryAsync);
             var questCache = Attempt(LoadQuestCacheAsync);
-            await Task.WhenAll(settings, themes, durations, spawns, motes, mobs, npcs, inventory, questCache);
+            var itemEffects = Attempt(LoadItemEffectsAsync);
+            await Task.WhenAll(settings, themes, durations, spawns, motes, mobs, npcs, inventory, questCache, itemEffects);
             return new StartupState
             {
                 Settings = settings.Result,
@@ -98,6 +101,8 @@ public partial class MainWindow
                 QuestInventoryError = inventory.Result.Error,
                 QuestCache = questCache.Result.Value ?? [],
                 QuestCacheError = questCache.Result.Error,
+                ItemEffects = itemEffects.Result.Value ?? [],
+                ItemEffectsError = itemEffects.Result.Error,
             };
         }
 
@@ -141,6 +146,16 @@ public partial class MainWindow
         private static Task<IReadOnlyList<QuestLookupResult>> LoadQuestCacheAsync()
         {
             return QuestLookupStore.LoadAsync(QuestCachePath, LegacyQuestCachePath);
+        }
+
+        private static async Task<IReadOnlyList<ItemEffectInfo>> LoadItemEffectsAsync()
+        {
+            if (!File.Exists(ItemEffectsPath))
+            {
+                return [];
+            }
+            return await AtomicFile.ReadJsonAsync<List<ItemEffectInfo>>(ItemEffectsPath).ConfigureAwait(false)
+                ?? throw new JsonException("Empty item-effect cache.");
         }
     }
 }

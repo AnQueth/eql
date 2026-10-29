@@ -166,6 +166,7 @@ public partial class MainWindow : Window
         InitializeLootQuests(state);
         InitializeQuestInventory(state);
         InitializeMobInfo(state);
+        InitializeExaltations(state);
         InitializeNpcCompendium(state);
         _chatChannels = [.. _settings.ChatChannels];
         DurationsGrid.ItemsSource = _durationRows;
@@ -183,6 +184,7 @@ public partial class MainWindow : Window
         ResetOnLoginBox.IsChecked = _settings.ResetOnLogin;
 
         CreateOverlays();
+        TrackUsageState();
         UpdateLockState();
         CreateChatToggles();
 
@@ -259,6 +261,10 @@ public partial class MainWindow : Window
             {
                 ConfigureMotePlanOverlay(panel);
             }
+            if (def.Key == "exaltations")
+            {
+                ConfigureExaltations(panel);
+            }
 
             if (def.Key == "loot")
             {
@@ -316,10 +322,20 @@ public partial class MainWindow : Window
             OverlayAppearance.Children.Add(CreateOverlayAppearance(w, p));
 
             ApplyMode(def.Key);
-            if (p.Visible)
-            {
-                UsageTelemetry.TrackPanelOpened(def.Key);
-            }
+        }
+    }
+
+    private void TrackUsageState()
+    {
+        if (_appliedTheme is { } theme)
+        {
+            UsageTelemetry.TrackTheme(theme, _settings.Theme is null, _bundledThemes, changed: false);
+        }
+
+        foreach (var def in OverlayPresenters.All)
+        {
+            var placement = _settings.Overlays[def.Key];
+            UsageTelemetry.TrackPanelState(def.Key, placement.Visible, placement.Docked, changed: false);
         }
     }
 
@@ -476,9 +492,14 @@ public partial class MainWindow : Window
 
     private void SetDocked(string key, bool docked)
     {
+        bool changed = _settings.Overlays[key].Docked != docked;
         _settings.Overlays[key].Docked = docked;
         _dockToggles[key].IsChecked = docked;
         ApplyMode(key);
+        if (changed)
+        {
+            UsageTelemetry.TrackPanelState(key, _settings.Overlays[key].Visible, docked, changed: true);
+        }
         if (docked && _settings.Overlays[key].Visible)
         {
             ShowDock();
@@ -515,7 +536,7 @@ public partial class MainWindow : Window
 
     private static OverlayPlacement DefaultPlacement(OverlayDefinition def, int index, Rect work)
     {
-        if (def.Key is "npcs" or "wiki" or "inventory" or "moteplan")
+        if (def.Key is "npcs" or "wiki" or "inventory" or "moteplan" or "exaltations")
         {
             return new OverlayPlacement
             {
@@ -607,13 +628,18 @@ public partial class MainWindow : Window
 
     private void SetOverlayVisible(string key, bool visible)
     {
-        if (visible)
+        bool changed = _settings.Overlays[key].Visible != visible;
+        if (visible && changed)
         {
             UsageTelemetry.TrackPanelOpened(key);
         }
 
         _settings.Overlays[key].Visible = visible;
         ApplyMode(key);
+        if (changed)
+        {
+            UsageTelemetry.TrackPanelState(key, visible, _settings.Overlays[key].Docked, changed: true);
+        }
         if (visible && _settings.Overlays[key].Docked)
         {
             ShowDock();
@@ -920,6 +946,7 @@ public partial class MainWindow : Window
                 "npcs" => NpcCompendiumContent(),
                 "inventory" => new("Inventory & loot quests", _characterName, []),
                 "moteplan" => new("Mote upgrade planner", _characterName, []),
+                "exaltations" => ExaltationsContent(),
                 _ => def.Render(snap, _engine, view),
             };
             var rows = def.Key is "loot" or "wiki"
