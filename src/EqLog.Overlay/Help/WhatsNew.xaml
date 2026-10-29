@@ -1,7 +1,51 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.17" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.18" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.18
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Keep long NPC encounters together and rebuild tracking data from your logs.
+        This release history ships with your installed version and works offline.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            NPC encounters no longer time out
+        </Paragraph>
+        <Paragraph>
+            NPC compendium encounters now stay open through inactivity, including long gaps
+            and restarts. Only a logged death, zoning, login, or a loadout or level change
+            closes an encounter. This change does not alter the separate session combat panels.
+        </Paragraph>
+        <Paragraph>
+            Missing ending events can merge repeated fights against the same NPC name.
+            Previously saved Timed out entries are unchanged. Reopening the same log alone
+            does not rebuild old history; use the tracking reset below if you want to reprocess it.
+            DoT ticks still add damage rather than direct-spell landings; this is not a complete cast history.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Reset tracking while keeping settings
+        </Paragraph>
+        <Paragraph>
+            Open Settings &gt; General &gt; Tracking data &gt; Reset tracking data....
+            Confirm the prompt to save settings and close the app. Open it again to complete
+            the reset before tracking stores load, then reprocess the selected log.
+        </Paragraph>
+        <Paragraph>
+            NPC history, resistance observations, learned spell durations and overrides,
+            spawn timers and overrides, mote history, and tracked inventory are backed up
+            under %AppData%\EqLogOverlay\tracking-backups and cleared from active storage.
+            Settings, alert triggers, layout, themes, lookup caches, and original game logs are kept.
+        </Paragraph>
+        <Paragraph>
+            Only data present in available logs and inventory exports can be rebuilt.
+            Open other log files separately to rebuild their history. Reset failures stop
+            startup with an error and retain the request for retry rather than loading partial data.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.17
     </Paragraph>

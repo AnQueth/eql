@@ -152,25 +152,54 @@ public sealed class NpcCompendiumTests : IDisposable
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Timeout_SnapshotsAndUnparsedLines_EndAtLastActivityNotIdleTime(bool snapshot)
+    public async Task Encounter_SnapshotsAndUnparsedLines_DoNotCloseDuringLongGaps(bool snapshot)
     {
         var store = new NpcCompendium();
         var engine = Engine(store);
         Lines(engine, (0, "You have entered Sky Hard."), (1, "You slash A wraith for 100 points of damage."));
         if (snapshot)
         {
-            engine.Snapshot(T0.AddMinutes(1));
+            engine.Snapshot(T0.AddMinutes(10));
         }
         else
         {
-            Lines(engine, (60, "Some unparsed message."));
+            Lines(engine, (600, "Some unparsed message."));
         }
-        Lines(engine, (61, "You slash A wraith for 50 points of damage."));
-        var fights = (await store.GetAsync("A wraith", "Sky Hard"))!.Encounters;
-        Assert.Equal(2, fights.Count);
-        var expired = fights.Single(e => e.Outcome == "Timed out");
-        Assert.Equal(1, expired.Seconds);
-        Assert.Equal(100, expired.YourDps);
+        Lines(engine, (601, "You slash A wraith for 50 points of damage."));
+        var active = Assert.Single((await store.GetAsync("A wraith", "Sky Hard"))!.Encounters);
+        Assert.Equal("Active", active.Outcome);
+        Assert.Equal(150, active.YourDamage);
+        Lines(engine, (1200, "You have slain A wraith!"));
+        var completed = Assert.Single((await store.GetAsync("A wraith", "Sky Hard"))!.Encounters);
+        Assert.Equal("NPC died", completed.Outcome);
+        Assert.Equal(150, completed.YourDamage);
+        Assert.Equal(1200, completed.Seconds);
+    }
+
+    [Fact]
+    public async Task Save_LongGapThenParsedEventAndRestart_ContinuesUntilExplicitDeath()
+    {
+        var store = new NpcCompendium();
+        var engine = Engine(store);
+        Lines(engine, (0, "You have entered Sky Hard."),
+            (1, "You slash A wraith for 100 points of damage."),
+            (600, "You begin casting Flame."));
+        Assert.True(store.HasActiveEncounter("A wraith", "Sky Hard"));
+        await store.SaveAsync(_path);
+
+        store = await NpcCompendium.LoadAsync(_path);
+        engine = Engine(store);
+        Lines(engine, (0, "You have entered Sky Hard."),
+            (1, "You slash A wraith for 100 points of damage."),
+            (600, "You begin casting Flame."),
+            (1200, "You slash A wraith for 50 points of damage."),
+            (1800, "You have slain A wraith!"));
+
+        var encounter = Assert.Single((await store.GetAsync("A wraith", "Sky Hard"))!.Encounters);
+        Assert.Equal("NPC died", encounter.Outcome);
+        Assert.Equal(150, encounter.YourDamage);
+        Assert.Equal(1800, encounter.Seconds);
+        Assert.False(store.HasActiveEncounter("A wraith", "Sky Hard"));
     }
 
     [Fact]
@@ -179,7 +208,7 @@ public sealed class NpcCompendiumTests : IDisposable
         var store = new NpcCompendium();
         var engine = Engine(store);
         Lines(engine, (0, "You have entered Sky Hard."), (1, "You slash A wraith for 100 points of damage."));
-        engine.Snapshot(T0.AddMinutes(10), advanceNpcIdle: false);
+        engine.Snapshot(T0.AddMinutes(10));
         Lines(engine, (2, "You slash A wraith for 50 points of damage."), (3, "You have slain A wraith!"));
         Assert.Equal(150, Assert.Single((await store.GetAsync("A wraith", "Sky Hard"))!.Encounters).YourDamage);
     }

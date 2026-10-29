@@ -305,16 +305,12 @@ public sealed class LogEngine
         _spells.ResetSession();
     }
 
-    public EngineSnapshot Snapshot(DateTime now, int topRows = 12, bool advanceNpcIdle = true)
+    public EngineSnapshot Snapshot(DateTime now, int topRows = 12)
     {
         lock (_gate)
         {
             UpdateWikiSpellDurations();
             _resistances?.Advance(now);
-            if (advanceNpcIdle)
-            {
-                _npcs?.Advance(now);
-            }
             _fights.Expire(now);
             return new EngineSnapshot(
                 now,

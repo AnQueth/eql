@@ -94,6 +94,18 @@ such as when you change characters. Startup history does not fire alert triggers
 If floating overlays are missing while arranging them, temporarily turn off
 **Only show floating overlays while EverQuest is active**.
 
+## Reset tracking data
+
+Use **Settings > General > Tracking data > Reset tracking data...** to rebuild tracking from logs.
+After confirmation, the app saves settings and closes. Open it again to complete the reset and
+reprocess the selected log. NPC encounters, resistance observations, learned spell durations and
+overrides, spawn timers and overrides, mote history, and tracked inventory are moved into
+`%AppData%\EqLogOverlay\tracking-backups` before fresh tracking stores load.
+Settings, alert triggers, layout, themes, original game logs, and lookup caches are preserved.
+Only data present in available logs and inventory exports can be rebuilt; other log files must
+be opened separately. A failed reset stops startup with an error instead of loading partial data;
+the reset request remains for retry and already-backed-up files are not overwritten.
+
 ## Usage and error telemetry
 
 Usage and error telemetry is off by default. Enable **Share usage and error telemetry** in
@@ -434,8 +446,10 @@ spell names against long status text.
   saved observations are preserved. Earlier landings lack damage amounts and cannot be
   checked retrospectively for reduced damage.
 
-Summaries end on a logged death, zone/login/loadout/level change, or more than 15 seconds
-without interaction. Missing deaths show **Timed out**, not an assumed kill. Active summaries
+Summaries end only on a logged death or zone/login/loadout/level change, never inactivity.
+Long gaps in combat do not split an encounter. Missing endings leave summaries **Active**, so
+repeated fights against the same NPC name can merge without a logged ending. Previously saved
+**Timed out** records remain unchanged; they are not confirmed kills. Active summaries
 are saved too. Reopening or reimporting the **same log path** does not duplicate its encounters;
 moving/copying a log to a different path counts as a different source. Overlapping same-name
 NPCs cannot be distinguished: they merge until a death/end boundary, and subsequent interaction

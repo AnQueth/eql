@@ -414,7 +414,8 @@ public partial class MainWindow
         rows.Add(new("How this history is measured", Details:
             "Average DPS is total damage / summed encounter seconds (last activity - start + 1, minimum 1s). " +
             "Your average uses fights where you dealt damage. Direct landings include partial/finishing hits; DoT ticks only add damage. " +
-            "Same-name NPCs overlap; timeout and zone/loadout changes split summaries. No raw lines are stored.", Stacked: true));
+            "Encounters stay open until a logged death, zone/login, or loadout/level change; inactivity never closes them. " +
+            "Same-name NPCs can merge if an ending event is missing. No raw lines are stored.", Stacked: true));
     }
 
     private void AddNpcSpellRows(List<OverlayRow> rows, MobResistanceInfo resistanceInfo, string zone, string mob)

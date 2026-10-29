@@ -67,6 +67,15 @@
             </StackPanel>
         </GroupBox>
 
+        <GroupBox Header="Tracking data" DockPanel.Dock="Top">
+            <StackPanel>
+                <TextBlock Text="Back up and reset learned tracking data, then close. Open the app again to reprocess the selected log. Settings and alert triggers are kept."
+                           TextWrapping="Wrap" />
+                <Button x:Name="ResetTrackingDataButton" Content="Reset tracking data..." HorizontalAlignment="Left"
+                        Margin="0,8,0,0" Click="ResetTrackingData_Click" />
+                <local:FixedLineTextBlock x:Name="ResetTrackingDataStatus" Foreground="{DynamicResource NightMuted}" Margin="0,4,0,0" />
+            </StackPanel>
+        </GroupBox>
         <GroupBox Header="Chat channels" DockPanel.Dock="Top">
             <WrapPanel x:Name="ChatToggles" />
         </GroupBox>

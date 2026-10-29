@@ -60,11 +60,5 @@ public sealed class NpcInteractionTracker(NpcCompendium store, string source)
                 return;
             }
         }
-        Advance(line.Timestamp);
-    }
-
-    public void Advance(DateTime time)
-    {
-        store.Advance(source, time);
     }
 }

@@ -246,7 +246,9 @@ The store keeps original display names, latest historical consider/assessment, e
 dates/context, incoming/personal/other damage, raw per-spell landing/resist counts and outcomes.
 Encounter durations use `max(1, lastActivity - start + 1s)`. Personal weighted DPS uses only
 encounters with personal damage; other-attacker weighted DPS uses all observed encounters.
-Death, zone/login/context changes and a fixed 15-second idle timeout close summaries.
+Only logged death and zone/login/context changes close summaries; inactivity never closes them.
+Without an ending event, later interactions with the same NPC name can continue the same summary.
+Previously saved timeout outcomes are preserved rather than rewritten or inferred as kills.
 No raw chat/log archive or individual same-name NPC identity is inferred.
 
 Per-source timestamp/line watermarks deduplicate all processed events. Active summaries and
@@ -254,9 +256,8 @@ watermarks are saved atomically together, so replay can skip a recorded prefix a
 unfinished encounter after restart. Encounters have stable source/start-time/line IDs.
 An in-memory active-encounter index avoids scanning unlimited completed history on each event;
 history does not depend on the transient fight tracker's capped recent-fight list.
-Parsed and unparsed log timestamps expire idle summaries. Snapshot-driven wall-clock expiration
-is gated until the tail reader catches up, preventing recent history from splitting according
-to dispatcher timing. Single-word death lines are interpreted only for an already active target.
+Neither log timestamps nor snapshots expire compendium encounters.
+Single-word death lines are interpreted only for an already active target.
 Moving a log is a new source; replacing/truncating it with older timestamps is not a new import.
 
 On disk the compendium is split so completed history is never held in memory or rewritten.

@@ -20,6 +20,12 @@ public partial class App : Application
         Overlay.MainWindow.StartupState state;
         try
         {
+            string? resetBackup = await Task.Run(() => TrackingDataReset.ApplyPendingAsync(AppSettings.Folder));
+            if (resetBackup is not null)
+            {
+                MessageBox.Show($"Tracking data was reset. A backup was saved to:\n{resetBackup}\n\nThe selected log will be reprocessed. Only history present in available logs can be rebuilt.",
+                    "Tracking data reset", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
             var settings = await AppSettings.LoadAsync();
             UsageTelemetry.SetEnabled(settings.ShareUsageTelemetry);
             state = await Overlay.MainWindow.StartupState.LoadAsync(settings);

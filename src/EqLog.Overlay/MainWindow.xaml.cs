@@ -860,7 +860,7 @@ public partial class MainWindow : Window
             var snapshotTime = lastLogTime is DateTime time && wallTime - time > ReplayThreshold
                 ? time
                 : wallTime;
-            var snapshot = engine.Snapshot(snapshotTime, advanceNpcIdle: p.CaughtUp);
+            var snapshot = engine.Snapshot(snapshotTime);
             IReadOnlyList<ChatEvent> chat = includeChat ? engine.RecentChat(60, channels) : [];
             return (Snapshot: snapshot, Chat: chat);
         });

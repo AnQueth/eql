@@ -100,7 +100,6 @@ public sealed class NpcCompendium
     private readonly Dictionary<string, Dictionary<string, EncounterData>> _histories = [];
     private readonly LinkedList<string> _historyOrder = new();
     private readonly SemaphoreSlim _ioGate = new(1, 1);
-    public static readonly TimeSpan EncounterTimeout = TimeSpan.FromSeconds(15);
 
     public IReadOnlyList<NpcCatalogEntry> Search(string name)
     {
@@ -184,7 +183,6 @@ public sealed class NpcCompendium
             }
             _data.Watermarks[sourceKey] = new(ev.Time, line);
             _version++;
-            CloseExpired(sourceKey, ev.Time);
             if (ev is ZoneEvent or LoginEvent)
             {
                 CloseSource(sourceKey, ev is ZoneEvent ? "Zoned" : "Login");
@@ -285,28 +283,6 @@ public sealed class NpcCompendium
                 fight.OtherDamage += damage.Amount;
             }
         }
-    }
-
-    public void Advance(string source, DateTime time)
-    {
-        lock (_gate)
-        {
-            if (CloseExpired(source.ToUpperInvariant(), time))
-            {
-                _version++;
-            }
-        }
-    }
-
-    private bool CloseExpired(string source, DateTime time)
-    {
-        bool changed = false;
-        foreach (var encounter in ActiveFor(source).Where(e => time - e.LastActivity > EncounterTimeout))
-        {
-            encounter.Outcome = "Timed out";
-            changed = true;
-        }
-        return changed;
     }
 
     private IEnumerable<EncounterData> ActiveFor(string source)
