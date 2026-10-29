@@ -383,14 +383,19 @@ public partial class MainWindow : Window
             placement.FontSize = value;
             window.Panel.FontSize = value;
         }, value => $"{value:0} pt");
-        AddSlider("Background", 0, 1, placement.BackgroundOpacity!.Value, 0.05, value =>
+        var backgroundSlider = AddSlider("Background", 0, 1, placement.BackgroundOpacity!.Value, 0.05, value =>
         {
             placement.BackgroundOpacity = value;
             window.Panel.SetBackgroundOpacity(value);
         }, value => $"{value:P0}");
+        window.Panel.BackgroundOpacityChanged += value =>
+        {
+            placement.BackgroundOpacity = value;
+            backgroundSlider.Value = value;
+        };
         return new Expander { Header = window.Panel.Caption, Content = controls };
 
-        void AddSlider(string caption, double minimum, double maximum, double value, double tick,
+        Slider AddSlider(string caption, double minimum, double maximum, double value, double tick,
             Action<double> changed, Func<double, string> format)
         {
             var row = new Grid { Margin = new Thickness(0, 4, 0, 4) };
@@ -425,6 +430,7 @@ public partial class MainWindow : Window
             row.Children.Add(slider);
             row.Children.Add(label);
             controls.Children.Add(row);
+            return slider;
         }
     }
 

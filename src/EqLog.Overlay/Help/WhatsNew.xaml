@@ -1,7 +1,50 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.20" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.21" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.21
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Adjust overlay backgrounds in place and pick upgrade targets more easily.
+        This release history ships with your installed version and works offline.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Compact background sliders on floating overlays
+        </Paragraph>
+        <Paragraph>
+            Unlock floating overlays with Ctrl+Shift+L to find a small background-opacity
+            slider immediately left of each Dock button. Changes apply live to that panel,
+            stay synchronized with Settings &gt; General &gt; Overlays &gt; Individual
+            overlay appearance and locks, and are saved with its appearance.
+            Hover over the slider to see its opacity.
+        </Paragraph>
+        <Paragraph>
+            Clicking a slider gives the overlay focus while the thumb captures the drag,
+            rather than deliberately leaving the game focused. Click back into the game
+            when finished. Locked overlays remain click-through and do not show the slider.
+            Docked panels still use Settings for opacity. If hover-only titles are enabled,
+            hover over the floating panel to reveal its controls.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Separate search and inventory selection in the mote planner
+        </Paragraph>
+        <Paragraph>
+            Enable Mote upgrade planner under Settings &gt; General &gt; Overlays.
+            In Equipment mode, type in the name field to filter a separate inventory
+            dropdown below it. Clear the text to see all eligible exported items.
+            Picking an item fills its name and sets Current to your best copy's rank,
+            as before. You can still type a name to plan without an inventory match.
+        </Paragraph>
+        <Paragraph>
+            Spell mode keeps the name field and hides the inventory dropdown because
+            inventory exports do not list spells. Upgrade calculations and copy-feeding
+            options are unchanged.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.20
     </Paragraph>

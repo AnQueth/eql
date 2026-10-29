@@ -300,6 +300,11 @@ as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels r
   to adjust its text size, background opacity, and floating-window lock independently.
   Size and opacity apply to both floating and docked panels, update live, and are saved with positions.
   Existing settings retain the previous global appearance and lock values until individually changed.
+- Unlocked floating overlays also have a compact background-opacity slider just left of **Dock**. Adjust it over
+  the game to change that panel's opacity; it stays synchronized with Settings and is saved.
+  Unlock with Ctrl+Shift+L first. Hover-only title mode hides the slider until you hover the panel.
+  Clicking the slider focuses the overlay while its thumb captures the drag, keeping the game
+  from treating the interaction as camera input. Click back into the game when finished.
 - Enable **Hide floating overlay titles and borders in game unless hovered** for unobtrusive floating
   panels while EverQuest is active. Hover to reveal the header and decorations; docked panels are
   unchanged. Locked overlays remain click-through, and their hover state updates within half a second.
@@ -774,7 +779,8 @@ counted, so reading the same log again on the next launch doesn't count drops tw
 The **Mote upgrade planner** overlay (hidden and docked by default) works out what it takes to get an item or spell
 to +10. Going from +N to +N+1 takes 2^N points (1, 2, 4 … 512), and extra points carry into the next step.
 
-- Choose **Equipment** or **Spell**, then type a name or pick an item from your last inventory export. Picking an
+- Choose **Equipment** or **Spell**, then type a name in the text field. For equipment, typing filters the
+  separate inventory dropdown below; clear the text to see all items from your last inventory export. Picking an
   item sets **Current** to your best copy's rank. Enter **Points** if it already has progress toward the next rank.
 - **Use owned motes** spends the motes you own (inventory export plus newer loot). For equipment, each rank uses
   only its matching mote tier; higher tiers are reserved for later ranks rather than spent to reach a lower rank.

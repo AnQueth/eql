@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -14,6 +15,7 @@ public sealed class OverlayWindow : Window
 {
     private bool _locked;
     private bool _hoverOnlyChrome;
+    private bool _sliderInteraction;
 
     public OverlayWindow(OverlayPanel panel)
     {
@@ -47,6 +49,25 @@ public sealed class OverlayWindow : Window
         };
 
         SourceInitialized += (_, _) => ApplyExStyle();
+        PreviewMouseDown += (_, e) =>
+        {
+            if (!_locked && e.ChangedButton == MouseButton.Left &&
+                FindSlider(e.OriginalSource as DependencyObject) is not null)
+            {
+                _sliderInteraction = true;
+                ApplyExStyle();
+                Activate();
+            }
+        };
+        AddHandler(Mouse.PreviewMouseUpEvent, new MouseButtonEventHandler((_, _) => EndSliderInteraction()), true);
+        AddHandler(Mouse.LostMouseCaptureEvent, new MouseEventHandler((_, _) =>
+        {
+            if (FindSlider(Mouse.Captured as DependencyObject) is null)
+            {
+                EndSliderInteraction();
+            }
+        }), true);
+        Deactivated += (_, _) => EndSliderInteraction();
         MouseEnter += (_, _) => UpdateChrome();
         MouseLeave += (_, _) => UpdateChrome();
         SetLocked(false);
@@ -99,9 +120,36 @@ public sealed class OverlayWindow : Window
     public void SetLocked(bool locked)
     {
         _locked = locked;
+        if (locked)
+        {
+            EndSliderInteraction();
+        }
         Panel.SetLocked(locked);
         WindowChrome.GetWindowChrome(this).ResizeBorderThickness = new Thickness(locked ? 0 : 6);
         ApplyExStyle();
+    }
+
+    private void EndSliderInteraction()
+    {
+        if (!_sliderInteraction)
+        {
+            return;
+        }
+        _sliderInteraction = false;
+        ApplyExStyle();
+    }
+
+    private static Slider? FindSlider(DependencyObject? source)
+    {
+        while (source is not null)
+        {
+            if (source is Slider slider)
+            {
+                return slider;
+            }
+            source = source is Visual ? VisualTreeHelper.GetParent(source) : LogicalTreeHelper.GetParent(source);
+        }
+        return null;
     }
 
     private void ApplyExStyle()
@@ -113,7 +161,7 @@ public sealed class OverlayWindow : Window
         }
 
         int always = NativeMethods.WS_EX_TOOLWINDOW | NativeMethods.WS_EX_LAYERED;
-        bool typing = Panel.Key is "npcs" or "inventory" or "moteplan";
+        bool typing = Panel.Key is "npcs" or "inventory" or "moteplan" || _sliderInteraction;
         if (_locked || !typing)
         {
             always |= NativeMethods.WS_EX_NOACTIVATE;

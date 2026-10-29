@@ -13,7 +13,10 @@ namespace EqLog.Overlay;
 public partial class MainWindow
 {
     private ComboBox? _planKind;
-    private ComboBox? _planName;
+    private TextBox? _planName;
+    private ComboBox? _planInventoryName;
+    private string? _planNameFilter;
+    private bool _refreshingPlanNames;
     private ComboBox? _planRank;
     private TextBox? _planPoints;
     private CheckBox? _planUseMotes;
@@ -43,11 +46,17 @@ public partial class MainWindow
             Margin = new Thickness(0, 0, 6, 0),
             ToolTip = "Equipment motes are worth 1-10 points and only work up to a +rank limit; spell motes double in value and have no limit.",
         };
-        _planName = new ComboBox
+        _planName = new TextBox
         {
-            IsEditable = true,
-            IsTextSearchEnabled = true,
-            ToolTip = "Type a name, or pick an item from your last inventory export. Picking an item sets the rank to your best copy.",
+            VerticalContentAlignment = VerticalAlignment.Center,
+            ToolTip = "Type an item name to plan or search the inventory dropdown below.",
+        };
+        _planInventoryName = new ComboBox
+        {
+            IsEditable = false,
+            IsTextSearchEnabled = false,
+            Margin = new Thickness(0, 0, 0, 4),
+            ToolTip = "Pick a matching item from your last inventory export. Picking an item sets the rank to your best copy.",
         };
         _planRank = new ComboBox
         {
@@ -141,7 +150,7 @@ public partial class MainWindow
 
         _planSummary = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 2) };
         _planSummary.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
-        var top = new StackPanel { Children = { nameRow, optionsRow, feedRow, fodderRow, _planSummary } };
+        var top = new StackPanel { Children = { nameRow, _planInventoryName, optionsRow, feedRow, fodderRow, _planSummary } };
         DockPanel.SetDock(top, Dock.Top);
 
         _planHost = new StackPanel();
@@ -166,15 +175,16 @@ public partial class MainWindow
 
             RefreshMotePlan();
         };
-        _planName.SelectionChanged += (_, _) =>
+        _planInventoryName.SelectionChanged += (_, _) =>
         {
-            if (_planKind.SelectedIndex == 0 && _planName.SelectedItem is string name)
+            if (!_refreshingPlanNames && _planKind.SelectedIndex == 0 && _planInventoryName.SelectedItem is string name)
             {
+                _planName.Text = name;
                 SelectBestCopy(name);
+                RefreshMotePlan();
             }
         };
-        _planName.AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent,
-            new TextChangedEventHandler((_, _) => RefreshMotePlan()));
+        _planName.TextChanged += (_, _) => RefreshMotePlan();
         _planRank.SelectionChanged += (_, _) => RefreshMotePlan();
         _planPoints.TextChanged += (_, _) => RefreshMotePlan();
         _planUseMotes.Click += (_, _) => RefreshMotePlan();
@@ -284,24 +294,41 @@ public partial class MainWindow
 
     private void RefreshPlanNames(UpgradeKind kind)
     {
-        if (_planName is null || (ReferenceEquals(_planNamesSource, _inventoryRows) && _planNamesKind == kind))
+        if (_planName is null || _planInventoryName is null ||
+            (ReferenceEquals(_planNamesSource, _inventoryRows) && _planNamesKind == kind && _planNameFilter == _planName.Text.Trim()))
         {
             return;
         }
 
         _planNamesSource = _inventoryRows;
         _planNamesKind = kind;
-        string text = _planName.Text;
+        _planNameFilter = _planName.Text.Trim();
         // The inventory export only lists items, so spells are typed in by name.
-        _planName.ItemsSource = kind == UpgradeKind.Spell
+        var names = kind == UpgradeKind.Spell
             ? Array.Empty<string>()
             : PlanInventoryRows()
                 .Select(r => InventoryExport.SplitRank(r.Name).BaseName)
                 .Where(n => MoteTiers.TierOf(n) is null)
+                .Where(n => n.Contains(_planNameFilter, StringComparison.OrdinalIgnoreCase))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
-        _planName.Text = text;
+        _refreshingPlanNames = true;
+        try
+        {
+            _planInventoryName.ItemsSource = names;
+            _planInventoryName.SelectedItem = names.FirstOrDefault(name =>
+                name.Equals(_planNameFilter, StringComparison.OrdinalIgnoreCase));
+            _planInventoryName.IsEnabled = names.Length > 0;
+            _planInventoryName.Visibility = kind == UpgradeKind.Equipment ? Visibility.Visible : Visibility.Collapsed;
+            _planInventoryName.ToolTip = names.Length == 0
+                ? "No matching inventory items. Type a name above to plan manually, or clear the search to see all exported items."
+                : "Pick a matching inventory item to set its name and best-copy rank.";
+        }
+        finally
+        {
+            _refreshingPlanNames = false;
+        }
     }
 
     private void RefreshMotePlan()
@@ -324,7 +351,7 @@ public partial class MainWindow
         }
 
         _planName.ToolTip = equipment
-            ? "Type a name, or pick an item from your last inventory export. Picking an item sets the rank to your best copy."
+            ? "Type an item name to plan or search the separate inventory dropdown below. Clear the text to see all exported items."
             : "Type the spell name.";
         if (_planFeed is not null && _planFeedUsable is not null)
         {

@@ -140,6 +140,8 @@ public sealed class OverlayPanel : ContentControl
     private readonly TextBlock _hint;
     private readonly TextBlock _dockDragHandle;
     private readonly Button _dockButton;
+    private readonly Slider _backgroundSlider;
+    private readonly StackPanel _backgroundControls;
     private readonly Border _frame;
     private readonly Border _titleFrame;
     private readonly Border _inset;
@@ -240,6 +242,42 @@ public sealed class OverlayPanel : ContentControl
             _rows.VerticalAlignment = VerticalAlignment.Center;
         }
 
+        _backgroundSlider = new Slider
+        {
+            Minimum = 0,
+            Maximum = 1,
+            Value = _opacity,
+            TickFrequency = 0.05,
+            SmallChange = 0.05,
+            LargeChange = 0.1,
+            IsSnapToTickEnabled = true,
+            Width = 56,
+            Height = 18,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(4, 0, 0, 0),
+            Focusable = false,
+            ToolTip = $"Background opacity: {_opacity:P0}",
+            AutoToolTipPlacement = System.Windows.Controls.Primitives.AutoToolTipPlacement.BottomRight,
+            AutoToolTipPrecision = 2,
+        };
+        _backgroundSlider.ValueChanged += (_, e) =>
+        {
+            SetBackgroundOpacity(e.NewValue);
+            _backgroundSlider.ToolTip = $"Background opacity: {e.NewValue:P0}";
+            BackgroundOpacityChanged?.Invoke(e.NewValue);
+        };
+        _backgroundControls = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Top,
+            Children =
+            {
+                _backgroundSlider,
+            },
+        };
+        _backgroundControls.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
+        DockPanel.SetDock(_backgroundControls, Dock.Right);
+        header.Children.Insert(header.Children.IndexOf(_dockButton) + 1, _backgroundControls);
         _titleFrame = new Border { Child = header };
         var layout = _layout;
         DockPanel.SetDock(_titleFrame, Dock.Top);
@@ -348,6 +386,7 @@ public sealed class OverlayPanel : ContentControl
     public event Action<string>? WatchToggleRequested;
     public event Action<SpawnTrackChange>? SpawnTrackToggleRequested;
     public event Action<SpellTrackChange>? SpellTrackToggleRequested;
+    public event Action<double>? BackgroundOpacityChanged;
 
     public void SetToolbar(UIElement toolbar)
     {
@@ -372,7 +411,7 @@ public sealed class OverlayPanel : ContentControl
             if (source is System.Windows.Controls.Primitives.ButtonBase or
                 System.Windows.Controls.Primitives.TextBoxBase or
                 System.Windows.Controls.Primitives.ScrollBar or System.Windows.Controls.Primitives.Thumb or ComboBox or TabItem or Hyperlink or
-                DataGrid or GridSplitter)
+                DataGrid or GridSplitter or Slider)
             {
                 return true;
             }
@@ -389,6 +428,10 @@ public sealed class OverlayPanel : ContentControl
     public void SetBackgroundOpacity(double opacity)
     {
         _opacity = Math.Clamp(opacity, 0, 1);
+        if (_backgroundSlider.Value != _opacity)
+        {
+            _backgroundSlider.Value = _opacity;
+        }
         Apply();
     }
 
@@ -428,6 +471,7 @@ public sealed class OverlayPanel : ContentControl
 
         // Floating overlays are click-through when locked, so the button only shows while unlocked.
         _dockButton.Visibility = _docked || !_locked ? Visibility.Visible : Visibility.Collapsed;
+        _backgroundControls.Visibility = !_docked && !_locked ? Visibility.Visible : Visibility.Collapsed;
         _dockButton.Content = _docked ? "\u2197 Pop out" : "\u2199 Dock";
         _dockButton.ToolTip = _docked
             ? "Pop this panel out into its own floating overlay"
