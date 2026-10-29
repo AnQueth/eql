@@ -4,6 +4,9 @@
         xmlns:local="clr-namespace:EqLog.Overlay"
         Title="EverQuest Log Overlay" Height="720" Width="680" MinWidth="480" MinHeight="420"
         Background="{DynamicResource NightBackground}" Foreground="{DynamicResource NightText}" FontSize="13">
+    <Window.Resources>
+        <local:AlertColorBrushConverter x:Key="AlertColorBrush" />
+    </Window.Resources>
     <DockPanel x:Name="SettingsRoot" Margin="10">
         <TabControl x:Name="Tabs" TabStripPlacement="Top">
             <TabItem Header="General">
@@ -92,7 +95,7 @@
                         </TextBlock>
                     </Border>
                     <TextBlock DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap"
-                               Text="Regex is matched (case-insensitive) against the text after the [timestamp]. {C} = your character name. In the alert text, $1 or ${name} insert captured groups. Only new lines fire alerts, not history. Add a row at the bottom. Select rows, then use Delete selected or the Delete key; confirmation is required." />
+                               Text="Simple text matches anywhere in the line, ignoring case, with no special characters. Regex is matched (case-insensitive) against the text after the [timestamp]. A trigger fires when Simple text OR Regex matches; fill in either or both. {C} = your character name in both. In the alert text, $1 or ${name} insert regex captured groups. Only new lines fire alerts, not history. Use Add trigger for a new one. Click a trigger (or its left edge; Ctrl/Shift-click for several), then use Delete selected; confirmation is required." />
                     <DockPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
                         <Button Content="Test" DockPanel.Dock="Right" Margin="6,0,0,0" Click="TestTrigger_Click" />
                         <TextBlock Text="Test a line:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{DynamicResource NightText}" DockPanel.Dock="Left" />
@@ -100,37 +103,96 @@
                     </DockPanel>
                     <TextBlock x:Name="TriggerStatusText" DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="#FF8080" TextWrapping="Wrap" />
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                        <Button Content="Add trigger" Click="AddTrigger_Click" ToolTip="Add a new, empty alert trigger" />
                         <Button x:Name="DeleteTriggersButton" Content="Delete selected" IsEnabled="False"
                                 Click="DeleteTriggers_Click"
                                 ToolTip="Delete the selected alert triggers after confirmation" />
                     </StackPanel>
-                    <DataGrid x:Name="TriggersGrid" AutoGenerateColumns="False" CanUserAddRows="True" CanUserDeleteRows="True"
-                              HeadersVisibility="Column" GridLinesVisibility="Horizontal"
-                              RowEditEnding="Triggers_RowEditEnding" SelectionChanged="Triggers_SelectionChanged">
+                    <DataGrid x:Name="TriggersGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="True"
+                              HeadersVisibility="Row" RowHeaderWidth="14" RowHeight="NaN" GridLinesVisibility="Horizontal" SelectionMode="Extended"
+                              HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.ScrollUnit="Pixel"
+                              Binding.SourceUpdated="TriggerField_SourceUpdated"
+                              PreviewGotKeyboardFocus="Triggers_PreviewGotKeyboardFocus"
+                              SelectionChanged="Triggers_SelectionChanged">
                         <DataGrid.CommandBindings>
                             <CommandBinding Command="{x:Static DataGrid.DeleteCommand}"
                                             CanExecute="DeleteTriggers_CanExecute" Executed="DeleteTriggers_Executed" />
                         </DataGrid.CommandBindings>
                         <DataGrid.Columns>
-                            <DataGridTemplateColumn Header="On" Width="36">
+                            <DataGridTemplateColumn Header="Trigger" Width="*">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <CheckBox IsChecked="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" Margin="0" Click="TriggerCheck_Click" />
+                                        <!-- No row BindingGroup: each field saves on its own instead of waiting for a DataGrid row commit. -->
+                                        <Grid Margin="0,4,0,6" BindingGroup="{x:Null}">
+                                            <Grid.Resources>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{DynamicResource NightMuted}" />
+                                                    <Setter Property="VerticalAlignment" Value="Center" />
+                                                    <Setter Property="Margin" Value="0,0,8,0" />
+                                                </Style>
+                                                <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                                    <Setter Property="Padding" Value="6,4" />
+                                                    <Setter Property="Margin" Value="0,3,12,3" />
+                                                    <Setter Property="VerticalContentAlignment" Value="Center" />
+                                                </Style>
+                                            </Grid.Resources>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="2*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+
+                                            <TextBlock Text="Name" />
+                                            <TextBox Grid.Column="1" Tag="Name" FontWeight="SemiBold"
+                                                     Text="{Binding Name, NotifyOnSourceUpdated=True}" />
+                                            <TextBlock Grid.Column="2" Text="Alert text" />
+                                            <TextBox Grid.Column="3" Tag="AlertText" Margin="0,3,0,3"
+                                                     Text="{Binding Text, NotifyOnSourceUpdated=True}"
+                                                     ToolTip="Text to show. $1 or ${name} insert regex captured groups, {C} your name. Empty shows the log line." />
+
+                                            <TextBlock Grid.Row="1" Text="Simple text" />
+                                            <TextBox Grid.Row="1" Grid.Column="1"
+                                                     Text="{Binding Simple, NotifyOnSourceUpdated=True}"
+                                                     ToolTip="Plain text found anywhere in the line, ignoring case. {C} = your name." />
+                                            <TextBlock Grid.Row="1" Grid.Column="2" Text="or Regex" />
+                                            <TextBox Grid.Row="1" Grid.Column="3" Margin="0,3,0,3" FontFamily="Consolas"
+                                                     Text="{Binding Pattern, NotifyOnSourceUpdated=True}"
+                                                     ToolTip="Matched case-insensitively against the text after [timestamp]. {C} = your name." />
+
+                                            <WrapPanel Grid.Row="2" Grid.ColumnSpan="4" Margin="0,3,0,0">
+                                                <CheckBox Content="Enabled" VerticalAlignment="Center"
+                                                          IsChecked="{Binding Enabled, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}" />
+                                                <TextBlock Text="Secs" />
+                                                <TextBox Width="52" Text="{Binding Seconds, NotifyOnSourceUpdated=True}"
+                                                         ToolTip="How long the alert stays on screen" />
+                                                <CheckBox Content="Sound" VerticalAlignment="Center"
+                                                          IsChecked="{Binding Sound, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}"
+                                                          ToolTip="Play the Windows exclamation sound" />
+                                                <TextBlock Text="Effect" />
+                                                <ComboBox Width="160" Margin="0,2,14,2" VerticalAlignment="Center"
+                                                          ItemsSource="{x:Static local:AlertEffects.Options}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                                                          SelectedValue="{Binding Effect, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}"
+                                                          ToolTip="How the alert text moves in the Alerts overlay" />
+                                                <TextBlock Text="Color" />
+                                                <Border Width="18" Height="18" Margin="0,0,6,0" VerticalAlignment="Center" CornerRadius="3"
+                                                        BorderBrush="{DynamicResource NightMuted}" BorderThickness="1"
+                                                        Background="{Binding Color, Converter={StaticResource AlertColorBrush}}" />
+                                                <TextBox Width="90" Tag="Color" Margin="0,3,6,3"
+                                                         Text="{Binding Color, NotifyOnSourceUpdated=True}"
+                                                         ToolTip="A color name (Orange) or #RRGGBB" />
+                                                <Button Content="Pick..." Padding="8,3" Margin="0,2,0,2" VerticalAlignment="Center"
+                                                        Click="TriggerColorPick_Click" ToolTip="Choose the alert color" />
+                                            </WrapPanel>
+                                        </Grid>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="110" />
-                            <DataGridTextColumn Header="Regex" Binding="{Binding Pattern}" Width="2*" />
-                            <DataGridTextColumn Header="Alert text" Binding="{Binding Text}" Width="*" />
-                            <DataGridTextColumn Header="Secs" Binding="{Binding Seconds}" Width="40" />
-                            <DataGridTemplateColumn Header="Sound" Width="46">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <CheckBox IsChecked="{Binding Sound, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" Margin="0" Click="TriggerCheck_Click" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Color" Binding="{Binding Color}" Width="70" />
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>
@@ -160,7 +222,7 @@
                         <TextBlock x:Name="SpawnZoneText" Foreground="{DynamicResource Pumpkin}" FontWeight="Bold" VerticalAlignment="Center" Text="Zone: -" />
                     </DockPanel>
                     <TextBlock DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap"
-                               Text="Tick Track to time mobs in the Spawn Timers overlay. Priority: Override, then Learned, then Wiki. Until a time is learned, tracked mobs are checked on EQLWiki in the background. Wiki times may differ on Legends or instance variants. Override accepts seconds or m:ss; clear it to use Learned or Wiki. Learning measures kill to next sighting without zoning; instances share learned times." />
+                               Text="Tick Track to time mobs in the Spawn Timers overlay. Priority: Override, then Learned, then Wiki. Until a time is learned, tracked mobs are checked on EQLWiki in the background. Wiki times may differ on Legends or instance variants. Override accepts seconds or m:ss; clear it to use Learned or Wiki. Learning measures kill to next sighting without zoning; instances share learned times. Relearn forgets the learned time and measures it again from your next kill." />
                     <DataGrid x:Name="SpawnsGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
                               HeadersVisibility="Column" GridLinesVisibility="Horizontal"
                               CellEditEnding="Spawns_CellEditEnding">
@@ -190,6 +252,15 @@
                             <DataGridTextColumn Header="Wiki" Binding="{Binding Wiki}" IsReadOnly="True" Width="70" />
                             <DataGridTextColumn Header="Samples" Binding="{Binding Samples}" IsReadOnly="True" Width="60" />
                             <DataGridTextColumn Header="Override" Binding="{Binding Override}" Width="70" />
+                            <DataGridTemplateColumn Header="Action" Width="90" MinWidth="90">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="Relearn" Click="RelearnSpawn_Click" Padding="8,1" Margin="0"
+                                                MinHeight="22" VerticalAlignment="Center" IsEnabled="{Binding HasSamples}"
+                                                ToolTip="Forget the learned respawn time and measure it again from your next kill" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>
@@ -305,7 +376,7 @@
                     </DockPanel>
                 </StackPanel>
                 <TextBlock DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap"
-                           Text="Override takes priority, then learned duration, then the wiki estimate (ticks are 6 seconds). Wiki lookups run in the background for spells you cast. Uncheck Track to hide timers but keep learning. Remove deletes this spell/rank and prevents automatic rediscovery until you add it again." />
+                           Text="Override takes priority, then learned duration, then the wiki estimate (ticks are 6 seconds). Wiki lookups run in the background for spells you cast. Uncheck Track to hide timers but keep learning. Relearn forgets the learned duration and measures it again from your next casts. Remove deletes this spell/rank and prevents automatic rediscovery until you add it again." />
                 <DataGrid x:Name="DurationsGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
                           HeadersVisibility="Column" GridLinesVisibility="Horizontal"
                           CellEditEnding="Durations_CellEditEnding">
@@ -322,12 +393,17 @@
                         <DataGridTextColumn Header="Wiki" Binding="{Binding Wiki}" IsReadOnly="True" Width="65" />
                         <DataGridTextColumn Header="Samples" Binding="{Binding Samples}" IsReadOnly="True" Width="70" />
                         <DataGridTextColumn Header="Override (s)" Binding="{Binding Override}" Width="100" />
-                        <DataGridTemplateColumn Header="Action" Width="90" MinWidth="90">
+                        <DataGridTemplateColumn Header="Action" Width="170" MinWidth="170">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <Button Content="Remove" Click="RemoveDuration_Click" Padding="8,1" Margin="0"
-                                            MinHeight="22" VerticalAlignment="Center"
-                                            ToolTip="Remove this spell/rank until manually added again" />
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button Content="Relearn" Click="RelearnDuration_Click" Padding="8,1" Margin="0,0,6,0"
+                                                MinHeight="22" VerticalAlignment="Center" IsEnabled="{Binding HasSamples}"
+                                                ToolTip="Forget the learned duration and measure it again from your next casts" />
+                                        <Button Content="Remove" Click="RemoveDuration_Click" Padding="8,1" Margin="0"
+                                                MinHeight="22" VerticalAlignment="Center"
+                                                ToolTip="Remove this spell/rank until manually added again" />
+                                    </StackPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>

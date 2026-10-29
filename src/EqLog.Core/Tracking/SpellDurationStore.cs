@@ -21,6 +21,7 @@ public sealed class SpellDurationStore : ISnapshotStore<SpellDurationStore.Dto>
     private readonly Dictionary<string, double> _wikiDurations = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _untracked = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _removed = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DateTime> _relearnSince = new(StringComparer.OrdinalIgnoreCase);
 
     public bool IsDirty
     {
@@ -33,7 +34,7 @@ public sealed class SpellDurationStore : ISnapshotStore<SpellDurationStore.Dto>
     /// </summary>
     public void AddSample(string spell, double seconds, DateTime observedAt)
     {
-        if (_removed.Contains(spell))
+        if (_removed.Contains(spell) || (_relearnSince.TryGetValue(spell, out var since) && observedAt <= since))
         {
             return;
         }
@@ -129,6 +130,23 @@ public sealed class SpellDurationStore : ISnapshotStore<SpellDurationStore.Dto>
         return seconds > 0 && double.IsFinite(seconds) && seconds <= TimeSpan.MaxValue.TotalSeconds - 60;
     }
 
+    /// <summary>
+    /// Forgets the learned samples for this spell/rank so its duration is measured again. Wear-offs at or before
+    /// <paramref name="since"/> (e.g. log history re-read on the next launch) are ignored. Overrides, wiki estimates
+    /// and the Track setting are kept.
+    /// </summary>
+    public void Relearn(string spell, DateTime since)
+    {
+        if (_removed.Contains(spell))
+        {
+            return;
+        }
+
+        _samples.Remove(spell);
+        _relearnSince[spell] = since;
+        IsDirty = true;
+    }
+
     /// <summary>Deletes this spell's saved data and prevents automatic rediscovery until an override is added.</summary>
     public void Remove(string spell)
     {
@@ -136,6 +154,7 @@ public sealed class SpellDurationStore : ISnapshotStore<SpellDurationStore.Dto>
         _overrides.Remove(spell);
         _wikiDurations.Remove(spell);
         _untracked.Remove(spell);
+        _relearnSince.Remove(spell);
         _removed.Add(spell);
         IsDirty = true;
     }
@@ -210,6 +229,7 @@ public sealed class SpellDurationStore : ISnapshotStore<SpellDurationStore.Dto>
     {
         return _samples.Keys.Union(_overrides.Keys, StringComparer.OrdinalIgnoreCase)
             .Union(_wikiDurations.Keys, StringComparer.OrdinalIgnoreCase).Union(_untracked, StringComparer.OrdinalIgnoreCase)
+            .Union(_relearnSince.Keys, StringComparer.OrdinalIgnoreCase)
             .Where(k => !_removed.Contains(k))
             .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
             .Select(k => new SpellDurationInfo(
@@ -259,6 +279,11 @@ public sealed class SpellDurationStore : ISnapshotStore<SpellDurationStore.Dto>
                 {
                     store._wikiDurations[kv.Key] = kv.Value;
                 }
+
+                foreach (var kv in dto.RelearnSince ?? [])
+                {
+                    store._relearnSince[kv.Key] = kv.Value;
+                }
             }
         }
         catch (JsonException)
@@ -291,6 +316,7 @@ public sealed class SpellDurationStore : ISnapshotStore<SpellDurationStore.Dto>
             Untracked = _untracked.Order(StringComparer.OrdinalIgnoreCase).ToList(),
             Removed = _removed.Order(StringComparer.OrdinalIgnoreCase).ToList(),
             WikiDurations = new(_wikiDurations, StringComparer.OrdinalIgnoreCase),
+            RelearnSince = new(_relearnSince, StringComparer.OrdinalIgnoreCase),
         };
         IsDirty = false;
         return dto;
@@ -324,6 +350,11 @@ public sealed class SpellDurationStore : ISnapshotStore<SpellDurationStore.Dto>
         }
 
         public Dictionary<string, double>? WikiDurations
+        {
+            get; set;
+        }
+
+        public Dictionary<string, DateTime>? RelearnSince
         {
             get; set;
         }

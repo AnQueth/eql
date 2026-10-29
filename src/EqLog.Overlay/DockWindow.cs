@@ -39,6 +39,7 @@ public sealed class DockWindow : Window
     private Vector _dragOffset;
     private string? _anchorKey;
     private bool _splitterDragging;
+    private WhatsNewWindow? _whatsNew;
     private readonly ContentControl _notice = new() { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 0, 10, 0) };
 
     public DockWindow(DockWindowSettings settings)
@@ -70,17 +71,6 @@ public sealed class DockWindow : Window
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
         }
 
-        Topmost = settings.Topmost;
-
-        var topmost = new CheckBox
-        {
-            Content = "Always on top",
-            IsChecked = settings.Topmost,
-            Foreground = Foreground,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        topmost.SetResourceReference(ForegroundProperty, "NightText");
-        topmost.Click += (_, _) => Topmost = Settings.Topmost = topmost.IsChecked == true;
         _sideToggle = new ToggleButton
         {
             Content = "\u2699 Settings",
@@ -102,15 +92,28 @@ public sealed class DockWindow : Window
         };
         autoArrange.SetResourceReference(ForegroundProperty, "NightText");
 
+        var whatsNew = new Button
+        {
+            Name = "WhatsNewButton",
+            Content = "What's New",
+            Padding = new Thickness(8, 2, 8, 2),
+            Margin = new Thickness(0, 0, 10, 0),
+            ToolTip = "Read what's new and how to use this release's features",
+        };
+        whatsNew.Click += (_, _) =>
+        {
+            ShowWhatsNew();
+        };
+
         var bar = new DockPanel { Margin = new Thickness(8, 6, 8, 2) };
         DockPanel.SetDock(_sideToggle, Dock.Left);
-        DockPanel.SetDock(topmost, Dock.Right);
         DockPanel.SetDock(autoArrange, Dock.Right);
         DockPanel.SetDock(_notice, Dock.Left);
+        DockPanel.SetDock(whatsNew, Dock.Right);
         bar.Children.Add(_sideToggle);
         bar.Children.Add(_notice);
-        bar.Children.Add(topmost);
         bar.Children.Add(autoArrange);
+        bar.Children.Add(whatsNew);
         var dragHint = new TextBlock
         {
             Text = DragHintText(settings.AutoArrange),
@@ -251,6 +254,26 @@ public sealed class DockWindow : Window
     public DockWindowSettings Settings
     {
         get;
+    }
+
+    private void ShowWhatsNew()
+    {
+        if (_whatsNew is null)
+        {
+            _whatsNew = new WhatsNewWindow { Owner = this };
+            _whatsNew.Closed += (_, _) =>
+            {
+                _whatsNew = null;
+            };
+            _whatsNew.Show();
+        }
+
+        if (_whatsNew.WindowState == WindowState.Minimized)
+        {
+            _whatsNew.WindowState = WindowState.Normal;
+        }
+
+        _whatsNew.Activate();
     }
 
     /// <summary>Shows a notice (such as an available update) in the top bar, or hides it when null.</summary>

@@ -2,6 +2,7 @@ using System.Windows.Media;
 using EqLog.Core;
 using EqLog.Core.Parsing;
 using EqLog.Core.Tracking;
+using EqLog.Core.Triggers;
 
 namespace EqLog.Overlay;
 
@@ -10,7 +11,7 @@ public sealed record OverlayContent(string Title, string? Subtitle, IReadOnlyLis
 public sealed record OverlayDefinition(string Key, string Caption, double Width, double Height, bool AutoScroll, Func<EngineSnapshot, LogEngine, OverlayView, OverlayContent> Render);
 
 /// <summary>An alert currently on screen.</summary>
-public sealed record ActiveAlert(string Text, Brush Color, DateTime Expires);
+public sealed record ActiveAlert(string Text, Brush Color, DateTime Expires, AlertEffect Effect = AlertEffect.None);
 
 /// <summary>Per-render options the presenters need from the app.</summary>
 public sealed record OverlayView(ISet<ChatChannel> ChatChannels, IReadOnlyList<ActiveAlert> Alerts, int LootGrouping = 0,
@@ -30,11 +31,41 @@ public static class OverlayPresenters
     private static readonly Brush CharmBar = Frozen(Color.FromArgb(160, 150, 60, 200));
     private static readonly Brush WarnBar = Frozen(Color.FromArgb(180, 220, 120, 20));
     private static readonly Brush WornBar = Frozen(Color.FromArgb(170, 200, 40, 40));
-    private static readonly Brush Dim = Frozen(Color.FromRgb(170, 170, 180));
-    private static readonly Brush Header = Frozen(Color.FromRgb(255, 215, 120));
-    private static readonly Brush Bad = Frozen(Color.FromRgb(255, 90, 90));
-    private static readonly Brush Warn = Frozen(Color.FromRgb(255, 170, 60));
-    private static readonly Brush Good = Frozen(Color.FromRgb(120, 230, 120));
+    private static Brush Dim
+    {
+        get { return ThemeBrush("OverlayDim"); }
+    }
+
+    private static Brush Header
+    {
+        get { return ThemeBrush("OverlayHeader"); }
+    }
+
+    private static Brush Bad
+    {
+        get { return ThemeBrush("OverlayBad"); }
+    }
+
+    private static Brush Warn
+    {
+        get { return ThemeBrush("OverlayWarn"); }
+    }
+
+    private static Brush Good
+    {
+        get { return ThemeBrush("OverlayGood"); }
+    }
+
+    /// <summary>The active theme's overlay text brush, falling back to the built-in default color.</summary>
+    private static Brush ThemeBrush(string key)
+    {
+        if (System.Windows.Application.Current?.TryFindResource(key) is Brush brush)
+        {
+            return brush;
+        }
+
+        return Frozen((Color)ColorConverter.ConvertFromString(ThemePalette.OptionalColorDefaults[key]));
+    }
 
     private static readonly Dictionary<ChatChannel, Brush> ChatColors = new()
     {
@@ -69,6 +100,7 @@ public static class OverlayPresenters
         new("npcs", "NPC compendium", 620, 720, false, (_, _, _) => new("NPC compendium", null, [])),
         new("wiki", "Wiki activity", 480, 360, false, WikiActivity),
         new("inventory", "Inventory & loot quests", 680, 620, false, (_, _, _) => new("Inventory & loot quests", null, [])),
+        new("moteplan", "Mote upgrade planner", 520, 560, false, (_, _, _) => new("Mote upgrade planner", null, [])),
     ];
 
     private const int MaxRequestRows = 15;
@@ -147,6 +179,10 @@ public static class OverlayPresenters
         return new("Wiki activity", "Priority queue · paced HTTP · Polly retries", rows);
     }
 
+    private const string MoteValuesTip =
+        "Values from the EQLWiki Mote Guide: equipment points / spell points, and the highest equipment +rank the mote works on.\n" +
+        "Going from +N to +N+1 takes 2^N points; extra points carry over. Spells have no rank limit.";
+
     private static OverlayContent Motes(EngineSnapshot s, LogEngine _, OverlayView view)
     {
         var m = s.Motes;
@@ -166,8 +202,8 @@ public static class OverlayPresenters
             "\nRun /outputfile inventory after spending or moving motes to refresh.";
         var ownedByTier = held?.ToDictionary(g => g.Key, g => g.Sum(i => i.Item.Owned), StringComparer.OrdinalIgnoreCase)
             ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        rows.Add(new("Tier", "session (all)", Foreground: Header, Bold: true,
-            ExtraColumn: "Owned", ToolTip: inventoryTip));
+        rows.Add(new("Tier  item/spell pts ≤max", "session (all)", Foreground: Header, Bold: true,
+            ExtraColumn: "Owned", ToolTip: MoteValuesTip + "\n\n" + inventoryTip));
         var allTime = m.AllTime.ToDictionary(c => c.Tier, c => c.Count, StringComparer.OrdinalIgnoreCase);
         var session = m.Session.ToDictionary(c => c.Tier, c => c.Count, StringComparer.OrdinalIgnoreCase);
         var tiers = allTime.Keys.Union(session.Keys, StringComparer.OrdinalIgnoreCase)
@@ -179,8 +215,17 @@ public static class OverlayPresenters
             int n = session.GetValueOrDefault(tier);
             string owned = hasExport || ownedByTier.ContainsKey(tier)
                 ? ownedByTier.GetValueOrDefault(tier).ToString("N0") : "?";
-            rows.Add(new(tier, $"{n}  ({allTime.GetValueOrDefault(tier)})", Foreground: n > 0 ? Good : Dim,
-                LootItem: $"Mote of {tier} Potential", ExtraColumn: owned, ToolTip: inventoryTip));
+            string label = tier;
+            string tip = inventoryTip;
+            if (MoteValues.RankOf(tier) is int rank)
+            {
+                label = $"{tier}  {MoteValues.ItemPoints(rank)}/{MoteValues.SpellPoints(rank)} ≤+{MoteValues.ItemMaxTier(rank)}";
+                tip = $"{MoteTiers.ItemName(tier)} (rank {rank})\n" +
+                    $"Equipment: +{MoteValues.ItemPoints(rank)} pts, usable on items up to +{MoteValues.ItemMaxTier(rank)}\n" +
+                    $"Spells: +{MoteValues.SpellPoints(rank)} pts, any rank\n\n" + inventoryTip;
+            }
+            rows.Add(new(label, $"{n}  ({allTime.GetValueOrDefault(tier)})", Foreground: n > 0 ? Good : Dim,
+                LootItem: MoteTiers.ItemName(tier), ExtraColumn: owned, ToolTip: tip));
         }
 
         rows.Add(new("Total", $"{m.SessionTotal}  ({m.AllTimeTotal})", Bold: true,
@@ -195,7 +240,7 @@ public static class OverlayPresenters
                 string who = d.Looter == Names.You ? "" : $"[{d.Looter}] ";
                 string qty = d.Quantity > 1 ? $" x{d.Quantity}" : "";
                 rows.Add(new($"{who}{d.Tier}{qty}  {d.Source}", d.Time.ToString("HH:mm"),
-                    Foreground: d.Looter == Names.You ? null : Dim, LootItem: $"Mote of {d.Tier} Potential"));
+                    Foreground: d.Looter == Names.You ? null : Dim, LootItem: MoteTiers.ItemName(d.Tier)));
             }
         }
 
@@ -258,7 +303,7 @@ public static class OverlayPresenters
     {
         var rows = view.Alerts.Count == 0
             ? new List<OverlayRow> { new("No alerts", Foreground: Dim) }
-            : view.Alerts.Reverse().Select(a => new OverlayRow(a.Text, Foreground: a.Color, Wrap: true, Bold: true, Scale: 1.6)).ToList();
+            : view.Alerts.Reverse().Select(a => new OverlayRow(a.Text, Foreground: a.Color, Wrap: true, Bold: true, Scale: 1.6, Effect: a.Effect)).ToList();
         return new("Alerts", null, rows);
     }
 

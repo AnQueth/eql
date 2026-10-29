@@ -37,6 +37,14 @@ public sealed class DurationRow
         get; init;
     }
 
+    public bool HasSamples
+    {
+        get
+        {
+            return Samples > 0;
+        }
+    }
+
     public string Override { get; set; } = "";
 
     public string Wiki { get; init; } = "-";
@@ -74,6 +82,14 @@ public sealed class SpawnRow
     public required int Samples
     {
         get; init;
+    }
+
+    public bool HasSamples
+    {
+        get
+        {
+            return Samples > 0;
+        }
     }
 
     public string Override { get; set; } = "";
@@ -236,6 +252,10 @@ public partial class MainWindow : Window
             if (def.Key == "inventory")
             {
                 ConfigureInventoryOverlay(panel);
+            }
+            if (def.Key == "moteplan")
+            {
+                ConfigureMotePlanOverlay(panel);
             }
 
             if (def.Key == "loot")
@@ -485,7 +505,7 @@ public partial class MainWindow : Window
 
     private static OverlayPlacement DefaultPlacement(OverlayDefinition def, int index, Rect work)
     {
-        if (def.Key is "npcs" or "wiki" or "inventory")
+        if (def.Key is "npcs" or "wiki" or "inventory" or "moteplan")
         {
             return new OverlayPlacement
             {
@@ -839,6 +859,7 @@ public partial class MainWindow : Window
                 "mobinfo" => MobInfoContent(),
                 "npcs" => NpcCompendiumContent(),
                 "inventory" => new("Inventory & loot quests", _characterName, []),
+                "moteplan" => new("Mote upgrade planner", _characterName, []),
                 _ => def.Render(snap, _engine, view),
             };
             var rows = def.Key is "loot" or "wiki"
@@ -876,6 +897,7 @@ public partial class MainWindow : Window
     {
         _ = CheckInventoryAsync();
         CheckSpawnWiki();
+        CheckMotePlan();
         _houseTicks++;
         foreach (var w in _overlays.Values)
         {
@@ -1020,6 +1042,30 @@ public partial class MainWindow : Window
         }
 
         _engine.RemoveSpellDuration(row.Spell);
+        _durationsSignature = "";
+        RefreshDurations(force: true);
+        _ = SaveQuietlyAsync(_engine.SaveSpellDurationsAsync(AppSettings.DurationsPath));
+    }
+
+    private void RelearnDuration_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: DurationRow row })
+        {
+            return;
+        }
+        if (!DurationsGrid.CommitEdit(DataGridEditingUnit.Cell, true) ||
+            !DurationsGrid.CommitEdit(DataGridEditingUnit.Row, true))
+        {
+            return;
+        }
+        if (MessageBox.Show(_dock,
+            $"Forget the learned duration for {row.Spell} ({row.Learned} from {row.Samples} samples) and measure it again from your next casts? Its override and Track setting are kept.",
+            "Relearn spell", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        _engine.RelearnSpellDuration(row.Spell);
         _durationsSignature = "";
         RefreshDurations(force: true);
         _ = SaveQuietlyAsync(_engine.SaveSpellDurationsAsync(AppSettings.DurationsPath));
@@ -1356,7 +1402,7 @@ public partial class MainWindow : Window
         while (_pendingAlerts.TryDequeue(out var a))
         {
             double seconds = a.Trigger.Seconds > 0 ? a.Trigger.Seconds : 8;
-            _activeAlerts.Add(new ActiveAlert(a.Text, AlertBrush(a.Trigger.Color), now.AddSeconds(seconds)));
+            _activeAlerts.Add(new ActiveAlert(a.Text, AlertBrush(a.Trigger.Color), now.AddSeconds(seconds), a.Trigger.Effect));
             sound |= a.Trigger.Sound;
         }
 
@@ -1376,23 +1422,42 @@ public partial class MainWindow : Window
 
     private Brush AlertBrush(string? color)
     {
-        string key = string.IsNullOrWhiteSpace(color) ? "#FF5A5A" : color.Trim();
+        string key = string.IsNullOrWhiteSpace(color) ? AlertColors.Default : color.Trim();
         if (!_alertBrushes.TryGetValue(key, out var brush))
         {
-            try
-            {
-                brush = new BrushConverter().ConvertFromInvariantString(key) as Brush ?? Brushes.OrangeRed;
-            }
-            catch (Exception ex) when (ex is FormatException or NotSupportedException)
-            {
-                brush = Brushes.OrangeRed;
-            }
-
-            brush.Freeze();
+            brush = AlertColors.ToBrush(key);
             _alertBrushes[key] = brush;
         }
 
         return brush;
+    }
+
+    private void TriggerColorPick_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: AlertTrigger trigger } button)
+        {
+            return;
+        }
+
+        CommitTriggerEdits();
+        if (!AlertColors.TryParse(trigger.Color, out var initial))
+        {
+            AlertColors.TryParse(AlertColors.Default, out initial);
+        }
+
+        var result = ColorPickerDialog.Pick(button, initial);
+        if (result.Color is { } selected)
+        {
+            trigger.Color = ColorPickerDialog.ToHex(selected);
+            TriggersGrid.Items.Refresh();
+            RebuildTriggers();
+        }
+        if (result.Message is not null)
+        {
+            TriggerStatusText.Text = string.IsNullOrEmpty(TriggerStatusText.Text)
+                ? result.Message
+                : TriggerStatusText.Text + " " + result.Message;
+        }
     }
 
     private void RebuildTriggers()
@@ -1404,15 +1469,90 @@ public partial class MainWindow : Window
         SaveSettingsInBackground(error => TriggerStatusText.Text += $" Could not save alert triggers: {error}");
     }
 
-    private void Triggers_RowEditEnding(object? sender, DataGridRowEditEndingEventArgs e)
+    private void TriggerField_SourceUpdated(object? sender, System.Windows.Data.DataTransferEventArgs e)
     {
-        // The edit is committed after this event; rebuild once it has been applied.
         Dispatcher.BeginInvoke(RebuildTriggers, DispatcherPriority.Background);
     }
 
-    private void TriggerCheck_Click(object sender, RoutedEventArgs e)
+    /// <summary>Saves the trigger field that still has keyboard focus (text boxes save when focus leaves).</summary>
+    private void CommitTriggerEdits()
     {
-        Dispatcher.BeginInvoke(RebuildTriggers, DispatcherPriority.Background);
+        if (Keyboard.FocusedElement is TextBox box && TriggersGrid.IsAncestorOf(box))
+        {
+            box.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
+        }
+    }
+
+    private void Triggers_PreviewGotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        // Editors swallow the click that would normally select the row, so select the trigger being edited.
+        if (e.NewFocus is not DependencyObject focused || Keyboard.Modifiers != ModifierKeys.None)
+        {
+            return;
+        }
+
+        var row = FindAncestor<DataGridRow>(focused);
+        if (row is not null && !row.IsSelected)
+        {
+            TriggersGrid.SelectedItem = row.Item;
+        }
+    }
+
+    private void AddTrigger_Click(object sender, RoutedEventArgs e)
+    {
+        CommitTriggerEdits();
+        var trigger = new AlertTrigger();
+        _triggers.Add(trigger);
+        FocusTriggerField(trigger, "Name");
+    }
+
+    private void FocusTriggerField(AlertTrigger trigger, string field)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            TriggersGrid.SelectedItem = trigger;
+            TriggersGrid.ScrollIntoView(trigger);
+            TriggersGrid.UpdateLayout();
+            if (TriggersGrid.ItemContainerGenerator.ContainerFromItem(trigger) is DataGridRow row &&
+                FindDescendant<TextBox>(row, box => (box.Tag as string) == field) is { } target)
+            {
+                target.Focus();
+                target.SelectAll();
+            }
+        }, DispatcherPriority.Background);
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? element)
+        where T : DependencyObject
+    {
+        while (element is not null and not T)
+        {
+            element = element is Visual or System.Windows.Media.Media3D.Visual3D
+                ? VisualTreeHelper.GetParent(element)
+                : LogicalTreeHelper.GetParent(element);
+        }
+
+        return element as T;
+    }
+
+    private static T? FindDescendant<T>(DependencyObject parent, Func<T, bool> match)
+        where T : DependencyObject
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T found && match(found))
+            {
+                return found;
+            }
+
+            if (FindDescendant(child, match) is { } nested)
+            {
+                return nested;
+            }
+        }
+
+        return null;
     }
 
     private void DeleteTriggers_CanExecute(object sender, CanExecuteRoutedEventArgs e)
@@ -1440,13 +1580,7 @@ public partial class MainWindow : Window
 
     private void DeleteSelectedTriggers()
     {
-        if (!TriggersGrid.CommitEdit(DataGridEditingUnit.Cell, true) ||
-            !TriggersGrid.CommitEdit(DataGridEditingUnit.Row, true))
-        {
-            TriggerStatusText.Text = "Finish or cancel the current edit before deleting triggers.";
-            return;
-        }
-
+        CommitTriggerEdits();
         var selected = TriggersGrid.SelectedItems.OfType<AlertTrigger>().ToArray();
         if (selected.Length == 0)
         {
@@ -1479,7 +1613,7 @@ public partial class MainWindow : Window
 
     private void TestTrigger_Click(object sender, RoutedEventArgs e)
     {
-        TriggersGrid.CommitEdit(DataGridEditingUnit.Row, true);
+        CommitTriggerEdits();
         RebuildTriggers();
         var alerts = _matcher.Match([TestLineBox.Text]);
         double previewSeconds = alerts.Count == 0 ? 8 :
@@ -1673,15 +1807,7 @@ public partial class MainWindow : Window
         TriggersTab.IsSelected = true;
 
         // Start editing the new trigger's alert text.
-        Dispatcher.BeginInvoke(() =>
-        {
-            TriggersGrid.SelectedItem = trigger;
-            TriggersGrid.ScrollIntoView(trigger);
-            var textColumn = TriggersGrid.Columns.First(c => (c.Header as string) == "Alert text");
-            TriggersGrid.CurrentCell = new DataGridCellInfo(trigger, textColumn);
-            TriggersGrid.Focus();
-            TriggersGrid.BeginEdit();
-        }, DispatcherPriority.Background);
+        FocusTriggerField(trigger, "AlertText");
     }
 
     private void RefreshSpawns(bool force = false)
@@ -1742,6 +1868,30 @@ public partial class MainWindow : Window
             CheckSpawnWiki();
             _ = SaveQuietlyAsync(_engine.SaveSpawnsAsync(AppSettings.SpawnsPath));
         }
+    }
+
+    private void RelearnSpawn_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: SpawnRow row })
+        {
+            return;
+        }
+        if (!SpawnsGrid.CommitEdit(DataGridEditingUnit.Cell, true) ||
+            !SpawnsGrid.CommitEdit(DataGridEditingUnit.Row, true))
+        {
+            return;
+        }
+        if (MessageBox.Show(_dock,
+            $"Forget the learned respawn time for {row.Mob} ({row.Learned} from {row.Samples} samples) and measure it again from your next kill? Its override and Track setting are kept.",
+            "Relearn spawn", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        _engine.RelearnSpawn(row.Zone, row.Mob);
+        CheckSpawnWiki();
+        RefreshSpawns(force: true);
+        _ = SaveQuietlyAsync(_engine.SaveSpawnsAsync(AppSettings.SpawnsPath));
     }
 
     private void Spawns_CellEditEnding(object? sender, DataGridCellEditEndingEventArgs e)

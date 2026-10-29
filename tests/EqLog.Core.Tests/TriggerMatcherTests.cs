@@ -58,6 +58,45 @@ public class TriggerMatcherTests
     }
 
     [Fact]
+    public void SimpleTextMatchesLiterallyAnywhereIgnoringCase()
+    {
+        var matcher = new TriggerMatcher(
+        [
+            new AlertTrigger { Name = "simple", Simple = "{C} HAS FALLEN", Text = "down" },
+            new AlertTrigger { Name = "literal", Simple = "ground." },
+            new AlertTrigger { Name = "dots", Simple = "ground..." },
+        ], "Quethrosar");
+
+        var names = matcher.Match([Fell]).Select(a => a.Trigger.Name).ToList();
+        Assert.Equal(["simple", "literal"], names);
+        Assert.Empty(matcher.Errors);
+    }
+
+    [Fact]
+    public void SimpleTextOrRegexFiresOnceAndPrefersRegexCaptures()
+    {
+        var matcher = new TriggerMatcher(
+        [
+            new AlertTrigger { Simple = "fallen to the ground", Pattern = @"^(\w+) has fallen", Text = "$1 fell" },
+            new AlertTrigger { Simple = "no such text", Pattern = "fallen", Text = "regex only" },
+            new AlertTrigger { Simple = "fallen", Pattern = "no such text", Text = "simple only" },
+            new AlertTrigger { Simple = "nope", Pattern = "nope", Text = "neither" },
+        ], null);
+
+        var texts = matcher.Match([Fell]).Select(a => a.Text).ToList();
+        Assert.Equal(["Quethrosar fell", "regex only", "simple only"], texts);
+    }
+
+    [Fact]
+    public void InvalidRegexStillAllowsSimpleText()
+    {
+        var matcher = new TriggerMatcher([new AlertTrigger { Name = "mixed", Simple = "fallen", Pattern = "fallen(" }], null);
+
+        Assert.StartsWith("mixed:", Assert.Single(matcher.Errors));
+        Assert.Single(matcher.Match([Fell]));
+    }
+
+    [Fact]
     public void PatternFromMessageMatchesTheLineAndSimilarOnes()
     {
         string pattern = TriggerMatcher.PatternFromMessage("Quethrosar hit a goblin (x2) for 345 points of damage.", "Quethrosar");

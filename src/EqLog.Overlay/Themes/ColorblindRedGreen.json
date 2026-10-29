@@ -1,0 +1,24 @@
+{
+  "Name": "Colorblind Safe (Red-Green)",
+  "Colors": {
+    "NightBackground": "#101418",
+    "NightSurface": "#171D23",
+    "NightRaised": "#222B34",
+    "NightBorder": "#52647A",
+    "NightText": "#F2F5F8",
+    "NightMuted": "#BAC6D1",
+    "Pumpkin": "#56B4E9",
+    "Hover": "#2A3540",
+    "Pressed": "#33414E",
+    "Selection": "#1F4A6E",
+    "Alternate": "#1A2128",
+    "GridLine": "#2E3A46",
+    "ScrollThumb": "#5C6E80",
+    "AccentText": "#0B1520",
+    "OverlayHeader": "#A8DCFF",
+    "OverlayDim": "#BAC6D1",
+    "OverlayGood": "#56B4E9",
+    "OverlayWarn": "#F0E442",
+    "OverlayBad": "#FF7B2E"
+  }
+}

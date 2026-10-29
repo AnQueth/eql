@@ -1,0 +1,24 @@
+{
+  "Name": "Colorblind Safe (Blue-Yellow)",
+  "Colors": {
+    "NightBackground": "#121212",
+    "NightSurface": "#1A1A1A",
+    "NightRaised": "#262626",
+    "NightBorder": "#5E5E5E",
+    "NightText": "#F5F5F5",
+    "NightMuted": "#C4C4C4",
+    "Pumpkin": "#FF8FAB",
+    "Hover": "#303030",
+    "Pressed": "#3D2A30",
+    "Selection": "#4A2834",
+    "Alternate": "#1E1E1E",
+    "GridLine": "#363636",
+    "ScrollThumb": "#6E6E6E",
+    "AccentText": "#1A0E12",
+    "OverlayHeader": "#FFC2D1",
+    "OverlayDim": "#C4C4C4",
+    "OverlayGood": "#4FD8E8",
+    "OverlayWarn": "#FFFFFF",
+    "OverlayBad": "#FF4D4D"
+  }
+}

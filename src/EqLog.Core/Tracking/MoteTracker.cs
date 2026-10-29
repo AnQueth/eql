@@ -24,11 +24,30 @@ public sealed record MoteSnapshot(
 /// <summary>Mote tiers, taken from the item name ("Mote of X Potential"); no fixed list of tiers is assumed.</summary>
 public static partial class MoteTiers
 {
-    /// <summary>"Mote of Major Potential" gives "Major".</summary>
+    /// <summary>Tier name used for the plain "Mote of Potential".</summary>
+    public const string PlainTier = "Potential";
+
+    /// <summary>"Mote of Major Potential" gives "Major"; "Mote of Potential" gives <see cref="PlainTier"/>.</summary>
     public static string? TierOf(string item)
     {
         var m = MoteRegex().Match(item);
-        return m.Success ? m.Groups["t"].Value : null;
+        if (!m.Success)
+        {
+            return null;
+        }
+
+        return m.Groups["t"].Success ? m.Groups["t"].Value : PlainTier;
+    }
+
+    /// <summary>The item name for a tier: "Major" gives "Mote of Major Potential".</summary>
+    public static string ItemName(string tier)
+    {
+        if (tier.Equals(PlainTier, StringComparison.OrdinalIgnoreCase))
+        {
+            return "Mote of Potential";
+        }
+
+        return $"Mote of {tier} Potential";
     }
 
     /// <summary>Tiers with a count, most collected first.</summary>
@@ -41,7 +60,7 @@ public static partial class MoteTiers
             .ToList();
     }
 
-    [GeneratedRegex(@"^Motes? of (?<t>.+?) Potential$", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^Motes? of (?:(?<t>.+?) )?Potential$", RegexOptions.IgnoreCase)]
     private static partial Regex MoteRegex();
 }
 

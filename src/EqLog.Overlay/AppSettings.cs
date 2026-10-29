@@ -109,11 +109,6 @@ public sealed class DockWindowSettings
         get; set;
     }
 
-    public bool Topmost
-    {
-        get; set;
-    }
-
     /// <summary>Show the settings side panel.</summary>
     public bool SidePanelOpen { get; set; } = true;
 

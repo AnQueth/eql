@@ -12,11 +12,77 @@ public class ThemePaletteTests
     [InlineData("Amethyst.json", "Royal Amethyst")]
     [InlineData("Arctic.json", "Arctic Frost")]
     [InlineData("Desert.json", "Desert Sand")]
+    [InlineData("HighContrastDark.json", "High Contrast Dark")]
+    [InlineData("HighContrastLight.json", "High Contrast Light")]
+    [InlineData("ColorblindRedGreen.json", "Colorblind Safe (Red-Green)")]
+    [InlineData("ColorblindBlueYellow.json", "Colorblind Safe (Blue-Yellow)")]
     public void Parse_BundledTheme_ContainsCompletePalette(string file, string name)
     {
         var theme = ThemePalette.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Themes", file)));
         Assert.Equal(name, theme.Name);
-        Assert.Equal(ThemePalette.ColorKeys.Length, theme.Colors.Count);
+        Assert.All(ThemePalette.ColorKeys, key => Assert.True(theme.Colors.ContainsKey(key), key));
+    }
+
+    [Theory]
+    [InlineData("HighContrastDark.json", 7.0)]
+    [InlineData("HighContrastLight.json", 7.0)]
+    [InlineData("ColorblindRedGreen.json", 4.5)]
+    [InlineData("ColorblindBlueYellow.json", 4.5)]
+    public void AccessibilityTheme_TextMeetsWcagContrast(string file, double minimum)
+    {
+        var theme = ThemePalette.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Themes", file)));
+        Assert.Equal(ThemePalette.AllColorKeys.Length, theme.Colors.Count);
+        string[] pairs =
+        [
+            "NightText/NightBackground", "NightText/NightSurface", "NightText/NightRaised", "NightText/Selection",
+            "NightText/Hover", "NightText/Alternate", "NightMuted/NightBackground", "NightMuted/NightSurface",
+            "Pumpkin/NightBackground", "Pumpkin/NightSurface", "AccentText/Pumpkin",
+            "OverlayHeader/NightBackground", "OverlayDim/NightBackground", "OverlayGood/NightBackground",
+            "OverlayWarn/NightBackground", "OverlayBad/NightBackground",
+        ];
+        Assert.All(pairs, pair =>
+        {
+            string[] keys = pair.Split('/');
+            double ratio = Contrast(theme.Colors[keys[0]], theme.Colors[keys[1]]);
+            Assert.True(ratio >= minimum, $"{pair} contrast {ratio:0.00} is below {minimum}");
+        });
+    }
+
+    private static double Contrast(string a, string b)
+    {
+        double la = Luminance(a);
+        double lb = Luminance(b);
+        return (Math.Max(la, lb) + 0.05) / (Math.Min(la, lb) + 0.05);
+    }
+
+    private static double Luminance(string hex)
+    {
+        double Channel(int offset)
+        {
+            double c = Convert.ToInt32(hex.Substring(offset, 2), 16) / 255.0;
+            return c <= 0.03928 ? c / 12.92 : Math.Pow((c + 0.055) / 1.055, 2.4);
+        }
+
+        return 0.2126 * Channel(1) + 0.7152 * Channel(3) + 0.0722 * Channel(5);
+    }
+
+    [Fact]
+    public void Validate_OptionalOverlayColorsOmitted_UsesDefaults()
+    {
+        var theme = Valid();
+        theme.Validate();
+        Assert.Equal(ThemePalette.OptionalColorDefaults["OverlayGood"], theme.GetColor("OverlayGood"));
+        theme.Colors["OverlayGood"] = "#123456";
+        theme.Validate();
+        Assert.Equal("#123456", theme.GetColor("OverlayGood"));
+    }
+
+    [Fact]
+    public void Validate_InvalidOptionalColor_RejectsPalette()
+    {
+        var theme = Valid();
+        theme.Colors["OverlayBad"] = "red";
+        Assert.Throws<FormatException>(theme.Validate);
     }
 
     private static ThemePalette Valid()

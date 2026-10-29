@@ -89,7 +89,7 @@ public sealed partial class SpawnStore : ISnapshotStore<Dictionary<string, Dicti
     public void AddSample(string zone, string mob, DateTime killedAt, double seconds)
     {
         var e = GetOrAdd(zone, mob);
-        if (e.Samples.Exists(x => x.At == killedAt))
+        if (e.Samples.Exists(x => x.At == killedAt) || (e.RelearnSince is DateTime since && killedAt.AddSeconds(seconds) <= since))
         {
             return;
         }
@@ -101,6 +101,18 @@ public sealed partial class SpawnStore : ISnapshotStore<Dictionary<string, Dicti
             e.Samples.RemoveAt(0);
         }
 
+        IsDirty = true;
+    }
+
+    /// <summary>
+    /// Forgets the learned respawn samples so the time is measured again. Sightings at or before <paramref name="since"/>
+    /// (e.g. log history re-read on the next launch) are ignored. The override and Track setting are kept.
+    /// </summary>
+    public void Relearn(string zone, string mob, DateTime since)
+    {
+        var e = GetOrAdd(zone, mob);
+        e.Samples.Clear();
+        e.RelearnSince = since;
         IsDirty = true;
     }
 
@@ -333,6 +345,12 @@ public sealed partial class SpawnStore : ISnapshotStore<Dictionary<string, Dicti
         }
 
         public DateTime? LastSeen
+        {
+            get; set;
+        }
+
+        /// <summary>Only sightings after this time count as samples; set by <see cref="Relearn"/>.</summary>
+        public DateTime? RelearnSince
         {
             get; set;
         }

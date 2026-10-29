@@ -1,0 +1,24 @@
+{
+  "Name": "High Contrast Light",
+  "Colors": {
+    "NightBackground": "#FFFFFF",
+    "NightSurface": "#FFFFFF",
+    "NightRaised": "#EBEBEB",
+    "NightBorder": "#000000",
+    "NightText": "#000000",
+    "NightMuted": "#2E2E2E",
+    "Pumpkin": "#0033A0",
+    "Hover": "#DCE6F8",
+    "Pressed": "#B8CAF0",
+    "Selection": "#C4D7FF",
+    "Alternate": "#F2F2F2",
+    "GridLine": "#6E6E6E",
+    "ScrollThumb": "#555555",
+    "AccentText": "#FFFFFF",
+    "OverlayHeader": "#0033A0",
+    "OverlayDim": "#333333",
+    "OverlayGood": "#005A00",
+    "OverlayWarn": "#7A4000",
+    "OverlayBad": "#B00000"
+  }
+}

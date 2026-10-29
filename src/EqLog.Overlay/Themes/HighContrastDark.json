@@ -1,0 +1,24 @@
+{
+  "Name": "High Contrast Dark",
+  "Colors": {
+    "NightBackground": "#000000",
+    "NightSurface": "#0A0A0A",
+    "NightRaised": "#1C1C1C",
+    "NightBorder": "#FFFFFF",
+    "NightText": "#FFFFFF",
+    "NightMuted": "#E0E0E0",
+    "Pumpkin": "#FFFF00",
+    "Hover": "#333333",
+    "Pressed": "#4D4D00",
+    "Selection": "#003C80",
+    "Alternate": "#141414",
+    "GridLine": "#8C8C8C",
+    "ScrollThumb": "#C8C8C8",
+    "AccentText": "#000000",
+    "OverlayHeader": "#FFFF00",
+    "OverlayDim": "#E0E0E0",
+    "OverlayGood": "#5CFF5C",
+    "OverlayWarn": "#FFD000",
+    "OverlayBad": "#FF7070"
+  }
+}

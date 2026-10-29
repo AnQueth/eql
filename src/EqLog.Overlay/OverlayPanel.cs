@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
 using EqLog.Core.Tracking;
+using EqLog.Core.Triggers;
 using System.Collections.ObjectModel;
 
 namespace EqLog.Overlay;
@@ -10,7 +11,7 @@ namespace EqLog.Overlay;
 /// <summary>One line in an overlay: left/right text with an optional proportional bar behind it.</summary>
 public sealed record AbilityBreakdown(string Title, string Context, string RateLabel, IReadOnlyList<AbilityStats> Abilities);
 
-public sealed record OverlayRow(string Left, string Right = "", double Fraction = 0, Brush? Bar = null, Brush? Foreground = null, bool Wrap = false, bool Bold = false, double Scale = 1, string? LootItem = null, AbilityBreakdown? Breakdown = null, bool QuestHeading = false, string? Details = null, bool Stacked = false, string? ExtraColumn = null, string? ToolTip = null, string? WatchKey = null, bool Watched = false, OverlayTable? Table = null, string? Link = null, bool HasQuestReferences = false);
+public sealed record OverlayRow(string Left, string Right = "", double Fraction = 0, Brush? Bar = null, Brush? Foreground = null, bool Wrap = false, bool Bold = false, double Scale = 1, string? LootItem = null, AbilityBreakdown? Breakdown = null, bool QuestHeading = false, string? Details = null, bool Stacked = false, string? ExtraColumn = null, string? ToolTip = null, string? WatchKey = null, bool Watched = false, OverlayTable? Table = null, string? Link = null, bool HasQuestReferences = false, AlertEffect Effect = AlertEffect.None);
 
 /// <summary>
 /// A small grid shown inside a row's card, below its title. With <see cref="Header"/> it is a column table
@@ -229,6 +230,10 @@ public sealed class OverlayPanel : ContentControl
             Content = _rows,
             Margin = new Thickness(0, 3, 0, 0),
         };
+        if (key == "alerts")
+        {
+            _rows.VerticalAlignment = VerticalAlignment.Center;
+        }
 
         _titleFrame = new Border { Child = header };
         var layout = _layout;
@@ -686,11 +691,13 @@ public sealed class OverlayPanel : ContentControl
             FontWeight = weight,
             TextWrapping = row.Wrap ? TextWrapping.Wrap : TextWrapping.NoWrap,
             TextTrimming = row.Wrap ? TextTrimming.None : TextTrimming.CharacterEllipsis,
+            TextAlignment = Key == "alerts" ? TextAlignment.Center : TextAlignment.Left,
         };
         if (row.Foreground is not null)
         {
             left.Foreground = row.Foreground;
         }
+        AlertEffects.Attach(left, row.Effect);
         if (row.LootItem is not null || row.Link is not null)
         {
             left.TextDecorations = TextDecorations.Underline;

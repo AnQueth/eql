@@ -94,6 +94,7 @@ public class MoteTrackerTests
     [InlineData("Mote of Infinitesimal Potential", "Infinitesimal")]
     [InlineData("Motes of Transcendent Potential", "Transcendent")]
     [InlineData("Mote of Very Small Potential", "Very Small")]
+    [InlineData("Mote of Potential", "Potential")]
     [InlineData("Swirling Mist", null)]
     public void TierOf(string item, string? tier)
     {

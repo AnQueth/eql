@@ -74,6 +74,7 @@ public partial class MainWindow
         _inventoryRows = items;
         _inventoryRowsCharacter = character;
         RefreshMergeView();
+        RefreshMotePlan();
     }
 
     private void RefreshMergeView()

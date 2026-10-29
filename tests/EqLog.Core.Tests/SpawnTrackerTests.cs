@@ -79,6 +79,44 @@ public class SpawnTrackerTests
         }
     }
 
+    [Fact]
+    public async Task RelearnClearsSamplesKeepsSettingsAndIgnoresOlderSightingsAfterReload()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"spawn-relearn-{Guid.NewGuid():N}.json");
+        try
+        {
+            var store = new SpawnStore();
+            store.SetTracked("Kedge Keep", "Shellara Ebbhunter", true);
+            store.SetOverride("Kedge Keep", "Shellara Ebbhunter", 600);
+            store.AddSample("Kedge Keep", "Shellara Ebbhunter", T0, 900);
+            store.AddSample("Kedge Keep", "Shellara Ebbhunter", T0.AddHours(1), 905);
+            var cutoff = T0.AddHours(1).AddSeconds(905);
+            store.Relearn("Kedge Keep 2 (Refined)", "Shellara Ebbhunter", cutoff);
+
+            var info = store.Get("Kedge Keep", "Shellara Ebbhunter")!;
+            Assert.Equal(0, info.Samples);
+            Assert.Null(info.LearnedSeconds);
+            Assert.Equal(600, info.OverrideSeconds);
+            Assert.True(info.Tracked);
+
+            await store.SaveAsync(path);
+            var loaded = await SpawnStore.LoadAsync(path);
+            loaded.AddSample("Kedge Keep", "Shellara Ebbhunter", T0, 900);
+            loaded.AddSample("Kedge Keep", "Shellara Ebbhunter", T0.AddHours(1), 905);
+            Assert.Equal(0, loaded.Get("Kedge Keep", "Shellara Ebbhunter")!.Samples);
+
+            // Killed before relearning but first seen alive afterwards: a fresh measurement.
+            loaded.AddSample("Kedge Keep", "Shellara Ebbhunter", cutoff.AddSeconds(-100), 400);
+            var relearned = loaded.Get("Kedge Keep", "Shellara Ebbhunter")!;
+            Assert.Equal(1, relearned.Samples);
+            Assert.Equal(400, relearned.LearnedSeconds);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     private static readonly DateTime T0 = new(2026, 10, 21, 18, 0, 0);
 
     private static string L(int seconds, string msg)

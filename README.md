@@ -44,6 +44,9 @@ Floating overlays can be positioned and resized over the game while unlocked; th
 and **Dock** buttons are visible in this example. Lock them to pass clicks through to the game.
 See [Overlays](#overlays) for the available panels and controls.
 
+**Alerts:** Make important log events easier to notice with regex triggers that display a custom
+message in the Alerts panel and can optionally play a sound. [Set up alert triggers](#alert-triggers).
+
 ### Spell countdowns
 
 ![Spell Timers overlay showing three active effects on A thunder spirit and their remaining times.](docs/images/spell-timer-countdowns.png)
@@ -119,7 +122,12 @@ Settings tabs sit at the top of the side panel, with no global settings stacked 
 The **Appearance** tab edits a draft of your selected palette. Give it a name, enter `#RRGGBB`
 colors or use **Pick...** beside each hex field to open the Windows color picker next to that button.
 The picker switches sides or shifts upward near screen edges to stay in the monitor's work area.
-Picking a color updates its hex field, swatch and sample card; cancelling leaves the draft unchanged.
+Picking a color updates its hex field, swatch and preview; cancelling leaves the draft unchanged.
+The preview is a small mock of the real app that uses every theme color: tabs, a search box with
+selected text, a spell table with header, alternating, selected and hovered rows, a scrollbar,
+normal / hovered / pressed buttons and a checked box, plus Spawn Timers and Experience overlays
+over a game backdrop showing heading, dim, good, warning and bad rows. Hover any part to see which
+colors it uses.
 **Apply & save** activates the draft and
 persists it across restarts. **Export JSON...** writes an importable theme file without changing
 the active theme. **Reset draft** discards edits and reloads the last selected/applied palette;
@@ -128,15 +136,35 @@ choosing a different theme also replaces the draft. Invalid colors are reported 
 Use **Settings → Appearance → Theme** to switch between **Halloween** (the default), **Midnight Ocean**,
 **Enchanted Forest**, **Crimson Ember** (warm red), **Royal Amethyst** (purple),
 **Arctic Frost** (light blue), and **Desert Sand** (light sand), or choose **Import JSON...** for a
-custom palette. Changes apply immediately
+custom palette.
+
+Accessibility themes:
+
+| Theme | For | Overlay status colors |
+|-------|-----|------------------------|
+| **High Contrast Dark** | Low vision / glare; white on black, yellow accent | green / gold / light red, all ≥7:1 contrast |
+| **High Contrast Light** | Low vision, bright rooms; black on white, dark blue accent | dark green / brown / dark red, all ≥7:1 contrast |
+| **Colorblind Safe (Red-Green)** | Deuteranopia / protanopia | good = sky blue, warning = yellow, bad = orange |
+| **Colorblind Safe (Blue-Yellow)** | Tritanopia | good = cyan, warning = white, bad = red |
+
+All text in these themes meets WCAG contrast (7:1 for high contrast, 4.5:1 for colorblind themes).
+Changes apply immediately
 and the complete selected palette is saved in `%AppData%\EqLogOverlay\settings.json`; the original
 import file is not needed on subsequent starts. Importing another file with the same name is allowed.
 Invalid JSON, missing colors, and invalid color values are reported without replacing your theme.
 
-Use contrasting text and backgrounds. Combat/status colors and custom alert colors are separate
-from the selected theme. Export a theme from the editor to share it with another user.
+Themes can also set the overlay text colors: section headings (`OverlayHeader`), secondary rows
+(`OverlayDim`), and good / warning / bad status (`OverlayGood`, `OverlayWarn`, `OverlayBad`, e.g.
+spawned mobs, spawns due or expired timers, and capped AA points or errors). These are optional in imported JSON;
+omitted ones use the original colors, so older theme files still load. Use contrasting text and
+backgrounds. Progress bar fills, chat channel colors, and custom alert colors are separate from the
+selected theme. Export a theme from the editor to share it with another user.
 
 ## Automatic updates
+
+Click **What's New** in the main window's top bar for this version's release highlights
+and short instructions for using the new features. The scrollable help follows your theme,
+works offline, and remains available with Settings hidden.
 
 **General > Application updates** shows the current version and update status. Startup checks and
 automatic downloads are enabled by default and can be disabled independently. **Check for updates**
@@ -209,7 +237,8 @@ as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels r
 | Mob info | Your latest live /consider result, wiki stats, and saved Magic/Fire/Cold/Poison/Disease observations |
 | NPC compendium | Search saved NPCs by name/zone; browse wiki stats, per-spell resists, encounter history and average DPS |
 | Spawn Timers | Respawn countdowns for the named mobs you track in the current zone (see below) |
-| Motes | Motes of Potential looted per tier (session and all time), motes/hr, recent drops, drop rates here (see below) |
+| Motes | Motes of Potential looted per tier (session and all time), motes/hr, recent drops, drop rates here, and each tier's upgrade value (see below) |
+| Mote upgrade planner | Motes and spare item copies needed for each step from an item's or spell's current +rank to +10 (see below) |
 | Sky quest tracker | Plane of Sky class quests, rewards, required items, drop sources, and watched quests |
 | Inventory & loot quests | Owned counts by storage location, item/quest wiki links, quest completion, and upgrade-rank merge candidates |
 | Quest opportunities | Searchable item-to-quest references with inventory counts and lookup progress |
@@ -518,15 +547,22 @@ Network/API/cache errors appear in the tab rather than being treated as an item 
 
 The **Alert triggers** tab lets you show a message in the Alerts overlay when a log line matches a regex.
 Triggers fire only for new lines written while the app is running, never for history it reads at startup.
+Alert messages are centered in both floating and docked panels and wrap onto multiple lines to fit
+the panel's width.
 
-| Column | Meaning |
+Each trigger is shown as a card with three lines: name and alert text, then simple text and regex,
+then the options below. Click **Add trigger** to add an empty one. Edits save when you leave a field.
+
+| Field | Meaning |
 |---|---|
-| On | Enable or disable the trigger |
+| Enabled | Enable or disable the trigger |
+| Simple text | Plain text found anywhere in the line, ignoring case (no regex rules). `{C}` is your character's name |
 | Regex | Matched case-insensitively against the text after `[timestamp] `. `{C}` is your character's name |
 | Alert text | Text to show. `$1` or `${name}` insert captured groups, `{C}` your name. Leave it empty to show the log line |
 | Secs | How long the alert stays on screen |
 | Sound | Play the Windows exclamation sound |
-| Color | A color name (`Orange`) or `#RRGGBB` |
+| Effect | How the alert text moves: **None**, **Grow / shrink**, **Flash**, **Shake**, **Rotate (wobble)**, **Spin**, **Bounce**, **Pop in** (once, when it appears), or **Glow** |
+| Color | A color name (`Orange`) or `#RRGGBB`. A swatch shows the color; type one, or click **Pick...** to choose it |
 
 Built-in examples:
 - `^{C} has fallen to the ground\.$` → **FEIGN DEATH FAILED!**
@@ -536,7 +572,7 @@ Use **Test** to try a line against your triggers. Invalid regexes are listed und
 Testing automatically enables and reveals the Alerts panel. Floating test alerts remain visible even
 without EverQuest on screen until the test duration expires, then the usual game-visibility rule resumes.
 Docked Alerts are brought forward and scrolled into view.
-To remove triggers, select one or more rows and click **Delete selected** or press **Delete**.
+To remove triggers, select one or more triggers (click the strip on the left; Ctrl/Shift for several) and click **Delete selected** or press **Delete**.
 Both methods ask for confirmation, defaulting to **No**. Confirmed deletions are saved.
 
 ### Log lines
@@ -563,6 +599,9 @@ a player or mercenary.
 
 - **Track** adds the mob to the Spawn Timers overlay for that zone.
 - **Override** sets the respawn yourself as seconds, m:ss or h:mm:ss. Clear it to use the learned value or wiki fallback.
+- **Relearn** forgets the learned respawn time (for example after a patch changed it, or after bad
+  samples) and measures it again from your next kill. Only sightings after the newest log line count,
+  so old history re-read at startup doesn't bring the old time back. Override and Track are kept.
 - **Wiki** shows a fallback respawn time from the mob's EQLWiki page. Tracked mobs in your
   current zone are checked in the background when no learned time or override exists, even
   when the settings tab is closed. Existing one-day NPC wiki caches are reused across restarts.
@@ -603,14 +642,64 @@ The **Motes** overlay counts the Motes of Potential you loot, from corpses and R
   excluded. `?` means inventory is not loaded. Hover for the export date and freshness
   details. Run `/outputfile inventory` after spending,
   selling, or moving motes to refresh counts; log drops alone cannot detect those changes.
-- One row per tier, taken from the item name ("Mote of <Tier> Potential", so new tiers appear automatically), most collected first, showing this
+- One row per tier, taken from the item name ("Mote of <Tier> Potential", or the plain "Mote of Potential", so new tiers appear automatically), most collected first, showing this
   session's count and, in brackets, the all-time count. The subtitle shows the session total and motes per hour.
+- Each known tier shows its upgrade value from the [EQLWiki Mote Guide](https://eqlwiki.com/Mote_Guide) as
+  `equipment points/spell points ≤+max`. For example, `Major  5/16 ≤+4` means a Mote of Major Potential adds 5 points
+  to equipment at +4 or lower, or 16 points to a spell at any rank. Hover a tier for the details.
+
+  | Tier | Equipment points | Equipment up to | Spell points |
+  |---|---|---|---|
+  | Infinitesimal | 1 | +0 | 1 |
+  | Minor | 1 | +1 | 2 |
+  | Lesser | 2 | +2 | 4 |
+  | (plain) Potential | 4 | +3 | 8 |
+  | Major | 5 | +4 | 16 |
+  | Greater | 6 | +5 | 32 |
+  | Superior | 7 | +6 | 64 |
+  | Grand | 8 | +7 | 128 |
+  | Ascendant | 9 | +8 | 256 |
+  | Infinite | 10 | +9 | 512 |
 - **Recent**: the last few drops with tier, quantity, source and time.
 - **Drops here**: mobs in the current zone that have dropped motes, as drops / kills and a percentage. Kills by
   anyone in view count, and instance versions of a zone are combined. Reward chests are left out of the rates.
 
 All-time totals and drop rates are saved per character in motes.json. The app remembers the last line it
 counted, so reading the same log again on the next launch doesn't count drops twice.
+
+### Mote upgrade planner
+
+The **Mote upgrade planner** overlay (hidden and docked by default) works out what it takes to get an item or spell
+to +10. Going from +N to +N+1 takes 2^N points (1, 2, 4 … 512), and extra points carry into the next step.
+
+- Choose **Equipment** or **Spell**, then type a name or pick an item from your last inventory export. Picking an
+  item sets **Current** to your best copy's rank. Enter **Points** if it already has progress toward the next rank.
+- **Use owned motes** spends the motes you own (inventory export plus newer loot). For equipment, each rank uses
+  only its matching mote tier; higher tiers are reserved for later ranks rather than spent to reach a lower rank.
+- **Use inventory copies** (equipment only) then merges spare copies of the same item from your inventory export,
+  lowest first. A +N copy counts as exactly +N (2^N points), with no partial progress. One copy at the current rank
+  is treated as the item being upgraded. Copies ranked above **Current** are never counted as spares (pick their rank
+  as **Current** to plan from them). Collections and installed augments are left out.
+- Each step shows the points needed, the points carried in, what is used, any **Missing** motes (counted in the tier
+  that matches the step, such as Major for +4 → +5) and the carry into the next step. Totals are listed underneath.
+  A plain-language **What to do** list comes first, including why a tier is needed (for example, Infinite is the only
+  mote that still works on a +9 item); tick **Show the math** for the full tables.
+- **Feed copies with motes first** (on by default) raises spare copies with motes before merging them. A lower-rank
+  copy may still take motes the main item can no longer use, and raising a copy to +N costs 2^N − 1 points while
+  merging it gives 2^N, so feeding can turn those motes into a more valuable copy. For example, with the main item
+  at +4, two +0 copies fed Infinitesimal ×1, Minor ×2 and Lesser ×2 each reach +3 and merge for the whole 16 points
+  of +4 → +5, saving three Majors. The overlay lists what to feed each copy, then the steps for the main item, plus
+  what feeding saves and what it spends instead.
+  - The lowest copy is always raised first, and each rank uses only its matching mote tier. A rank is only started if
+    your motes can finish it. Points past a copy's last rank are shown as **Wasted**, because merging only passes on
+    exactly 2^N.
+  - **Include motes the item can still use** (on by default) also feeds motes the main item could take now, which
+    helps when you have more of a tier than the main item can use before it outgrows it.
+  - **Extra copies** and **Farm at** let you set how many more copies you could get and their current +rank. The plain-language
+    plan estimates the minimum number of additional copies at that rank needed to finish using your selected motes and copies.
+    It assumes the extra copies are available whether they are fed or merged as-is.
+  - Feeding is only used when it leaves fewer points missing, or the same with smaller motes spent.
+- Condensing motes and Void-Touched motes aren't planned for.
 
 ## Spell durations
 
@@ -636,6 +725,10 @@ Other ranks can supply a duration when the current rank has none. Charm can stil
 unknown-duration timer while learning.
 
 Uncheck *Track* to hide a spell's timers (every rank of it); its duration is still learned.
+**Relearn** forgets the selected spell/rank's learned samples and measures the duration again from
+your next casts, for example after gear or AAs changed it. Only wear-offs after the newest log line
+count, so history re-read at startup doesn't bring the old duration back. Override, wiki estimate
+and Track are kept.
 **Remove** deletes the selected spell/rank's saved samples, override, wiki estimate and timers.
 It stays removed across restarts and log replays until you manually add that exact name again.
 
@@ -644,8 +737,8 @@ It stays removed across restarts and log replays until you manually add that exa
 Settings are stored in `%AppData%\EqLogOverlay\`:
 
 - `settings.json`: log path, overlay positions/visibility/docking, docked window layout, opacity, font, chat channels, alert triggers
-- `spell-durations.json`: learned samples, overrides, wiki duration estimates, untracked spells and removed spell/rank names
-- `spawn-timers.json`: respawn samples, overrides, tracked mobs and the last kill/sighting per zone, so countdowns keep running across restarts and new log files
+- `spell-durations.json`: learned samples, overrides, wiki duration estimates, relearn start times, untracked spells and removed spell/rank names
+- `spawn-timers.json`: respawn samples, overrides, relearn start times, tracked mobs and the last kill/sighting per zone, so countdowns keep running across restarts and new log files
 - `motes.json`: all-time mote totals per character and mote drops/kills per zone and mob
 - `mob-resistances.json`: resistance observations by zone/mob, replay watermarks, and cached EQLWiki NPC data
 - `spell-info.jsonl`: cached EQLWiki spell resist types, appended one line per spell (latest wins); an older `mob-resistances.spells.jsonl` is renamed to this on load

@@ -23,6 +23,33 @@ public sealed class ThemePalette
         "Pumpkin", "Hover", "Pressed", "Selection", "Alternate", "GridLine", "ScrollThumb", "AccentText",
     ];
 
+    /// <summary>
+    /// Overlay text colors added after the original palette. Themes may omit them, so older and custom
+    /// themes keep loading and get these defaults (the colors overlays always used).
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> OptionalColorDefaults = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["OverlayHeader"] = "#FFD778",
+        ["OverlayDim"] = "#AAAAB4",
+        ["OverlayGood"] = "#78E678",
+        ["OverlayWarn"] = "#FFAA3C",
+        ["OverlayBad"] = "#FF5A5A",
+    };
+
+    /// <summary>Every color a theme can set: the required keys followed by the optional overlay keys.</summary>
+    public static readonly string[] AllColorKeys = [.. ColorKeys, .. OptionalColorDefaults.Keys];
+
+    /// <summary>The theme's color for <paramref name="key"/>, or the default for an omitted optional key.</summary>
+    public string GetColor(string key)
+    {
+        if (Colors.TryGetValue(key, out string? color))
+        {
+            return color;
+        }
+
+        return OptionalColorDefaults[key];
+    }
+
     public static ThemePalette Parse(string json)
     {
         var theme = JsonSerializer.Deserialize<ThemePalette>(json)
@@ -43,15 +70,25 @@ public sealed class ThemePalette
             throw new FormatException("Theme Colors must be an object.");
         }
 
-        foreach (string key in ColorKeys)
+        foreach (string key in AllColorKeys)
         {
-            if (!Colors.TryGetValue(key, out string? color) || color is null ||
-                !Regex.IsMatch(color, @"\A#[0-9a-fA-F]{6}\z", RegexOptions.CultureInvariant))
+            bool optional = OptionalColorDefaults.ContainsKey(key);
+            if (!Colors.TryGetValue(key, out string? color))
+            {
+                if (optional)
+                {
+                    continue;
+                }
+
+                throw new FormatException($"Color '{key}' must be a #RRGGBB value.");
+            }
+
+            if (color is null || !Regex.IsMatch(color, @"\A#[0-9a-fA-F]{6}\z", RegexOptions.CultureInvariant))
             {
                 throw new FormatException($"Color '{key}' must be a #RRGGBB value.");
             }
         }
-        if (Colors.Keys.Except(ColorKeys, StringComparer.Ordinal).Any())
+        if (Colors.Keys.Except(AllColorKeys, StringComparer.Ordinal).Any())
         {
             throw new FormatException("Theme contains an unknown color name.");
         }

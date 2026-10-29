@@ -16,6 +16,12 @@ public sealed class AlertTrigger
     /// </summary>
     public string Pattern { get; set; } = "";
 
+    /// <summary>
+    /// Plain text matched (case-insensitive) anywhere in the message, with no regex rules. <c>{C}</c> is your
+    /// character's name. The trigger fires when this <em>or</em> <see cref="Pattern"/> matches.
+    /// </summary>
+    public string Simple { get; set; } = "";
+
     /// <summary>Alert text. <c>$1</c> / <c>${name}</c> insert captured groups and <c>{C}</c> your name. Empty shows the matched line.</summary>
     public string Text { get; set; } = "";
 
@@ -28,6 +34,9 @@ public sealed class AlertTrigger
 
     /// <summary>A WPF color name or #RRGGBB value.</summary>
     public string Color { get; set; } = "#FF5A5A";
+
+    /// <summary>How the alert text moves while it is on screen.</summary>
+    public AlertEffect Effect { get; set; } = AlertEffect.None;
 
     public AlertTrigger Clone()
     {
@@ -55,6 +64,20 @@ public sealed class AlertTrigger
     }
 }
 
+/// <summary>Animation applied to an alert's text in the Alerts overlay.</summary>
+public enum AlertEffect
+{
+    None,
+    Pulse,
+    Flash,
+    Shake,
+    Wobble,
+    Spin,
+    Bounce,
+    PopIn,
+    Glow,
+}
+
 /// <summary>An alert produced by a trigger match.</summary>
 public sealed record TriggerAlert(AlertTrigger Trigger, string Text, DateTime LogTime, string Message);
 
@@ -63,7 +86,7 @@ public sealed class TriggerMatcher
 {
     private static readonly TimeSpan MatchTimeout = TimeSpan.FromMilliseconds(50);
 
-    private readonly List<(AlertTrigger Trigger, Regex Regex)> _compiled = [];
+    private readonly List<(AlertTrigger Trigger, Regex? Regex, Regex? Simple)> _compiled = [];
     private readonly string _characterName;
 
     public TriggerMatcher(IEnumerable<AlertTrigger> triggers, string? characterName)
@@ -71,18 +94,24 @@ public sealed class TriggerMatcher
         _characterName = characterName ?? "";
         foreach (var t in triggers)
         {
-            if (!t.Enabled || string.IsNullOrWhiteSpace(t.Pattern))
+            bool hasPattern = !string.IsNullOrWhiteSpace(t.Pattern);
+            bool hasSimple = !string.IsNullOrWhiteSpace(t.Simple);
+            if (!t.Enabled || (!hasPattern && !hasSimple))
             {
                 continue;
             }
 
-            if (TryCompile(t.Pattern, characterName, out var regex, out string? error))
+            Regex? regex = null;
+            if (hasPattern && !TryCompile(t.Pattern, characterName, out regex, out string? error))
             {
-                _compiled.Add((t, regex));
-            }
-            else
-            {
+                regex = null;
                 Errors.Add($"{(t.Name.Length > 0 ? t.Name : t.Pattern)}: {error}");
+            }
+
+            Regex? simple = hasSimple ? CompileSimple(t.Simple, characterName) : null;
+            if (regex is not null || simple is not null)
+            {
+                _compiled.Add((t, regex, simple));
             }
         }
     }
@@ -151,19 +180,11 @@ public sealed class TriggerMatcher
         foreach (string raw in rawLines)
         {
             var (time, message) = LogLine.TryParse(raw, out var line) ? (line.Timestamp, line.Message) : (DateTime.Now, raw.Trim());
-            foreach (var (trigger, regex) in _compiled)
+            foreach (var (trigger, regex, simple) in _compiled)
             {
-                Match m;
-                try
-                {
-                    m = regex.Match(message);
-                }
-                catch (RegexMatchTimeoutException)
-                {
-                    continue;
-                }
-
-                if (m.Success)
+                // Either match fires the trigger; the regex is tried first so its captured groups are available.
+                var m = TryMatch(regex, message) ?? TryMatch(simple, message);
+                if (m is not null)
                 {
                     alerts.Add(new TriggerAlert(trigger, Format(trigger, m, message), time, message));
                 }
@@ -171,6 +192,31 @@ public sealed class TriggerMatcher
         }
 
         return alerts;
+    }
+
+    private static Regex CompileSimple(string text, string? characterName)
+    {
+        string name = string.IsNullOrEmpty(characterName) ? "[A-Za-z]+" : Regex.Escape(characterName);
+        string pattern = Regex.Escape(text.Trim()).Replace(@"\{C}", name, StringComparison.Ordinal);
+        return new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, MatchTimeout);
+    }
+
+    private static Match? TryMatch(Regex? regex, string message)
+    {
+        if (regex is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var m = regex.Match(message);
+            return m.Success ? m : null;
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return null;
+        }
     }
 
     private string Format(AlertTrigger trigger, Match m, string message)

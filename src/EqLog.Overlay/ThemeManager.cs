@@ -24,9 +24,9 @@ public static class ThemeManager
     {
         theme.Validate();
         var resources = Application.Current.Resources;
-        foreach (string key in ThemePalette.ColorKeys)
+        foreach (string key in ThemePalette.AllColorKeys)
         {
-            var color = (Color)ColorConverter.ConvertFromString(theme.Colors[key]);
+            var color = (Color)ColorConverter.ConvertFromString(theme.GetColor(key));
             resources[key] = new SolidColorBrush(color);
         }
 

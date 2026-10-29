@@ -213,6 +213,64 @@ public class SpellDurationTests
         Assert.Empty(engine.Snapshot(T0.AddSeconds(27)).Timers);
     }
 
+    [Fact]
+    public async Task RelearnClearsSamplesKeepsOverrideAndIgnoresOlderWearOffsAfterReload()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"eql-durations-{Guid.NewGuid():N}.json");
+        try
+        {
+            var store = new SpellDurationStore();
+            store.AddSample("Mesmerize", 30, T0);
+            store.AddSample("Mesmerize", 31, T0.AddMinutes(1));
+            store.SetOverride("Mesmerize", 25);
+            store.Relearn("Mesmerize", T0.AddMinutes(1));
+
+            var info = Assert.Single(store.List());
+            Assert.Equal(0, info.Samples);
+            Assert.Null(info.LearnedSeconds);
+            Assert.Equal(25, info.OverrideSeconds);
+
+            await store.SaveAsync(path);
+            var loaded = await SpellDurationStore.LoadAsync(path);
+            loaded.AddSample("Mesmerize", 30, T0);
+            loaded.AddSample("Mesmerize", 31, T0.AddMinutes(1));
+            Assert.Equal(0, Assert.Single(loaded.List()).Samples);
+
+            loaded.AddSample("Mesmerize", 18, T0.AddMinutes(2));
+            Assert.Equal(18, Assert.Single(loaded.List()).LearnedSeconds);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void EngineRelearnUsesLatestLogLineAsCutoff()
+    {
+        string[] firstCharm = [
+            L(0, "You begin casting Allure X."),
+            L(2, "heart harpie has been charmed."),
+            L(122, "Your Allure X spell has worn off of heart harpie."),
+        ];
+        var engine = new LogEngine();
+        engine.ProcessLines(firstCharm);
+        Assert.Equal(120, Assert.Single(engine.SpellDurations()).LearnedSeconds);
+
+        engine.RelearnSpellDuration("Allure X");
+        engine.ProcessLines(firstCharm);
+        Assert.Equal(0, Assert.Single(engine.SpellDurations()).Samples);
+
+        engine.ProcessLines([
+            L(200, "You begin casting Allure X."),
+            L(202, "heart harpie has been charmed."),
+            L(302, "Your Allure X spell has worn off of heart harpie."),
+        ]);
+        var relearned = Assert.Single(engine.SpellDurations());
+        Assert.Equal(1, relearned.Samples);
+        Assert.Equal(100, relearned.LearnedSeconds);
+    }
+
     private static string L(int seconds, string message)
     {
         return $"[{T0.AddSeconds(seconds):ddd MMM dd HH:mm:ss yyyy}] {message}";

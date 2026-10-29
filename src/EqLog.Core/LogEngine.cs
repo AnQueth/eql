@@ -386,6 +386,24 @@ public sealed class LogEngine
         }
     }
 
+    /// <summary>Clears the learned duration so it is measured again from wear-offs after the latest log line.</summary>
+    public void RelearnSpellDuration(string spell)
+    {
+        lock (_gate)
+        {
+            _timers.Store.Relearn(spell, _lastLogTime ?? DateTime.Now);
+        }
+    }
+
+    /// <summary>Clears the learned respawn time so it is measured again from sightings after the latest log line.</summary>
+    public void RelearnSpawn(string zone, string mob)
+    {
+        lock (_gate)
+        {
+            _spawns.Store.Relearn(zone, mob, _lastLogTime ?? DateTime.Now);
+        }
+    }
+
     public void SetSpellDurationOverride(string spell, double? seconds)
     {
         lock (_gate)

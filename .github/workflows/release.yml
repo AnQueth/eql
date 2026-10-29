@@ -34,6 +34,11 @@ jobs:
           }
           "version=$($env:RELEASE_TAG.Substring(1))" >> $env:GITHUB_OUTPUT
 
+      - name: Validate bundled What's New page
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: .\.github\skills\prepare-release\scripts\Test-ReleaseNotes.ps1 -Version $env:RELEASE_VERSION
+
       - name: Restore
         run: |
           dotnet restore EqLogOverlay.slnx

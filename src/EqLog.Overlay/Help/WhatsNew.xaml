@@ -1,0 +1,112 @@
+<FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+              Tag="1.0.12" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              TextAlignment="Left" Foreground="{DynamicResource NightText}"
+              Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.12
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Plan upgrades, make alerts easier to notice, and choose a more readable theme.
+        This help is included with your installed version and works offline.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Mote upgrade planner
+        </Paragraph>
+        <Paragraph>
+            Work out how to get equipment or a spell from its current +rank to +10.
+            In Settings, open General &gt; Overlays and enable Mote upgrade planner.
+        </Paragraph>
+        <List MarkerStyle="Decimal">
+            <ListItem><Paragraph>
+                Choose Equipment or Spell, then type a name or pick an item from your inventory export.
+                Picking an item selects your highest copy's rank. Set Current and any Points already invested.
+            </Paragraph></ListItem>
+            <ListItem><Paragraph>
+                Use owned motes and Use inventory copies count what you already have.
+                Your current item is not a spare. Equipment uses the matching mote tier for each step,
+                keeping bigger motes for later ranks.
+            </Paragraph></ListItem>
+            <ListItem><Paragraph>
+                Feed copies with motes first can raise spare copies before you merge them.
+                Small motes that your main item has outgrown can still help a lower-rank copy.
+                The guide tells you what to feed each copy and in what order to upgrade your item.
+            </Paragraph></ListItem>
+            <ListItem><Paragraph>
+                Choose Farm at to set the +rank of copies you could collect.
+                The guide estimates how many more you need with your selected motes and copies.
+                Extra copies lets you try a quantity you expect to get; farmed copies can also be fed with motes.
+            </Paragraph></ListItem>
+            <ListItem><Paragraph>
+                Read What to do for the short instructions. Still need lists missing motes;
+                the farming estimate is an alternative way to finish. Show the math opens the detailed tables.
+                A +10 item is already finished, so it has no upgrade steps.
+            </Paragraph></ListItem>
+        </List>
+        <Paragraph Foreground="{DynamicResource NightMuted}">
+            The Motes overlay also shows equipment and spell values beside each tier.
+            Inventory counts come from your latest export; run /outputfile inventory in game to refresh them.
+            Copies count as their exact displayed +rank, with no assumed partial progress.
+            Condensing and Void-Touched motes are not included in the planner.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Clearer alerts and easier trigger editing
+        </Paragraph>
+        <List>
+            <ListItem><Paragraph>
+                In Settings &gt; Alert triggers, use Simple text for a plain, case-insensitive match,
+                Regex for a pattern, or both. Either match can fire the alert; they are OR, not AND.
+            </Paragraph></ListItem>
+            <ListItem><Paragraph>
+                Trigger cards use multiple rows so the fields are less cramped.
+                Choose an alert color with Pick... and select a text effect, such as flash, bounce, or glow.
+                Choose None for a still alert.
+            </Paragraph></ListItem>
+            <ListItem><Paragraph>
+                Alerts are centered and wrap to fit the panel. Use Test to try a log line and reveal
+                the Alerts panel without waiting for the event in game.
+            </Paragraph></ListItem>
+        </List>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Relearn spawn and spell timers
+        </Paragraph>
+        <Paragraph>
+            If a patch or an early break has made a learned timer inaccurate, use Relearn on its row
+            in Spawn timers or Spell durations. This clears the learned timing so new observations can
+            rebuild it. Existing overrides are kept; clear an override if you want to use learned timing again.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Accessibility themes and a more useful preview
+        </Paragraph>
+        <Paragraph>
+            Open Settings &gt; Appearance and choose High Contrast Dark, High Contrast Light,
+            Colorblind Safe (Red-Green), or Colorblind Safe (Blue-Yellow).
+            Themes now include overlay heading, secondary, and status text colors.
+        </Paragraph>
+        <Paragraph>
+            The preview shows realistic tables, controls, selected and hovered rows, and overlays,
+            so you can see how each color will look before Apply &amp; save.
+            Custom alert colors and chat channel colors remain separate from the theme.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Help is now one click away
+        </Paragraph>
+        <Paragraph>
+            Use What's New in the main window's top bar to reopen this page, even with Settings hidden.
+            Leave it open beside the app while trying a feature. Close it with the Close button or Escape.
+            The README also has new dashboard, floating-overlay, and countdown examples.
+        </Paragraph>
+        <Paragraph>
+            The main dashboard's Always on top checkbox has been removed.
+            Floating game overlays still stay on top when they are shown.
+        </Paragraph>
+    </Section>
+</FlowDocument>

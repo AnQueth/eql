@@ -225,12 +225,7 @@ public partial class MainWindow
         SetUpdateBusy(true);
         try
         {
-            if (!TriggersGrid.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Cell, true) ||
-                !TriggersGrid.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Row, true))
-            {
-                throw new InvalidOperationException("Finish or cancel the current alert trigger edit before updating.");
-            }
-
+            CommitTriggerEdits();
             _settings.Triggers = [.. _triggers];
             // Verify persistence before stopping anything; refuse to restart if data cannot be saved.
             await SaveAllAsync(throwOnError: true);
