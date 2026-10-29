@@ -1,7 +1,62 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.19" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.20" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.20
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Manage timers from their overlays and keep floating panels unobtrusive in game.
+        This release history ships with your installed version and works offline.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Track mobs and spells without opening settings
+        </Paragraph>
+        <Paragraph>
+            In the Spawn Timers overlay, select a checkbox under Track mobs to start
+            tracking a named mob observed in the current zone. Uncheck a tracked mob
+            to remove its timer. Generic mobs remain available through
+            Settings &gt; Spawn timers &gt; Show all mobs.
+        </Paragraph>
+        <Paragraph>
+            In the Spell Timers overlay, uncheck an active spell to stop tracking it,
+            or use Known spells to enable or disable a spell with a saved duration.
+            These choices are saved. Unchecking a spell applies across its ranks and
+            keeps learned durations. Enabling a spell does not cast it or create a
+            countdown by itself; timers still depend on logged spell events.
+            Unlock floating overlays with Ctrl+Shift+L to use their controls.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Fewer duplicate spell choices
+        </Paragraph>
+        <Paragraph>
+            The Spell durations settings grid and the overlay's Known spells list
+            show only the highest known rank of each spell, rather than listing every
+            rank separately. Older ranks' saved learning is kept. Active timers
+            still show the rank actually cast and remain individually visible by target.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Reveal overlay titles and borders only on hover
+        </Paragraph>
+        <Paragraph>
+            Open Settings &gt; General &gt; Overlays and enable Hide floating overlay
+            titles and borders in game unless hovered. While EverQuest is active,
+            floating panels hide their title areas, borders, and decorations until
+            the mouse is over them. Header space remains reserved so content does
+            not move under the pointer. The option starts off.
+        </Paragraph>
+        <Paragraph>
+            Docked panels are unchanged. Locked overlays stay click-through, with
+            hover detection updating within half a second. Existing background
+            opacity settings still apply. The Alerts overlay also no longer shows
+            the No alerts message when there are no active alerts.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.19
     </Paragraph>

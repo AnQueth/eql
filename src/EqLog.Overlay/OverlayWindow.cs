@@ -13,6 +13,7 @@ namespace EqLog.Overlay;
 public sealed class OverlayWindow : Window
 {
     private bool _locked;
+    private bool _hoverOnlyChrome;
 
     public OverlayWindow(OverlayPanel panel)
     {
@@ -46,6 +47,8 @@ public sealed class OverlayWindow : Window
         };
 
         SourceInitialized += (_, _) => ApplyExStyle();
+        MouseEnter += (_, _) => UpdateChrome();
+        MouseLeave += (_, _) => UpdateChrome();
         SetLocked(false);
     }
 
@@ -67,6 +70,30 @@ public sealed class OverlayWindow : Window
     public void DetachPanel()
     {
         Content = null;
+    }
+
+    public void SetHoverOnlyChrome(bool enabled)
+    {
+        _hoverOnlyChrome = enabled;
+        UpdateChrome();
+    }
+
+    private void UpdateChrome()
+    {
+        if (!_hoverOnlyChrome || !IsVisible || Content != Panel)
+        {
+            Panel.SetChromeHidden(false);
+            return;
+        }
+
+        // Locked windows do not receive mouse events; sample the screen cursor as well.
+        if (!NativeMethods.GetCursorPos(out var cursor))
+        {
+            throw new System.ComponentModel.Win32Exception(System.Runtime.InteropServices.Marshal.GetLastWin32Error());
+        }
+        var position = PointFromScreen(new Point(cursor.X, cursor.Y));
+        bool hovered = new Rect(0, 0, ActualWidth, ActualHeight).Contains(position);
+        Panel.SetChromeHidden(!hovered);
     }
 
     public void SetLocked(bool locked)

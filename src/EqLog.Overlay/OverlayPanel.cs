@@ -11,7 +11,11 @@ namespace EqLog.Overlay;
 /// <summary>One line in an overlay: left/right text with an optional proportional bar behind it.</summary>
 public sealed record AbilityBreakdown(string Title, string Context, string RateLabel, IReadOnlyList<AbilityStats> Abilities);
 
-public sealed record OverlayRow(string Left, string Right = "", double Fraction = 0, Brush? Bar = null, Brush? Foreground = null, bool Wrap = false, bool Bold = false, double Scale = 1, string? LootItem = null, AbilityBreakdown? Breakdown = null, bool QuestHeading = false, string? Details = null, bool Stacked = false, string? ExtraColumn = null, string? ToolTip = null, string? WatchKey = null, bool Watched = false, OverlayTable? Table = null, string? Link = null, bool HasQuestReferences = false, AlertEffect Effect = AlertEffect.None);
+public sealed record SpawnTrackChange(string Zone, string Mob, bool Tracked);
+
+public sealed record SpellTrackChange(string Spell, bool Tracked);
+
+public sealed record OverlayRow(string Left, string Right = "", double Fraction = 0, Brush? Bar = null, Brush? Foreground = null, bool Wrap = false, bool Bold = false, double Scale = 1, string? LootItem = null, AbilityBreakdown? Breakdown = null, bool QuestHeading = false, string? Details = null, bool Stacked = false, string? ExtraColumn = null, string? ToolTip = null, string? WatchKey = null, bool Watched = false, OverlayTable? Table = null, string? Link = null, bool HasQuestReferences = false, AlertEffect Effect = AlertEffect.None, SpawnTrackChange? SpawnTrack = null, SpellTrackChange? SpellTrack = null);
 
 /// <summary>
 /// A small grid shown inside a row's card, below its title. With <see cref="Header"/> it is a column table
@@ -149,6 +153,7 @@ public sealed class OverlayPanel : ContentControl
     private double _opacity = 0.55;
     private bool _locked;
     private bool _docked;
+    private bool _chromeHidden;
 
     public OverlayPanel(string key, string caption, bool autoScrollToEnd)
     {
@@ -341,6 +346,8 @@ public sealed class OverlayPanel : ContentControl
 
     /// <summary>Raised when the star on a row with a <see cref="OverlayRow.WatchKey"/> is clicked.</summary>
     public event Action<string>? WatchToggleRequested;
+    public event Action<SpawnTrackChange>? SpawnTrackToggleRequested;
+    public event Action<SpellTrackChange>? SpellTrackToggleRequested;
 
     public void SetToolbar(UIElement toolbar)
     {
@@ -391,6 +398,16 @@ public sealed class OverlayPanel : ContentControl
         Apply();
     }
 
+    public void SetChromeHidden(bool hidden)
+    {
+        if (_chromeHidden == hidden)
+        {
+            return;
+        }
+        _chromeHidden = hidden;
+        Apply();
+    }
+
     /// <summary>Docked tiles remain interactive and use theme-colored, beveled fantasy frames.</summary>
     public void SetDocked(bool docked)
     {
@@ -419,6 +436,14 @@ public sealed class OverlayPanel : ContentControl
         if (!_docked && _locked)
         {
             _frame.BorderBrush = Brushes.Transparent;
+        }
+        bool hideChrome = _chromeHidden && !_docked;
+        // Reserve the header's space so hovering does not shift content under the pointer.
+        _titleFrame.Visibility = hideChrome ? Visibility.Hidden : Visibility.Visible;
+        if (hideChrome)
+        {
+            _frame.BorderBrush = Brushes.Transparent;
+            _ornaments.Visibility = Visibility.Hidden;
         }
     }
 
@@ -629,6 +654,46 @@ public sealed class OverlayPanel : ContentControl
 
         var weight = row.Bold ? FontWeights.Bold : FontWeights.Normal;
         var text = new DockPanel { Margin = new Thickness(3, 0, 3, 0) };
+        if (row.SpawnTrack is { } spawnTrack)
+        {
+            var track = new CheckBox
+            {
+                IsChecked = spawnTrack.Tracked,
+                Margin = new Thickness(0, 0, 6, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = System.Windows.Input.Cursors.Hand,
+                Focusable = false,
+                ToolTip = spawnTrack.Tracked
+                    ? "Stop tracking this mob"
+                    : "Track this mob in the Spawn Timers overlay",
+            };
+            track.Click += (_, e) =>
+            {
+                SpawnTrackToggleRequested?.Invoke(spawnTrack with { Tracked = track.IsChecked == true });
+                e.Handled = true;
+            };
+            DockPanel.SetDock(track, Dock.Left);
+            text.Children.Add(track);
+        }
+        if (row.SpellTrack is { } spellTrack)
+        {
+            var track = new CheckBox
+            {
+                IsChecked = spellTrack.Tracked,
+                Margin = new Thickness(0, 0, 6, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = System.Windows.Input.Cursors.Hand,
+                Focusable = false,
+                ToolTip = spellTrack.Tracked ? "Stop tracking this spell" : "Track this spell in the Spell Timers overlay",
+            };
+            track.Click += (_, e) =>
+            {
+                SpellTrackToggleRequested?.Invoke(spellTrack with { Tracked = track.IsChecked == true });
+                e.Handled = true;
+            };
+            DockPanel.SetDock(track, Dock.Left);
+            text.Children.Add(track);
+        }
         if (row.WatchKey is { } watchKey)
         {
             var star = new Button

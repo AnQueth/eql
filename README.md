@@ -300,6 +300,9 @@ as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels r
   to adjust its text size, background opacity, and floating-window lock independently.
   Size and opacity apply to both floating and docked panels, update live, and are saved with positions.
   Existing settings retain the previous global appearance and lock values until individually changed.
+- Enable **Hide floating overlay titles and borders in game unless hovered** for unobtrusive floating
+  panels while EverQuest is active. Hover to reveal the header and decorations; docked panels are
+  unchanged. Locked overlays remain click-through, and their hover state updates within half a second.
 - **Reset session** clears totals. You can also have them reset automatically when you log in.
 
 ### Main window: settings + docked panels (second monitor)
@@ -814,7 +817,9 @@ The log doesn't say how long a spell lasts, so the app learns durations from the
 effect landing and its "worn off" message. Mez and charm often break early, so the estimate is the
 80th percentile of the last 25 samples. Re-reading the same history doesn't count the same wear-off twice.
 
-The **Spell durations** grid shows learned durations and wiki estimates. Spells you cast are
+The **Spell durations** grid and the overlay's **Known spells** list show only the highest known
+rank of each spell. Older ranks' saved learning is kept, and active timers retain their actual rank.
+The grid shows learned durations and wiki estimates. Spells you cast are
 looked up in the background using the shared EQLWiki cache. Explicit wiki durations are a fallback
 when no learned value is available, including six-second ticks and "Up to" maximums
 (for example, Whirl Till You Hurl's "Up to 2 ticks" becomes a 12-second estimate).
@@ -828,6 +833,9 @@ Other ranks can supply a duration when the current rank has none. Charm can stil
 unknown-duration timer while learning.
 
 Uncheck *Track* to hide a spell's timers (every rank of it); its duration is still learned.
+You can also toggle tracking directly in the **Spell Timers** overlay: uncheck an active timer
+or select a checkbox under **Known spells**. Enabling tracking waits for logged spell events;
+it does not create a countdown immediately. Unlock floating overlays with Ctrl+Shift+L to interact.
 **Relearn** forgets the selected spell/rank's learned samples and measures the duration again from
 your next casts, for example after gear or AAs changed it. Only wear-offs after the newest log line
 count, so history re-read at startup doesn't bring the old duration back. Override, wiki estimate

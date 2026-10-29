@@ -7,6 +7,36 @@ public class SpellDurationTests
     private static readonly DateTime T0 = new(2026, 10, 28, 12, 0, 0);
 
     [Theory]
+    [InlineData("Clarity", 1)]
+    [InlineData("Clarity V", 5)]
+    [InlineData("Clarity IX", 9)]
+    [InlineData("Clarity X", 10)]
+    [InlineData("Clarity Rk. IV", 4)]
+    [InlineData("Clarity XL", 40)]
+    public void ReadsSpellRank(string spell, int expected)
+    {
+        Assert.Equal(expected, SpellNames.Rank(spell));
+    }
+
+    [Fact]
+    public void HighestRankSelectionKeepsOtherRanksSaved()
+    {
+        var store = new SpellDurationStore();
+        store.SetOverride("Clarity", 1200);
+        store.SetOverride("Clarity V", 1620);
+        store.SetOverride("Envenomed Bolt IX", 30);
+        store.SetOverride("Envenomed Bolt X", 36);
+        store.SetOverride("Camouflage", 1200);
+        var engine = new LogEngine(durations: store);
+
+        Assert.Equal(
+            new[] { "Camouflage", "Clarity V", "Envenomed Bolt X" },
+            engine.SpellDurations(highestRanksOnly: true).Select(duration => duration.Spell));
+        Assert.Equal(5, engine.SpellDurations().Count);
+        Assert.Equal(1200, store.GetDuration("Clarity"));
+    }
+
+    [Theory]
     [InlineData("Up to 2 ticks", 12)]
     [InlineData("2 ticks", 12)]
     [InlineData("1 tick", 6)]

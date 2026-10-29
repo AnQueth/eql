@@ -179,6 +179,7 @@ public partial class MainWindow : Window
         FollowNewestBox.IsChecked = _settings.FollowNewest;
         LockBox.IsChecked = _settings.Locked;
         GameVisibleBox.IsChecked = _settings.OnlyWhenGameVisible;
+        HoverChromeBox.IsChecked = _settings.HoverOnlyOverlayChrome;
         UsageTelemetryBox.IsChecked = _settings.ShareUsageTelemetry;
         _gameVisible = GameWindowWatcher.IsGameVisible();
         ResetOnLoginBox.IsChecked = _settings.ResetOnLogin;
@@ -239,6 +240,25 @@ public partial class MainWindow : Window
             if (def.Key == "quests")
             {
                 ConfigureQuestToolbar(panel);
+            }
+
+            if (def.Key == "spawns")
+            {
+                panel.SpawnTrackToggleRequested += change =>
+                {
+                    _engine.SetSpawnTracked(change.Zone, change.Mob, change.Tracked);
+                    CheckSpawnWiki();
+                    _ = SaveQuietlyAsync(_engine.SaveSpawnsAsync(AppSettings.SpawnsPath));
+                };
+            }
+
+            if (def.Key == "timers")
+            {
+                panel.SpellTrackToggleRequested += change =>
+                {
+                    _engine.SetSpellTracked(change.Spell, change.Tracked);
+                    _ = SaveQuietlyAsync(_engine.SaveSpellDurationsAsync(AppSettings.DurationsPath));
+                };
             }
 
             if (def.Key == "sky")
@@ -432,6 +452,7 @@ public partial class MainWindow : Window
 
         _dock.RemovePanel(key);
         w.AttachPanel();
+        w.SetHoverOnlyChrome(_settings.HoverOnlyOverlayChrome && _gameVisible);
         if (visible && (FloatingAllowed || (key == "alerts" && DateTime.Now < _alertTestVisibleUntil)))
         {
             w.Show();
@@ -463,6 +484,19 @@ public partial class MainWindow : Window
         {
             _gameVisible = visible;
             ApplyFloating();
+        }
+        foreach (var window in _overlays.Values)
+        {
+            window.SetHoverOnlyChrome(_settings.HoverOnlyOverlayChrome && _gameVisible);
+        }
+    }
+
+    private void HoverChrome_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.HoverOnlyOverlayChrome = HoverChromeBox.IsChecked == true;
+        foreach (var window in _overlays.Values)
+        {
+            window.SetHoverOnlyChrome(_settings.HoverOnlyOverlayChrome && _gameVisible);
         }
     }
 
@@ -1083,7 +1117,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var list = _engine.SpellDurations();
+        var list = _engine.SpellDurations(highestRanksOnly: true);
         string signature = string.Join('|', list.Select(d => $"{d.Spell}:{d.Samples}:{d.LearnedSeconds:F0}:{d.OverrideSeconds}:{d.Tracked}:{d.WikiSeconds}"));
         if (signature == _durationsSignature)
         {

@@ -172,6 +172,8 @@ public sealed class AppSettings
     /// <summary>Hide floating overlays while the EverQuest window isn't visible (not running, minimized or covered).</summary>
     public bool OnlyWhenGameVisible { get; set; } = true;
 
+    public bool HoverOnlyOverlayChrome { get; set; }
+
     public double BackgroundOpacity { get; set; } = 0.55;
 
     public double FontSize { get; set; } = 13;

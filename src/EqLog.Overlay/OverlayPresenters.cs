@@ -260,7 +260,7 @@ public static class OverlayPresenters
         return new("Motes", sub, rows);
     }
 
-    private static OverlayContent Spawns(EngineSnapshot s, LogEngine _, OverlayView __)
+    private static OverlayContent Spawns(EngineSnapshot s, LogEngine engine, OverlayView __)
     {
         var sp = s.Spawns;
         var rows = new List<OverlayRow>();
@@ -272,30 +272,51 @@ public static class OverlayPresenters
         {
             string source = t.UsesWiki ? " (wiki)" : "";
             string link = QuestLookup.SearchUrl(t.Mob);
+            var tracking = sp.Zone is { } trackedZone
+                ? new SpawnTrackChange(trackedZone, t.Mob, true)
+                : null;
             switch (t.State)
             {
                 case SpawnState.Due:
-                    rows.Add(new(t.Mob, $"DUE +{Clock(-(t.RemainingSeconds ?? 0))}{source}", 1, WarnBar, Foreground: Warn, Bold: true, Link: link));
+                    rows.Add(new(t.Mob, $"DUE +{Clock(-(t.RemainingSeconds ?? 0))}{source}", 1, WarnBar, Foreground: Warn, Bold: true, Link: link, SpawnTrack: tracking));
                     break;
                 case SpawnState.Dead when t.RemainingSeconds is double rem && t.RespawnSeconds is double r:
-                    rows.Add(new(t.Mob, Clock(rem) + source, 1 - (rem / r), rem <= 60 ? WarnBar : TimerBar, Link: link));
+                    rows.Add(new(t.Mob, Clock(rem) + source, 1 - (rem / r), rem <= 60 ? WarnBar : TimerBar, Link: link, SpawnTrack: tracking));
                     break;
                 case SpawnState.Dead:
                     double ago = t.KilledAt is DateTime k ? (s.Now - k).TotalSeconds : 0;
-                    rows.Add(new(t.Mob, $"dead {Clock(ago)} (learning)", Foreground: Dim, Link: link));
+                    rows.Add(new(t.Mob, $"dead {Clock(ago)} (learning)", Foreground: Dim, Link: link, SpawnTrack: tracking));
                     break;
                 case SpawnState.Up:
-                    rows.Add(new(t.Mob, $"up  seen {t.SeenAt:HH:mm}", Foreground: Good, Link: link));
+                    rows.Add(new(t.Mob, $"up  seen {t.SeenAt:HH:mm}", Foreground: Good, Link: link, SpawnTrack: tracking));
                     break;
                 default:
-                    rows.Add(new(t.Mob, t.RespawnSeconds is double rs ? $"~{Clock(rs)}{source}" : "-", Foreground: Dim, Link: link));
+                    rows.Add(new(t.Mob, t.RespawnSeconds is double rs ? $"~{Clock(rs)}{source}" : "-", Foreground: Dim, Link: link, SpawnTrack: tracking));
                     break;
+            }
+        }
+
+        if (sp.Zone is { } zone && string.Equals(engine.SpawnZone, zone, StringComparison.OrdinalIgnoreCase))
+        {
+            var candidates = engine.SpawnCandidates()
+                .Where(c => c.LikelyNamed && c.Info?.Tracked != true)
+                .OrderBy(c => c.Mob, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (candidates.Count > 0)
+            {
+                rows.Add(new("Track mobs", Foreground: Header, Bold: true, QuestHeading: true));
+                foreach (var candidate in candidates)
+                {
+                    rows.Add(new(candidate.Mob, "Track",
+                        Foreground: Dim,
+                        SpawnTrack: new SpawnTrackChange(zone, candidate.Mob, false)));
+                }
             }
         }
 
         if (rows.Count == 0)
         {
-            rows.Add(new(sp.Zone is null ? "No zone yet" : "No mobs tracked here. Pick them on the Spawn timers tab.", Foreground: Dim, Wrap: true));
+            rows.Add(new(sp.Zone is null ? "No zone yet" : "No mobs available to track yet.", Foreground: Dim, Wrap: true));
         }
 
         return new("Spawn Timers", sp.Zone, rows);
@@ -303,9 +324,9 @@ public static class OverlayPresenters
 
     private static OverlayContent Alerts(EngineSnapshot _, LogEngine __, OverlayView view)
     {
-        var rows = view.Alerts.Count == 0
-            ? new List<OverlayRow> { new("No alerts", Foreground: Dim) }
-            : view.Alerts.Reverse().Select(a => new OverlayRow(a.Text, Foreground: a.Color, Wrap: true, Bold: true, Scale: 1.6, Effect: a.Effect)).ToList();
+        var rows = view.Alerts.Reverse()
+            .Select(a => new OverlayRow(a.Text, Foreground: a.Color, Wrap: true, Bold: true, Scale: 1.6, Effect: a.Effect))
+            .ToList();
         return new("Alerts", null, rows);
     }
 
@@ -452,7 +473,7 @@ public static class OverlayPresenters
         return new("Healing", $"out {Short(h.OutgoingRecentHps)} hps  in {Short(h.IncomingRecentHps)} hps", rows);
     }
 
-    private static OverlayContent Timers(EngineSnapshot s, LogEngine _, OverlayView __)
+    private static OverlayContent Timers(EngineSnapshot s, LogEngine engine, OverlayView __)
     {
         var rows = new List<OverlayRow>();
         foreach (var t in s.Timers)
@@ -461,13 +482,14 @@ public static class OverlayPresenters
             string left = string.IsNullOrWhiteSpace(t.Target) || t.Target == "(target)"
                 ? t.Spell
                 : $"{t.Spell} \u2192 {target}";
+            var tracking = new SpellTrackChange(t.Spell, true);
             switch (t.State)
             {
                 case TimerState.WornOff:
-                    rows.Add(new(left, "WORE OFF", 1, WornBar, Bold: true));
+                    rows.Add(new(left, "WORE OFF", 1, WornBar, Bold: true, SpellTrack: tracking));
                     break;
                 case TimerState.Broken:
-                    rows.Add(new(left, "BROKE", 1, WarnBar, Bold: true));
+                    rows.Add(new(left, "BROKE", 1, WarnBar, Bold: true, SpellTrack: tracking));
                     break;
                 default:
                     if (t.RemainingSeconds is double rem && t.DurationSeconds is double dur)
@@ -480,20 +502,44 @@ public static class OverlayPresenters
                             expired ? 0 : rem / dur,
                             soon ? WarnBar : t.IsCharm ? CharmBar : TimerBar,
                             Foreground: expired ? Warn : null,
-                            Bold: t.IsCharm));
+                            Bold: t.IsCharm,
+                            SpellTrack: tracking));
                     }
                     else
                     {
-                        rows.Add(new(left, $"{Clock(t.ElapsedSeconds)} (learning)", Foreground: Dim, Bold: t.IsCharm));
+                        rows.Add(new(left, $"{Clock(t.ElapsedSeconds)} (learning)", Foreground: Dim, Bold: t.IsCharm, SpellTrack: tracking));
                     }
 
                     break;
             }
         }
 
-        if (rows.Count == 0)
+        if (s.Timers.Count == 0)
         {
             rows.Add(new("No active timers", Foreground: Dim));
+        }
+
+        var activeSpells = s.Timers
+            .Select(timer => timer.Spell)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var known = engine.SpellDurations(highestRanksOnly: true)
+            .Where(duration =>
+                !activeSpells.Contains(duration.Spell) &&
+                (duration.LearnedSeconds is not null || duration.OverrideSeconds is not null || duration.WikiSeconds is not null))
+            .OrderBy(duration => duration.Spell, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (known.Count > 0)
+        {
+            rows.Add(new("Known spells", Foreground: Header, Bold: true, QuestHeading: true));
+            foreach (var duration in known)
+            {
+                rows.Add(new(duration.Spell, duration.Tracked ? "Tracked" : "Not tracked",
+                    Foreground: duration.Tracked ? null : Dim,
+                    ToolTip: duration.Tracked
+                        ? "Stop tracking this spell"
+                        : "Track this spell in the Spell Timers overlay",
+                    SpellTrack: new SpellTrackChange(duration.Spell, duration.Tracked)));
+            }
         }
 
         return new("Spell Timers", null, rows);

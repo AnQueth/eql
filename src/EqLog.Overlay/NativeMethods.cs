@@ -68,6 +68,17 @@ internal static partial class NativeMethods
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    internal struct ScreenPoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool GetCursorPos(out ScreenPoint point);
+
+    [StructLayout(LayoutKind.Sequential)]
     internal struct MonitorInfo
     {
         public int Size;

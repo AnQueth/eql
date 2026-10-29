@@ -343,12 +343,21 @@ public sealed class LogEngine
         }
     }
 
-    public IReadOnlyList<SpellDurationInfo> SpellDurations()
+    public IReadOnlyList<SpellDurationInfo> SpellDurations(bool highestRanksOnly = false)
     {
         lock (_gate)
         {
             UpdateWikiSpellDurations();
-            return _timers.Store.List();
+            var durations = _timers.Store.List();
+            if (!highestRanksOnly)
+            {
+                return durations;
+            }
+            return durations
+                .GroupBy(duration => SpellNames.BaseName(duration.Spell), StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.MaxBy(duration => SpellNames.Rank(duration.Spell))!)
+                .OrderBy(duration => duration.Spell, StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
     }
 

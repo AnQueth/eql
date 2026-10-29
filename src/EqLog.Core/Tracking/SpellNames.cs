@@ -15,6 +15,28 @@ public static partial class SpellNames
         return string.Equals(BaseName(a), BaseName(b), StringComparison.OrdinalIgnoreCase);
     }
 
+    public static int Rank(string spell)
+    {
+        var suffix = RankSuffix().Match(spell);
+        int rank = 0;
+        int previous = 0;
+        for (int i = suffix.Value.Length - 1; i >= 0; i--)
+        {
+            int value = suffix.Value[i] switch
+            {
+                'I' => 1,
+                'V' => 5,
+                'X' => 10,
+                'L' => 50,
+                'C' => 100,
+                _ => 0,
+            };
+            rank += value < previous ? -value : value;
+            previous = Math.Max(previous, value);
+        }
+        return suffix.Success ? rank : 1;
+    }
+
     public static string? FindByBase(IEnumerable<string> candidates, string spell)
     {
         string b = BaseName(spell);

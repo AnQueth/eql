@@ -54,6 +54,8 @@
                           ToolTip="Checked: all locked. Dash: mixed locks. Click or use the hotkey to lock all; when all are locked, unlock all." />
                 <CheckBox x:Name="GameVisibleBox" Content="Only show floating overlays while EverQuest (eqgame.exe) is active" Margin="0,6,0,0" Click="GameVisible_Click"
                           ToolTip="Floating overlays hide when you switch to another app or the dock. An unlocked floating overlay can keep focus for interaction. Docked panels always show." />
+                <CheckBox x:Name="HoverChromeBox" Content="Hide floating overlay titles and borders in game unless hovered" Margin="0,6,0,0" Click="HoverChrome_Click"
+                          ToolTip="Hide titles, borders and decorations until the mouse is over a floating overlay while EverQuest is active. Docked panels are unchanged. Locked overlays remain click-through." />
                 <Expander Header="Individual overlay appearance and locks" Margin="0,8,0,0">
                     <StackPanel x:Name="OverlayAppearance" Margin="0,6,0,0" />
                 </Expander>
