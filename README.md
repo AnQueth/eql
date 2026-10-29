@@ -145,7 +145,8 @@ the active theme. **Reset draft** discards edits and reloads the last selected/a
 choosing a different theme also replaces the draft. Invalid colors are reported and block apply/export.
 
 New installs default to **Follow Windows light/dark mode**, using **Neutral Light** or **Neutral Dark**:
-simple gray surfaces, readable text, and restrained blue accents. Changes to Windows **app mode**
+simple gray surfaces, readable text, and restrained blue accents. Neutral Dark uses deeper,
+VS Code-style charcoal surfaces and subtle borders. Changes to Windows **app mode**
 apply while the app is running. Both palettes provide at least 4.5:1 text contrast on their opaque
 surfaces; overlay transparency and the game behind it can reduce actual contrast.
 Existing saved theme choices are preserved. Uncheck **Follow Windows light/dark mode** to keep a

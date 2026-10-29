@@ -1,7 +1,35 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.15" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.16" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.16
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        A deeper, VS Code-style charcoal look for Neutral Dark.
+        This release history ships with your installed version and works offline.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Darker surfaces, quieter borders
+        </Paragraph>
+        <Paragraph>
+            Neutral Dark now uses deeper charcoal backgrounds, darker controls, subtler
+            borders and grid lines, and softer text with restrained blue accents.
+            Neutral Light and the other bundled palettes are unchanged.
+        </Paragraph>
+        <Paragraph>
+            Open Settings &gt; Appearance &gt; Theme. Follow Windows light/dark mode uses
+            the updated palette when Windows app mode is dark. For a fixed choice, uncheck
+            that option and select Neutral Dark.
+        </Paragraph>
+        <Paragraph>
+            Saved fixed palettes are preserved, including the previous Neutral Dark colors.
+            Reselect Neutral Dark from the theme list to use the updated bundled palette.
+            Text still meets at least 4.5:1 contrast on opaque surfaces; overlay transparency
+            and the game behind it can reduce actual contrast.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.15
     </Paragraph>
