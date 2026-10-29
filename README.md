@@ -96,12 +96,14 @@ If floating overlays are missing while arranging them, temporarily turn off
 
 ## Usage and error telemetry
 
-EqLog Overlay sends app-start, feature-use, and error events to Azure Application Insights.
+Usage and error telemetry is off by default. Enable **Share usage and error telemetry** in
+**General > Application updates** to send app-start, feature-use, and error events to Azure Application Insights.
 Events include only fixed feature labels and, for errors, the exception type and source. The app
 does not send game or log contents, character or item names, file paths, exception messages, or
 stack traces. Azure Monitor may still process standard service/network metadata. Turn off
 **Share usage and error telemetry** in **General > Application updates** to prevent new events
 from being collected.
+Existing saved telemetry preferences are preserved.
 Telemetry uses the configured Application Insights connection string; the
 `APPLICATIONINSIGHTS_CONNECTION_STRING` environment variable overrides the built-in default.
 

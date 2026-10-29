@@ -1,7 +1,35 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.16" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.17" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.17
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Usage and error telemetry is now off by default.
+        This release history ships with your installed version and works offline.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Choose whether to share telemetry
+        </Paragraph>
+        <Paragraph>
+            New installs, and settings without a saved telemetry preference, no longer collect
+            usage or error events by default. To opt in, open Settings &gt; General &gt;
+            Application updates and check Share usage and error telemetry.
+        </Paragraph>
+        <Paragraph>
+            Existing saved preferences are preserved, including an enabled setting from an
+            earlier version. Uncheck Share usage and error telemetry to stop collecting new
+            events; your choice is saved for future starts.
+        </Paragraph>
+        <Paragraph>
+            When enabled, telemetry reports app starts, fixed feature labels, and error types
+            and sources. Game and log contents, character and item names, file paths,
+            exception messages, and stack traces are not sent. Azure Monitor may process
+            standard service and network metadata.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.16
     </Paragraph>
