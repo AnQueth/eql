@@ -1,13 +1,14 @@
 ---
 name: prepare-release
-description: 'Mandatory EqLog Overlay pre-release workflow. Use before every release, version bump, release tag, installer publication, or request to make, publish, ship, or resume a release. Write the bundled What''s New help page, validate it against the release version, and verify the title-area button before publishing.'
+description: 'Mandatory EqLog Overlay pre-release workflow. Use before every release, version bump, release tag, installer publication, or request to make, publish, ship, or resume a release. Prepend the new release to the bundled What''s New history without deleting older entries, then run its single validation check before publishing.'
 license: Apache-2.0
 ---
 
 # Prepare an EqLog Overlay release
 
 Run this skill **before every release**, including resumed releases. The What's New
-page is release help, not a commit log: explain what players can do and where to find it.
+page is a cumulative release history, newest first. Explain what players can do and
+where to find it; do not copy raw commit logs.
 
 ## Workflow
 
@@ -16,23 +17,29 @@ page is release help, not a commit log: explain what players can do and where to
    agreed release version, or the next patch version when none is specified and the
    scope is clear. Update `Version` in the
    [app project](../../../src/EqLog.Overlay/EqLog.Overlay.csproj).
-2. **Write the help page.** Update the bundled
+2. **Prepend to the help history.** Update the bundled
    [What's New document](../../../src/EqLog.Overlay/Help/WhatsNew.xaml).
-   Set its `Tag` and visible heading to the release version. Summarize actual changes
+   Keep every existing release entry and its version heading. Never replace, delete,
+   or rewrite older release notes when adding a release. If preparing the same unreleased
+   version again, update its existing entry rather than duplicating it.
+   Put the new version's heading and notes at the top, with older releases below in
+   reverse chronological order. Set the document's `Tag` and first visible heading
+   to the release version. Summarize actual changes
    since the previous release, with short, plain-English sections describing benefits,
    exact UI paths, how to try the features, and important limitations. Cover fixes and
    intentional behavior changes. Do not invent features or copy raw commit messages.
    Keep the native FlowDocument format and dynamic theme resources; the page must work
    offline. Update directly related README help when needed.
-3. **Validate before publishing.** Run the
-   [release-notes check](./scripts/Test-ReleaseNotes.ps1) from the repository root:
+3. **Use one What's New check.** After finalizing the page and version, run the existing
+   [release-notes check](./scripts/Test-ReleaseNotes.ps1) once from the repository root:
    `& .\.github\skills\prepare-release\scripts\Test-ReleaseNotes.ps1 -Version <version>`.
+   Do not add temporary WPF harnesses, screenshots, theme matrices, or repeated
+   open/close/reopen tests for release-note updates. Rerun this check only if it fails
+   or the notes/version change afterward. CI runs the same validator as its release guard.
    Follow the build, test, self-contained publish, installer packaging, install-hook,
    and update-smoke checks in the [release workflow](../../workflows/release.yml).
-   In the built app, open **What's New** from the main window's top bar with Settings
-   hidden. Confirm the correct version and readable, scrollable content, in dark and
-   light themes. Check reopening, Close, and Escape. Verify the bundled document in the
-   published build, not just its source. Stop on any failure and fix it before tagging.
+   These normal app release checks remain required; do not turn the What's New page
+   into a separate UI-testing project.
 4. **Publish using the existing release workflow.** Review the final diff and stage only
    the intended release files, including the help page and app version. Commit and tag
    only after validation; push the intended commit and stable `v<version>` tag.
@@ -49,6 +56,8 @@ page is release help, not a commit log: explain what players can do and where to
   the release workflow independently blocks notes with a stale or mismatched version.
 - **The help belongs to the installed version.** Do not fetch a live "latest" page,
   require a browser, or leave notes outside the WPF resources that ship with the app.
+- **History is append-only.** Add each new release above the older notes. A version
+  bump changes the latest heading and document tag, not previous entries.
 - **The title-area button belongs to DockWindow**, the visible main window.
   MainWindow hosts the settings panel; putting the button there alone hides it with Settings.
 - **Uncommitted work is not automatically release scope.** Review it before staging;

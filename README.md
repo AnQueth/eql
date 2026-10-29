@@ -682,6 +682,8 @@ to +10. Going from +N to +N+1 takes 2^N points (1, 2, 4 … 512), and extra poin
   as **Current** to plan from them). Collections and installed augments are left out.
 - Each step shows the points needed, the points carried in, what is used, any **Missing** motes (counted in the tier
   that matches the step, such as Major for +4 → +5) and the carry into the next step. Totals are listed underneath.
+  When a merge alone finishes a step, the plan says so; any motes listed for that step only go in first because they
+  stop working at the next rank, and their points carry over.
   A plain-language **What to do** list comes first, including why a tier is needed (for example, Infinite is the only
   mote that still works on a +9 item); tick **Show the math** for the full tables.
 - **Feed copies with motes first** (on by default) raises spare copies with motes before merging them. A lower-rank
@@ -695,10 +697,12 @@ to +10. Going from +N to +N+1 takes 2^N points (1, 2, 4 … 512), and extra poin
     exactly 2^N.
   - **Include motes the item can still use** (on by default) also feeds motes the main item could take now, which
     helps when you have more of a tier than the main item can use before it outgrows it.
-  - **Extra copies** and **Farm at** let you set how many more copies you could get and their current +rank. The plain-language
+  - **Extra copies to farm** and **at** let you set how many more copies you could get and their current +rank. The plain-language
     plan estimates the minimum number of additional copies at that rank needed to finish using your selected motes and copies.
     It assumes the extra copies are available whether they are fed or merged as-is.
   - Feeding is only used when it leaves fewer points missing, or the same with smaller motes spent.
+- In **Spell** mode the copy, feeding and farming options are hidden, the name list is empty (type the spell name) and
+  an item name left over from Equipment mode is cleared.
 - Condensing motes and Void-Touched motes aren't planned for.
 
 ## Spell durations

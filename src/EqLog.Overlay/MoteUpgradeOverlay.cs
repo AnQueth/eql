@@ -22,6 +22,9 @@ public partial class MainWindow
     private CheckBox? _planFeedUsable;
     private TextBox? _planFodder;
     private ComboBox? _planFodderRank;
+    private FrameworkElement? _planFeedRow;
+    private FrameworkElement? _planFodderRow;
+    private UpgradeKind? _planNamesKind;
     private TextBlock? _planSummary;
     private StackPanel? _planHost;
     private OverlayPanel? _planPanel;
@@ -98,8 +101,8 @@ public partial class MainWindow
         _planFodder = new TextBox
         {
             Text = "0",
-            Width = 48,
-            Margin = new Thickness(4, 0, 0, 0),
+            Width = 52,
+            Margin = new Thickness(4, 0, 10, 0),
             VerticalContentAlignment = VerticalAlignment.Center,
             ToolTip = "Extra copies you could farm (0-1023). The planner counts them whether you feed or merge them.",
         };
@@ -108,7 +111,7 @@ public partial class MainWindow
             ItemsSource = Enumerable.Range(0, MoteValues.MaxRank).Select(r => $"+{r}").ToArray(),
             SelectedIndex = 0,
             MinWidth = 56,
-            Margin = new Thickness(4, 0, 0, 0),
+            Margin = new Thickness(4, 0, 10, 0),
             ToolTip = "The rank of the copies you plan to farm.",
         };
 
@@ -128,14 +131,17 @@ public partial class MainWindow
         var feedRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
         feedRow.Children.Add(_planFeed);
         feedRow.Children.Add(_planFeedUsable);
-        feedRow.Children.Add(PlanLabel("Extra copies"));
-        feedRow.Children.Add(_planFodder);
-        feedRow.Children.Add(PlanLabel("Farm at"));
-        feedRow.Children.Add(_planFodderRank);
+        _planFeedRow = feedRow;
+
+        // Each label stays with its input so the row never wraps between them.
+        var fodderRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
+        fodderRow.Children.Add(PlanGroup("Extra copies to farm", _planFodder));
+        fodderRow.Children.Add(PlanGroup("at", _planFodderRank));
+        _planFodderRow = fodderRow;
 
         _planSummary = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 2) };
         _planSummary.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
-        var top = new StackPanel { Children = { nameRow, optionsRow, feedRow, _planSummary } };
+        var top = new StackPanel { Children = { nameRow, optionsRow, feedRow, fodderRow, _planSummary } };
         DockPanel.SetDock(top, Dock.Top);
 
         _planHost = new StackPanel();
@@ -149,10 +155,20 @@ public partial class MainWindow
         body.Children.Add(top);
         body.Children.Add(scroll);
 
-        _planKind.SelectionChanged += (_, _) => RefreshMotePlan();
+        _planKind.SelectionChanged += (_, _) =>
+        {
+            // An item name left over from Equipment mode is not a spell, so start the spell blank.
+            if (_planKind.SelectedIndex == 1 && _planName.Text.Trim().Length > 0 &&
+                CopyRanks(_planName.Text.Trim()).Count > 0)
+            {
+                _planName.Text = "";
+            }
+
+            RefreshMotePlan();
+        };
         _planName.SelectionChanged += (_, _) =>
         {
-            if (_planName.SelectedItem is string name)
+            if (_planKind.SelectedIndex == 0 && _planName.SelectedItem is string name)
             {
                 SelectBestCopy(name);
             }
@@ -177,6 +193,14 @@ public partial class MainWindow
         var label = new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center };
         label.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
         return label;
+    }
+
+    private static StackPanel PlanGroup(string label, FrameworkElement input)
+    {
+        var group = new StackPanel { Orientation = Orientation.Horizontal };
+        group.Children.Add(PlanLabel(label));
+        group.Children.Add(input);
+        return group;
     }
 
     /// <summary>Re-plans when the owned motes, inventory export or character change (called from housekeeping).</summary>
@@ -258,21 +282,25 @@ public partial class MainWindow
         }
     }
 
-    private void RefreshPlanNames()
+    private void RefreshPlanNames(UpgradeKind kind)
     {
-        if (_planName is null || ReferenceEquals(_planNamesSource, _inventoryRows))
+        if (_planName is null || (ReferenceEquals(_planNamesSource, _inventoryRows) && _planNamesKind == kind))
         {
             return;
         }
 
         _planNamesSource = _inventoryRows;
+        _planNamesKind = kind;
         string text = _planName.Text;
-        _planName.ItemsSource = PlanInventoryRows()
-            .Select(r => InventoryExport.SplitRank(r.Name).BaseName)
-            .Where(n => MoteTiers.TierOf(n) is null)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        // The inventory export only lists items, so spells are typed in by name.
+        _planName.ItemsSource = kind == UpgradeKind.Spell
+            ? Array.Empty<string>()
+            : PlanInventoryRows()
+                .Select(r => InventoryExport.SplitRank(r.Name).BaseName)
+                .Where(n => MoteTiers.TierOf(n) is null)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
         _planName.Text = text;
     }
 
@@ -284,17 +312,23 @@ public partial class MainWindow
             return;
         }
 
-        RefreshPlanNames();
         var kind = _planKind.SelectedIndex == 1 ? UpgradeKind.Spell : UpgradeKind.Equipment;
+        RefreshPlanNames(kind);
         bool equipment = kind == UpgradeKind.Equipment;
-        _planUseCopies.IsEnabled = equipment;
-        if (_planFeed is not null && _planFeedUsable is not null && _planFodder is not null &&
-            _planFodderRank is not null)
+        var equipmentOnly = equipment ? Visibility.Visible : Visibility.Collapsed;
+        _planUseCopies.Visibility = equipmentOnly;
+        if (_planFeedRow is not null && _planFodderRow is not null)
         {
-            _planFeed.IsEnabled = equipment;
-            _planFeedUsable.IsEnabled = equipment && _planFeed.IsChecked == true;
-            _planFodder.IsEnabled = equipment;
-            _planFodderRank.IsEnabled = equipment;
+            _planFeedRow.Visibility = equipmentOnly;
+            _planFodderRow.Visibility = equipmentOnly;
+        }
+
+        _planName.ToolTip = equipment
+            ? "Type a name, or pick an item from your last inventory export. Picking an item sets the rank to your best copy."
+            : "Type the spell name.";
+        if (_planFeed is not null && _planFeedUsable is not null)
+        {
+            _planFeedUsable.IsEnabled = _planFeed.IsChecked == true;
         }
 
         bool fodderOk = int.TryParse(_planFodder?.Text.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int fodder) &&
@@ -543,6 +577,18 @@ public partial class MainWindow
             var parts = new List<string>();
             var motes = step.Used.Where(u => !u.IsCopy).ToList();
             var copiesUsed = step.Used.Where(u => u.IsCopy).ToList();
+            int copyPoints = copiesUsed.Sum(u => MoteValues.CopyPoints(u.Rank) * u.Count);
+            if (motes.Count > 0 && copiesUsed.Count > 0 && step.StartPoints + copyPoints >= step.Needed)
+            {
+                // The copies alone finish this rank; the motes only go in first because they stop working after it.
+                int motePoints = motes.Sum(u => MoteValues.ItemPoints(u.Rank) * u.Count);
+                string copyText = DescribeCopies(copiesUsed);
+                AddGuideLine($"• +{step.FromRank} → +{step.ToRank}: merge {copyText} (that alone makes +{step.ToRank}). " +
+                    $"Use your {DescribeUses(motes)} first anyway: they stop working at +{step.ToRank}, " +
+                    $"so their {motePoints:N0} points carry into +{step.ToRank} → +{step.ToRank + 1}", indent: true);
+                continue;
+            }
+
             if (motes.Count > 0)
             {
                 parts.Add($"use your {DescribeUses(motes)}");
@@ -550,7 +596,7 @@ public partial class MainWindow
 
             if (copiesUsed.Count > 0)
             {
-                parts.Add("merge copies " + string.Join(", ", copiesUsed.Select(u => $"+{u.Rank}{(u.Count > 1 ? $" ×{u.Count}" : "")}")));
+                parts.Add("merge " + DescribeCopies(copiesUsed));
             }
 
             if (step.Missing > 0)
@@ -653,6 +699,13 @@ public partial class MainWindow
         };
         line.SetResourceReference(TextBlock.ForegroundProperty, muted ? "NightMuted" : "NightText");
         _planHost?.Children.Add(line);
+    }
+
+    private static string DescribeCopies(IReadOnlyList<UpgradeUse> copies)
+    {
+        int total = copies.Sum(u => u.Count);
+        string list = string.Join(", ", copies.Select(u => u.Count > 1 ? $"{u.Count} × +{u.Rank}" : $"+{u.Rank}"));
+        return total == 1 ? $"your {list} copy" : $"your copies {list}";
     }
 
     private static string DescribeUses(IReadOnlyList<UpgradeUse> used)

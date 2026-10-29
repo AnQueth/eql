@@ -77,6 +77,20 @@ public class MoteUpgradeTests
     }
 
     [Fact]
+    public void SameRankCopyAloneLevelsTheItemAndSpentMotesCarryOver()
+    {
+        var copyOnly = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 6, 0, NoMotes, [6]);
+        Assert.Equal(0, copyOnly.Steps[0].Missing);
+        Assert.Equal(0, copyOnly.Steps[0].CarryAfter);
+
+        // Superior motes stop working at +7, so they go in before the merge and their 49 points carry over.
+        var withSuperior = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 6, 0, new Dictionary<int, int> { [7] = 7 }, [6]);
+        Assert.Equal(0, withSuperior.Steps[0].Missing);
+        Assert.Equal(49, withSuperior.Steps[0].CarryAfter);
+        Assert.Equal(49, withSuperior.Steps[1].StartPoints);
+    }
+
+    [Fact]
     public void MotesAreSpentBeforeCopies()
     {
         var owned = new Dictionary<int, int> { [5] = 4 };

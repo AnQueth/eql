@@ -1,8 +1,54 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.12" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.13" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.13
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        The mote upgrade planner is clearer about equipment copies and has a simpler Spell mode.
+        This release history is included with your installed version and works offline.
+        Older releases are listed below, newest first.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Spell mode is spell-only
+        </Paragraph>
+        <Paragraph>
+            In Settings, open General &gt; Overlays and enable Mote upgrade planner.
+            Choose Spell and type the spell name. The inventory name list and equipment copy,
+            feeding, and farming options are hidden, so equipment choices won't be mixed into spell planning.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Understand copy merges and mote carry-over
+        </Paragraph>
+        <Paragraph>
+            In Equipment mode, choose Equipment, type a name or pick it from your inventory export,
+            then set Current and any Points already invested. Use inventory copies, feeding, and farming
+            options apply only to equipment. The extra-copy count and farm rank now stay grouped with
+            their labels on a separate row.
+        </Paragraph>
+        <Paragraph>
+            What to do now explains when a copy merge alone completes a rank. If motes are also
+            listed for that step, they are used first only when the item is about to outgrow them;
+            their points carry into the next rank. For example, a +6 copy alone makes a +6 item
+            +7, while eligible motes added before that merge carry forward.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Where to see the plan
+        </Paragraph>
+        <Paragraph>
+            Read What to do for the short instructions and missing motes. In Equipment mode,
+            Extra copies to farm and at estimate how many additional copies at that rank are needed
+            with the motes and copies selected. Show the math opens the detailed tables.
+            Spells use motes only; condensing and Void-Touched motes are not included.
+        </Paragraph>
+    </Section>
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,24,0,6">
         What's New in 1.0.12
     </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
