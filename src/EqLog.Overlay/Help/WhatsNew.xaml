@@ -6,7 +6,7 @@
         What's New in 1.0.25
     </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
-        Released October 30, 2026 at 6:14 PM CT.
+        Released October 30, 2026 at 6:19 PM CT.
     </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
         Your custom themes and alerts survive switching between app versions.
