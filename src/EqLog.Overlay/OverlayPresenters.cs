@@ -16,7 +16,16 @@ public sealed record ActiveAlert(string Text, Brush Color, DateTime Expires, Ale
 /// <summary>Per-render options the presenters need from the app.</summary>
 public sealed record OverlayView(ISet<ChatChannel> ChatChannels, IReadOnlyList<ActiveAlert> Alerts, int LootGrouping = 0,
     QuestInventory? Inventory = null, WikiActivitySnapshot? WikiActivity = null, QuestWikiActivity? QuestWiki = null,
-    IReadOnlyList<ChatEvent>? RecentChat = null);
+    IReadOnlyList<ChatEvent>? RecentChat = null, DpsFightKey? DpsFight = null);
+
+/// <summary>Identifies one fight chosen in the DPS overlay picker.</summary>
+public sealed record DpsFightKey(string Target, DateTime Start)
+{
+    public bool Matches(FightSnapshot fight)
+    {
+        return fight.Start == Start && string.Equals(fight.Target, Target, StringComparison.OrdinalIgnoreCase);
+    }
+}
 
 /// <summary>Quest enrichment work waiting outside the shared HTTP scheduler.</summary>
 public sealed record QuestWikiActivity(string Summary, string Status, string? ActiveItem, IReadOnlyList<string> Queued, bool HasError);
@@ -359,10 +368,30 @@ public static class OverlayPresenters
         return name == Names.You ? "You" : name;
     }
 
-    private static OverlayContent Dps(EngineSnapshot s, LogEngine _, OverlayView __)
+    /// <summary>The fight the DPS overlay shows: the picked one while it is still among the recent fights, else the current fight.</summary>
+    public static FightSnapshot? SelectedFight(EngineSnapshot s, DpsFightKey? key)
+    {
+        if (key is not null)
+        {
+            if (s.CurrentFight is { } current && key.Matches(current))
+            {
+                return current;
+            }
+
+            var picked = s.RecentFights.FirstOrDefault(key.Matches);
+            if (picked is not null)
+            {
+                return picked;
+            }
+        }
+
+        return s.CurrentFight;
+    }
+
+    private static OverlayContent Dps(EngineSnapshot s, LogEngine _, OverlayView view)
     {
         var rows = new List<OverlayRow>();
-        var f = s.CurrentFight;
+        var f = SelectedFight(s, view.DpsFight);
         if (f is null)
         {
             rows.Add(new("No fight yet", Foreground: Dim));
@@ -378,12 +407,13 @@ public static class OverlayPresenters
                     $"{Short(a.Dps)} dps  {Short(a.Total)}  {a.Percent:0}%",
                     a.Percent / 100,
                     you ? YouBar : OtherBar,
-                    Bold: you, Breakdown: new(Who(a.Name), $"{f.Target} · {Clock(f.DurationSeconds)} fight · snapshot at click", "DPS", a.Abilities)));
+                    Bold: you, Breakdown: new(Who(a.Name), $"{f.Target} · {Clock(f.DurationSeconds)} fight · snapshot at click", "DPS", a.Abilities,
+                        a.Timeline, f.DurationSeconds, f.Start, a.AbilityTimelines)));
             }
         }
 
         rows.Add(new($"Session dmg {Short(s.SessionDamageByYou)}", s.SessionMaxHitByYou > 0 ? $"max {Short(s.SessionMaxHitByYou)}" : "", Foreground: Dim));
-        var recent = s.RecentFights.Where(r => r != f).Take(3).ToList();
+        var recent = s.RecentFights.Where(r => f is null || !(r.Start == f.Start && r.Target == f.Target)).Take(3).ToList();
         foreach (var r in recent)
         {
             rows.Add(new($"{r.Target}", $"{Short(r.You?.Dps ?? 0)} dps  {Clock(r.DurationSeconds)}", Foreground: Dim,
@@ -404,7 +434,8 @@ public static class OverlayPresenters
                 fight.Total == 0 ? 0 : 100.0 * g.Sum(a => a.Total) / fight.Total,
                 g.Sum(a => a.Hits), g.Sum(a => a.Crits), g.Max(a => a.MaxHit), 0))
             .OrderByDescending(a => a.Total).ToArray();
-        return new(fight.Target, $"All attackers · {Clock(fight.DurationSeconds)} fight · snapshot at click", "DPS", abilities);
+        return new(fight.Target, $"All attackers · {Clock(fight.DurationSeconds)} fight · snapshot at click", "DPS", abilities,
+            fight.Timeline, fight.DurationSeconds, fight.Start, DamageTimeline.Merge(fight.Attackers.SelectMany(a => a.AbilityTimelines)));
     }
 
     private static OverlayContent Taken(EngineSnapshot s, LogEngine _, OverlayView __)

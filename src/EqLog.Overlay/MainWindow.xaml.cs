@@ -242,6 +242,11 @@ public partial class MainWindow : Window
                 ConfigureQuestToolbar(panel);
             }
 
+            if (def.Key == "dps")
+            {
+                ConfigureDpsToolbar(panel);
+            }
+
             if (def.Key == "spawns")
             {
                 panel.SpawnTrackToggleRequested += change =>
@@ -958,9 +963,14 @@ public partial class MainWindow : Window
         {
             _lastWikiRender = real;
         }
+        if (IsShowing("dps"))
+        {
+            RefreshDpsChoices(snap);
+        }
+
         var view = new OverlayView(_chatChannels, UpdateAlerts(real), _settings.LootGrouping, _questInventory,
             renderWiki ? _wikiRepository.GetActivity() : null,
-            renderWiki ? GetQuestWikiActivity() : null, frame.Chat);
+            renderWiki ? GetQuestWikiActivity() : null, frame.Chat, _dpsFight);
         if (LogLinesTab.IsSelected)
         {
             RefreshRawLines();

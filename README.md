@@ -258,7 +258,14 @@ Your selected grouping is saved across restarts. Clicking a grouped item opens i
 right-click for quest references.
 
 Click a combatant in **DPS** for an ability breakdown of that fight, or click the target row
-for all attackers combined. Recent fight rows also open a combined breakdown. In **Healing**,
+for all attackers combined. Recent fight rows also open a combined breakdown. Use the dropdown
+at the top of **DPS** to view one of your last 10 fights (newest first); **Current fight (auto)**
+returns to following live combat. DPS details also include a **Damage timeline** tab: bars show
+damage over the fight (one second each, or wider for long fights), with idle gaps shown as empty
+bars; hover a bar for its time span, damage, and DPS. The **Damage types** tab shows one row per
+damage type (Melee, each spell, DoT, or proc). Every row spans the whole fight, and bars run from
+when that type started landing to when it finished, with marks at each start and finish; a gap of
+more than 7 seconds starts a new bar, so 6-second DoT ticks stay together. In **Healing**,
 click a recipient, incoming healer, or **Observed healers** name for session ability totals.
 Details show total, DPS/HPS, share, hits, crits, maximum, and healing overheal. They are snapshots
 at click time, not live windows; click again for an updated view. Healing detail rates use the
@@ -268,7 +275,7 @@ as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels r
 
 | Overlay | Shows |
 |---|---|
-| DPS | Current or last fight: your and others' damage, DPS, and share |
+| DPS | Current or picked fight (last 10): your and others' damage, DPS, and share |
 | Damage Taken | Incoming damage by attacker/spell (encounter and session) |
 | Heals | Heals you cast (with overheal) and heals you received |
 | Spell Timers | Countdowns for mez, charm, DoTs, debuffs and similar effects you cast |

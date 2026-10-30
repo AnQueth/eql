@@ -318,7 +318,7 @@ public sealed class LogEngine
                 _lines,
                 _lastLogTime,
                 _fights.Current(),
-                _fights.Recent(8),
+                _fights.Recent(10),
                 _fights.SessionDamageByYou,
                 _fights.SessionMaxHitByYou,
                 _fights.SessionMaxHitSource,

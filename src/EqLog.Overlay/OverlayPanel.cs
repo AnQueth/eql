@@ -9,7 +9,9 @@ using System.Collections.ObjectModel;
 namespace EqLog.Overlay;
 
 /// <summary>One line in an overlay: left/right text with an optional proportional bar behind it.</summary>
-public sealed record AbilityBreakdown(string Title, string Context, string RateLabel, IReadOnlyList<AbilityStats> Abilities);
+public sealed record AbilityBreakdown(string Title, string Context, string RateLabel, IReadOnlyList<AbilityStats> Abilities,
+    IReadOnlyList<DamageTimelinePoint>? Timeline = null, double TimelineSeconds = 0, DateTime? TimelineStart = null,
+    IReadOnlyList<AbilityTimeline>? AbilityTimelines = null);
 
 public sealed record SpawnTrackChange(string Zone, string Mob, bool Tracked);
 

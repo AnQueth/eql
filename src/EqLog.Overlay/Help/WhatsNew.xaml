@@ -1,8 +1,44 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.21" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.22" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.22
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Review recent fights in the DPS overlay and see how damage played out over time.
+        This release history ships with your installed version and works offline.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Pick any of your last 10 fights in DPS
+        </Paragraph>
+        <Paragraph>
+            The DPS overlay now has a dropdown at the top. Choose one of your last 10 fights,
+            listed newest first with the mob name and start time, to keep the overlay on that
+            fight. Choose Current fight (auto) to follow live combat again. Only fights where
+            you dealt damage are listed; if a picked fight drops out of the last 10, the overlay
+            returns to the current fight. Unlock floating overlays with Ctrl+Shift+L to use it.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Damage timeline in DPS details
+        </Paragraph>
+        <Paragraph>
+            Click the mob name or a combatant in DPS to open details. The new Damage timeline
+            tab shows damage over the fight as bars, one second each (wider bars for long fights),
+            with quiet seconds left empty. Hover a bar to see its time span, damage, and DPS.
+        </Paragraph>
+        <Paragraph>
+            The Damage types tab shows one row per damage type, such as Melee or each spell and
+            DoT. Every row spans the whole fight, and bars run from when that type started
+            landing to when it finished, with a mark at each end. A pause of more than 7 seconds
+            starts a new bar, so 6-second DoT ticks stay together. The mob name row combines all
+            attackers; a combatant row shows only that attacker. Details are snapshots at click time.
+        </Paragraph>
+    </Section>
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,24,0,6">
         What's New in 1.0.21
     </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
