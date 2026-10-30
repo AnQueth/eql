@@ -35,7 +35,8 @@ public sealed class OverlayChromeTests
                 var backgroundControls = Assert.Single(headerContent.Children.OfType<StackPanel>(),
                     child => child.Children.OfType<Slider>().Any());
                 var slider = Assert.Single(backgroundControls.Children.OfType<Slider>());
-                var dockButton = Assert.Single(headerContent.Children.OfType<Button>());
+                var dockButton = Assert.Single(headerContent.Children.OfType<Button>(),
+                    button => button.Content is string text && text.Contains("Dock", StringComparison.Ordinal));
                 Assert.Equal(headerContent.Children.IndexOf(dockButton) + 1,
                     headerContent.Children.IndexOf(backgroundControls));
                 Assert.Equal(Dock.Right, DockPanel.GetDock(backgroundControls));

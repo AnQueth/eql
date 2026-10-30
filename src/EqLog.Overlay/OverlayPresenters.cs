@@ -427,7 +427,7 @@ public static class OverlayPresenters
         return new(title, sub, rows, f is null ? null : QuestLookup.SearchUrl(f.Target));
     }
 
-    private static AbilityBreakdown FightBreakdown(FightSnapshot fight)
+    public static AbilityBreakdown FightBreakdown(FightSnapshot fight)
     {
         var abilities = fight.Attackers.SelectMany(a => a.Abilities).GroupBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
             .Select(g => new AbilityStats(g.Key, g.Sum(a => a.Total), g.Sum(a => a.Total) / fight.DurationSeconds,

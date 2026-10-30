@@ -102,6 +102,8 @@ public sealed class SpawnRow
 
 public partial class MainWindow : Window
 {
+    private sealed record DockWorkspaceChoice(string? Id, string Name, bool IsMultiple = false);
+
     private const int LockHotkeyId = 0x4C31;
     private DateTime _alertTestVisibleUntil;
 
@@ -113,8 +115,10 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, OverlayWindow> _overlays = [];
     private readonly Dictionary<string, CheckBox> _overlayToggles = [];
     private readonly Dictionary<string, CheckBox> _dockToggles = [];
+    private readonly Dictionary<string, ComboBox> _workspaceSelectors = [];
     private readonly Dictionary<string, CheckBox> _lockToggles = [];
     private DockWindow _dock = null!;
+    private string? _activeDockWorkspaceId;
     private readonly HashSet<ChatChannel> _chatChannels;
     private readonly ObservableCollection<DurationRow> _durationRows = [];
     private readonly SpawnStore _spawnStore;
@@ -223,15 +227,34 @@ public partial class MainWindow : Window
     private void CreateOverlays()
     {
         var work = SystemParameters.WorkArea;
-        _dock = new DockWindow(_settings.DockWindow);
         for (int i = 0; i < OverlayPresenters.All.Count; i++)
         {
             var def = OverlayPresenters.All[i];
-            if (!_settings.Overlays.TryGetValue(def.Key, out var p))
+            if (!_settings.Overlays.TryGetValue(def.Key, out var placement))
             {
-                p = DefaultPlacement(def, i, work);
-                _settings.Overlays[def.Key] = p;
+                placement = DefaultPlacement(def, i, work);
+                _settings.Overlays[def.Key] = placement;
             }
+        }
+
+        var activeWorkspace = _settings.DockWindow.EnsureActiveWorkspace(_settings.Overlays);
+        foreach (var (key, placement) in _settings.Overlays)
+        {
+            if (placement.Docked && !_settings.DockWindow.IsPanelInAnyWorkspace(key))
+            {
+                activeWorkspace.Panels[key] = DockPanelSettings.From(placement);
+            }
+
+            placement.Docked = _settings.DockWindow.IsPanelInAnyWorkspace(key);
+        }
+
+        _dock = new DockWindow(_settings.DockWindow);
+        _activeDockWorkspaceId = _settings.DockWindow.ActiveWorkspaceId;
+        _dock.WorkspaceChanged += Dock_WorkspaceChanged;
+        for (int i = 0; i < OverlayPresenters.All.Count; i++)
+        {
+            var def = OverlayPresenters.All[i];
+            var p = _settings.Overlays[def.Key];
             p.FontSize ??= _settings.FontSize;
             p.BackgroundOpacity ??= _settings.BackgroundOpacity;
             p.Locked ??= _settings.Locked;
@@ -312,7 +335,17 @@ public partial class MainWindow : Window
                 new AbilityBreakdownWindow(breakdown) { Owner = _dock }.Show();
             };
             panel.DockToggleRequested += pnl =>
-                Dispatcher.BeginInvoke(() => SetDocked(pnl.Key, !_settings.Overlays[pnl.Key].Docked));
+                Dispatcher.BeginInvoke(() =>
+                {
+                    if (_dock.IsPanelInActiveWorkspace(pnl.Key))
+                    {
+                        FloatPanel(pnl.Key);
+                    }
+                    else
+                    {
+                        SetDocked(pnl.Key, true);
+                    }
+                });
             var w = new OverlayWindow(panel);
             w.Left = p.Left;
             w.Top = p.Top;
@@ -328,21 +361,46 @@ public partial class MainWindow : Window
             var docked = new CheckBox
             {
                 Content = "docked",
-                IsChecked = p.Docked,
+                IsChecked = _dock.IsPanelInActiveWorkspace(def.Key),
                 FontSize = 11,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 6, 0, 6),
-                ToolTip = "Show this panel in the docked-panels window (e.g. on a second monitor) instead of as an overlay",
+                ToolTip = "Show this panel in the selected workspace instead of as a floating overlay",
             };
             docked.SetResourceReference(ForegroundProperty, "NightMuted");
             docked.Click += (_, _) => SetDocked(def.Key, docked.IsChecked == true);
             _dockToggles[def.Key] = docked;
-            var toggleRow = new Grid { Width = 250, Margin = new Thickness(0, 0, 12, 0) };
-            toggleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(176) });
+            var workspaceSelector = new ComboBox
+            {
+                MinWidth = 128,
+                MaxWidth = 150,
+                Margin = new Thickness(6, 3, 0, 3),
+                VerticalAlignment = VerticalAlignment.Center,
+                ToolTip = "Move this overlay to a workspace",
+                Tag = def.Key,
+            };
+            workspaceSelector.SelectionChanged += (_, _) =>
+            {
+                if (_refreshingWorkspaceSelectors ||
+                    workspaceSelector.SelectedItem is not DockWorkspaceChoice choice ||
+                    choice.IsMultiple)
+                {
+                    return;
+                }
+
+                MoveOverlayToWorkspace(def.Key, choice.Id);
+            };
+            _workspaceSelectors[def.Key] = workspaceSelector;
+            RefreshWorkspaceSelector(def.Key);
+            var toggleRow = new Grid { Width = 340, Margin = new Thickness(0, 0, 12, 0) };
             toggleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            toggleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            toggleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             Grid.SetColumn(docked, 1);
+            Grid.SetColumn(workspaceSelector, 2);
             toggleRow.Children.Add(toggle);
             toggleRow.Children.Add(docked);
+            toggleRow.Children.Add(workspaceSelector);
             OverlayToggles.Children.Add(toggleRow);
             OverlayAppearance.Children.Add(CreateOverlayAppearance(w, p));
 
@@ -445,11 +503,14 @@ public partial class MainWindow : Window
         var p = _settings.Overlays[key];
         var w = _overlays[key];
         bool visible = p.Visible && (key != "mobinfo" || MobInfoActive);
-        if (p.Docked)
+        bool dockedAnywhere = _dock.IsPanelInAnyWorkspace(key);
+        bool dockedHere = _dock.IsPanelInActiveWorkspace(key);
+        p.Docked = dockedAnywhere;
+        if (dockedAnywhere)
         {
             w.Hide();
             w.DetachPanel();
-            if (visible)
+            if (dockedHere && visible)
             {
                 _dock.AddPanel(w.Panel, p);
             }
@@ -537,10 +598,12 @@ public partial class MainWindow : Window
 
     private void SetDocked(string key, bool docked)
     {
-        bool changed = _settings.Overlays[key].Docked != docked;
-        _settings.Overlays[key].Docked = docked;
-        _dockToggles[key].IsChecked = docked;
+        bool changed = _dock.IsPanelInActiveWorkspace(key) != docked;
+        _dock.SetPanelInActiveWorkspace(key, docked, _settings.Overlays[key]);
+        _settings.Overlays[key].Docked = _dock.IsPanelInAnyWorkspace(key);
+        _dockToggles[key].IsChecked = _dock.IsPanelInActiveWorkspace(key);
         ApplyMode(key);
+        RefreshWorkspaceSelector(key);
         if (changed)
         {
             UsageTelemetry.TrackPanelState(key, _settings.Overlays[key].Visible, docked, changed: true);
@@ -548,6 +611,83 @@ public partial class MainWindow : Window
         if (docked && _settings.Overlays[key].Visible)
         {
             ShowDock();
+        }
+    }
+
+    private void FloatPanel(string key)
+    {
+        bool changed = _dock.IsPanelInAnyWorkspace(key);
+        _settings.DockWindow.MovePanelToWorkspace(
+            key, targetWorkspaceId: null, DockPanelSettings.From(_settings.Overlays[key]));
+        _settings.Overlays[key].Docked = _dock.IsPanelInAnyWorkspace(key);
+        _dockToggles[key].IsChecked = false;
+        ApplyMode(key);
+        RefreshWorkspaceSelector(key);
+        if (changed)
+        {
+            UsageTelemetry.TrackPanelState(key, _settings.Overlays[key].Visible, docked: false, changed: true);
+        }
+    }
+
+    private bool _refreshingWorkspaceSelectors;
+
+    private void RefreshWorkspaceSelector(string key)
+    {
+        if (!_workspaceSelectors.TryGetValue(key, out var selector))
+        {
+            return;
+        }
+
+        var memberships = _settings.DockWindow.Workspaces
+            .Where(workspace => !workspace.Deleted && workspace.Panels.ContainsKey(key))
+            .ToArray();
+        var choices = new List<DockWorkspaceChoice>();
+        DockWorkspaceChoice? selected = null;
+        if (memberships.Length == 0)
+        {
+            selected = new DockWorkspaceChoice(null, "Not docked");
+            choices.Add(selected);
+        }
+        else if (memberships.Length > 1)
+        {
+            selected = new DockWorkspaceChoice(null, "Multiple workspaces", IsMultiple: true);
+            choices.Add(selected);
+        }
+
+        foreach (var workspace in _settings.DockWindow.Workspaces.Where(workspace => !workspace.Deleted))
+        {
+            var choice = new DockWorkspaceChoice(workspace.Id, workspace.Name);
+            choices.Add(choice);
+            if (memberships.Length == 1 && memberships[0].Id == workspace.Id)
+            {
+                selected = choice;
+            }
+        }
+
+        _refreshingWorkspaceSelectors = true;
+        try
+        {
+            selector.ItemsSource = choices;
+            selector.DisplayMemberPath = nameof(DockWorkspaceChoice.Name);
+            selector.SelectedItem = selected;
+        }
+        finally
+        {
+            _refreshingWorkspaceSelectors = false;
+        }
+    }
+
+    private void MoveOverlayToWorkspace(string key, string? targetWorkspaceId)
+    {
+        bool wasDocked = _dock.IsPanelInAnyWorkspace(key);
+        _settings.DockWindow.MovePanelToWorkspace(
+            key, targetWorkspaceId, DockPanelSettings.From(_settings.Overlays[key]));
+        _settings.Overlays[key].Docked = _dock.IsPanelInAnyWorkspace(key);
+        Dock_WorkspaceChanged(this, EventArgs.Empty);
+        bool isDocked = _settings.Overlays[key].Docked;
+        if (wasDocked != isDocked)
+        {
+            UsageTelemetry.TrackPanelState(key, _settings.Overlays[key].Visible, isDocked, changed: true);
         }
     }
 
@@ -575,8 +715,43 @@ public partial class MainWindow : Window
     {
         foreach (var def in OverlayPresenters.All)
         {
-            SetDocked(def.Key, false);
+            FloatPanel(def.Key);
         }
+    }
+
+    private void Dock_WorkspaceChanged(object? sender, EventArgs e)
+    {
+        if (_activeDockWorkspaceId != _settings.DockWindow.ActiveWorkspaceId)
+        {
+            _dock.ClearPanelsForWorkspaceChange();
+            _activeDockWorkspaceId = _settings.DockWindow.ActiveWorkspaceId;
+        }
+
+        foreach (var (key, placement) in _settings.Overlays)
+        {
+            placement.Docked = _dock.IsPanelInAnyWorkspace(key);
+            if (_dockToggles.TryGetValue(key, out var toggle))
+            {
+                toggle.IsChecked = _dock.IsPanelInActiveWorkspace(key);
+            }
+
+            if (_overlays.ContainsKey(key))
+            {
+                ApplyMode(key);
+            }
+        }
+
+        foreach (string key in _workspaceSelectors.Keys)
+        {
+            RefreshWorkspaceSelector(key);
+        }
+
+        _dock.RefreshWorkspaceMenus();
+        SaveSettingsInBackground(error =>
+        {
+            MessageBox.Show(_dock, $"Could not save workspaces: {error}", "Settings",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        });
     }
 
     private static OverlayPlacement DefaultPlacement(OverlayDefinition def, int index, Rect work)
@@ -1005,6 +1180,11 @@ public partial class MainWindow : Window
                     : row).ToArray()
                 : content.Rows;
             _overlays[def.Key].Panel.Update(content.Title, content.Subtitle, rows, content.TitleLink);
+            if (def.Key == "dps")
+            {
+                UpdateDpsDetails(snap, _overlays[def.Key].Panel);
+            }
+
             if (!p.CaughtUp && renderBudget.ElapsedMilliseconds >= 8)
             {
                 await System.Windows.Threading.Dispatcher.Yield(DispatcherPriority.Background);

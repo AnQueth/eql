@@ -397,5 +397,92 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
+        <Style TargetType="ContextMenu">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="Foreground" Value="{DynamicResource NightText}" />
+            <Setter Property="Background" Value="{DynamicResource NightSurface}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource NightBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="3" />
+            <Setter Property="HasDropShadow" Value="False" />
+            <Setter Property="Grid.IsSharedSizeScope" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ContextMenu">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5" Padding="{TemplateBinding Padding}"
+                                MinWidth="160">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" />
+                            </ScrollViewer>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="Separator">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Separator">
+                        <Border Height="1" Margin="6,4" Background="{DynamicResource NightBorder}" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="MenuItem">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="Foreground" Value="{DynamicResource NightText}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border x:Name="Frame" Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="20" SharedSizeGroup="MenuItemIcon" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="MenuItemGesture" />
+                                    <ColumnDefinition Width="14" />
+                                </Grid.ColumnDefinitions>
+                                <ContentPresenter x:Name="Icon" ContentSource="Icon" VerticalAlignment="Center" HorizontalAlignment="Left" />
+                                <TextBlock x:Name="Check" Text="&#x2713;" Foreground="{DynamicResource Pumpkin}" Visibility="Collapsed"
+                                           VerticalAlignment="Center" HorizontalAlignment="Left" />
+                                <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}" Margin="18,0,0,0"
+                                           Opacity="0.7" VerticalAlignment="Center" />
+                                <TextBlock x:Name="Arrow" Grid.Column="3" Text="&#x203A;" Foreground="{DynamicResource Pumpkin}"
+                                           HorizontalAlignment="Right" VerticalAlignment="Center" Visibility="Collapsed" />
+                                <Popup x:Name="PART_Popup" IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}"
+                                       Placement="Right" HorizontalOffset="8" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
+                                    <Border Background="{DynamicResource NightSurface}" BorderBrush="{DynamicResource NightBorder}"
+                                            BorderThickness="1" CornerRadius="5" Padding="3" MinWidth="160" Grid.IsSharedSizeScope="True">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" />
+                                        </ScrollViewer>
+                                    </Border>
+                                </Popup>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Frame" Property="Background" Value="{DynamicResource Hover}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Check" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="Role" Value="SubmenuHeader">
+                                <Setter TargetName="Arrow" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Application.Resources>
 </Application>

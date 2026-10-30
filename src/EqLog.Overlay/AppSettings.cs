@@ -127,11 +127,189 @@ public sealed class DockWindowSettings
     /// <summary>Tile order by overlay key.</summary>
     public List<string> Order { get; set; } = [];
 
+    public List<DockWorkspaceSettings> Workspaces { get; set; } = [];
+
+    public string? ActiveWorkspaceId { get; set; }
+
+    public DockWorkspaceSettings EnsureActiveWorkspace(IReadOnlyDictionary<string, OverlayPlacement> overlays)
+    {
+        Workspaces ??= [];
+        if (Workspaces.Count == 0)
+        {
+            var dashboard = new DockWorkspaceSettings { Name = "Dashboard" };
+            foreach (var (key, placement) in overlays)
+            {
+                if (placement.Docked)
+                {
+                    dashboard.Panels[key] = DockPanelSettings.From(placement);
+                }
+            }
+
+            Workspaces.Add(dashboard);
+        }
+
+        var active = Workspaces.FirstOrDefault(workspace =>
+            !workspace.Deleted && workspace.Id == ActiveWorkspaceId);
+        if (active is null)
+        {
+            active = Workspaces.FirstOrDefault(workspace => !workspace.Deleted);
+        }
+
+        if (active is null)
+        {
+            active = new DockWorkspaceSettings { Name = "Dashboard" };
+            Workspaces.Add(active);
+        }
+
+        ActiveWorkspaceId = active.Id;
+        return active;
+    }
+
+    public DockWorkspaceSettings ActiveWorkspace
+    {
+        get
+        {
+            return EnsureActiveWorkspace(new Dictionary<string, OverlayPlacement>());
+        }
+    }
+
+    public DockWorkspaceSettings CreateWorkspace(string name)
+    {
+        var workspace = new DockWorkspaceSettings { Name = name };
+        Workspaces.Add(workspace);
+        ActiveWorkspaceId = workspace.Id;
+        return workspace;
+    }
+
+    public bool DeleteWorkspace(string id)
+    {
+        var workspace = Workspaces.FirstOrDefault(candidate =>
+            !candidate.Deleted && candidate.Id == id);
+        if (workspace is null || Workspaces.Count(candidate => !candidate.Deleted) <= 1)
+        {
+            return false;
+        }
+
+        workspace.Deleted = true;
+        if (ActiveWorkspaceId == id)
+        {
+            ActiveWorkspaceId = Workspaces.First(candidate => !candidate.Deleted).Id;
+        }
+
+        return true;
+    }
+
+    public bool RestoreWorkspace(string id)
+    {
+        var workspace = Workspaces.FirstOrDefault(candidate =>
+            candidate.Deleted && candidate.Id == id);
+        if (workspace is null)
+        {
+            return false;
+        }
+
+        workspace.Deleted = false;
+        ActiveWorkspaceId = workspace.Id;
+        return true;
+    }
+
+    public bool IsPanelInAnyWorkspace(string key)
+    {
+        return Workspaces.Any(workspace => !workspace.Deleted && workspace.Panels.ContainsKey(key));
+    }
+
+    public void MovePanelToWorkspace(string key, string? targetWorkspaceId, DockPanelSettings fallback)
+    {
+        var activeWorkspaces = Workspaces.Where(workspace => !workspace.Deleted).ToArray();
+        var sourcePlacement = activeWorkspaces
+            .Select(workspace => workspace.Panels.TryGetValue(key, out var panel) ? panel : null)
+            .FirstOrDefault(panel => panel is not null);
+        var target = targetWorkspaceId is null
+            ? null
+            : activeWorkspaces.FirstOrDefault(workspace => workspace.Id == targetWorkspaceId);
+        if (targetWorkspaceId is not null && target is null)
+        {
+            return;
+        }
+
+        DockPanelSettings? targetPlacement = null;
+        if (target is not null)
+        {
+            target.Panels.TryGetValue(key, out targetPlacement);
+        }
+
+        foreach (var workspace in activeWorkspaces)
+        {
+            if (workspace != target)
+            {
+                workspace.Panels.Remove(key);
+            }
+        }
+
+        if (target is null)
+        {
+            return;
+        }
+
+        target.Panels[key] = targetPlacement?.Clone() ?? sourcePlacement?.Clone() ?? fallback.Clone();
+        ActiveWorkspaceId = target.Id;
+    }
+
     public DockWindowSettings Clone()
     {
         var copy = (DockWindowSettings)MemberwiseClone();
         copy.Order = Order is null ? null! : [.. Order];
+        copy.Workspaces = Workspaces is null
+            ? null!
+            : Workspaces.Select(workspace => workspace.Clone()).ToList();
         return copy;
+    }
+}
+
+public sealed class DockWorkspaceSettings
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+
+    public string Name { get; set; } = "Workspace";
+
+    public bool Deleted { get; set; }
+
+    public Dictionary<string, DockPanelSettings> Panels { get; set; } = [];
+
+    public DockWorkspaceSettings Clone()
+    {
+        var copy = (DockWorkspaceSettings)MemberwiseClone();
+        copy.Panels = Panels is null
+            ? null!
+            : Panels.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(), Panels.Comparer);
+        return copy;
+    }
+}
+
+public sealed class DockPanelSettings
+{
+    public double DockWidth { get; set; }
+
+    public double DockHeight { get; set; }
+
+    public double? DockLeft { get; set; }
+
+    public double? DockTop { get; set; }
+
+    public static DockPanelSettings From(OverlayPlacement placement)
+    {
+        return new DockPanelSettings
+        {
+            DockWidth = placement.DockWidth,
+            DockHeight = placement.DockHeight,
+            DockLeft = placement.DockLeft,
+            DockTop = placement.DockTop,
+        };
+    }
+
+    public DockPanelSettings Clone()
+    {
+        return (DockPanelSettings)MemberwiseClone();
     }
 }
 
@@ -211,6 +389,8 @@ public sealed class AppSettings
     {
         get; set;
     }
+
+    public bool DpsExpandedView { get; set; }
     /// <summary>Null follows Windows app appearance; a palette fixes the user's selected theme.</summary>
     public EqLog.Core.ThemePalette? Theme
     {

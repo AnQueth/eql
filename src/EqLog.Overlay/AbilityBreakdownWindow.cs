@@ -43,13 +43,27 @@ public sealed class AbilityBreakdownWindow : Window
         note.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
         DockPanel.SetDock(note, Dock.Bottom);
         root.Children.Add(note);
+        root.Children.Add(BuildDetails(breakdown));
+
+        Content = root;
+    }
+
+    public const int MaxTimelineBars = 90;
+
+    public static FrameworkElement BuildDetails(AbilityBreakdown breakdown)
+    {
+        return new AbilityDetailsView(breakdown).Root;
+    }
+
+    internal static DataGrid BuildAbilityTable(AbilityBreakdown breakdown, System.Collections.IEnumerable rows)
+    {
         var table = new DataGrid
         {
             IsReadOnly = true,
             AutoGenerateColumns = false,
             CanUserAddRows = false,
             CanUserDeleteRows = false,
-            ItemsSource = breakdown.Abilities,
+            ItemsSource = rows,
             SelectionMode = DataGridSelectionMode.Single,
         };
         AddColumn(table, "Ability", "Name", null, new DataGridLength(1, DataGridLengthUnitType.Star));
@@ -64,27 +78,18 @@ public sealed class AbilityBreakdownWindow : Window
             AddColumn(table, "Overheal", "Overheal", "N0");
         }
 
-        if (breakdown.Timeline is { } timeline)
-        {
-            var tabs = new TabControl();
-            tabs.Items.Add(new TabItem { Header = "Abilities", Content = table });
-            tabs.Items.Add(new TabItem { Header = "Damage timeline", Content = BuildTimeline(timeline, breakdown.TimelineSeconds, breakdown.TimelineStart) });
-            if (breakdown.AbilityTimelines is { Count: > 0 } lanes)
-            {
-                tabs.Items.Add(new TabItem { Header = "Damage types", Content = BuildLanes(lanes, breakdown.TimelineSeconds, breakdown.TimelineStart) });
-            }
-
-            root.Children.Add(tabs);
-        }
-        else
-        {
-            root.Children.Add(table);
-        }
-
-        Content = root;
+        return table;
     }
 
-    public const int MaxTimelineBars = 90;
+    internal static FrameworkElement BuildTimelineContent(AbilityBreakdown breakdown)
+    {
+        return BuildTimeline(breakdown.Timeline ?? [], breakdown.TimelineSeconds, breakdown.TimelineStart);
+    }
+
+    internal static FrameworkElement BuildLanesContent(AbilityBreakdown breakdown)
+    {
+        return BuildLanes(breakdown.AbilityTimelines ?? [], breakdown.TimelineSeconds, breakdown.TimelineStart);
+    }
 
     /// <summary>One row per damage type; each row spans the whole fight, with a bar from the first to last hit of every stretch.</summary>
     private static FrameworkElement BuildLanes(IReadOnlyList<AbilityTimeline> lanes, double seconds, DateTime? start)

@@ -10,7 +10,7 @@ namespace EqLog.Overlay;
 
 /// <summary>
 /// The app's main window (e.g. for a second monitor): settings in a collapsible side panel on the left and
-/// docked overlay panels on a scrollable freeform canvas on the right.
+/// user-selected dock workspaces on a scrollable freeform canvas on the right.
 /// Drag a tile to move it; drag its bottom-right corner to resize it. Closing this window exits the app.
 /// </summary>
 public sealed class DockWindow : Window
@@ -23,12 +23,15 @@ public sealed class DockWindow : Window
     private readonly Canvas _tiles = new() { Background = Brushes.Transparent };
     private readonly ScrollViewer _tilesArea;
     private readonly Dictionary<string, Grid> _byKey = [];
-    private readonly Dictionary<string, OverlayPlacement> _placements = [];
+    private readonly Dictionary<string, DockPanelSettings> _placements = [];
+    private readonly HashSet<OverlayPanel> _workspaceMoveHandlers = [];
     private readonly TextBlock _empty;
     private readonly Border _side = new() { Padding = new Thickness(0) };
     private readonly ColumnDefinition _sideColumn = new() { MinWidth = MinSideWidth };
     private readonly GridSplitter _splitter;
     private readonly ToggleButton _sideToggle;
+    private readonly StackPanel _workspaceTabs = new() { Orientation = Orientation.Horizontal };
+    private readonly Button _restoreWorkspaceButton = new() { Content = "Restore", Margin = new Thickness(4, 0, 0, 4) };
     private Point? _dragStart;
     private const string PanelDragFormat = "EqLogOverlay.DockPanel";
     private Border? _dropPreview;
@@ -137,7 +140,7 @@ public sealed class DockWindow : Window
 
         _empty = new TextBlock
         {
-            Text = "No panels are docked. Tick \"docked\" next to an overlay in Settings, or click \u2199 Dock on a floating overlay (while unlocked).",
+            Text = "No panels are in this workspace. Tick \"docked\" next to an overlay in Settings, or click \u2199 Dock on a floating overlay (while unlocked).",
             Margin = new Thickness(12),
             TextWrapping = TextWrapping.Wrap,
         };
@@ -225,6 +228,35 @@ public sealed class DockWindow : Window
             }, System.Windows.Threading.DispatcherPriority.Background);
         };
 
+        var workspaceScroller = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Content = _workspaceTabs,
+        };
+        var workspaceActions = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(4, 0, 8, 0),
+        };
+        var addWorkspace = new Button
+        {
+            Content = "+",
+            Padding = new Thickness(10, 4, 10, 4),
+            Margin = new Thickness(4, 0, 0, 4),
+            ToolTip = "Create a workspace",
+        };
+        addWorkspace.Click += (_, _) => CreateWorkspace();
+        _restoreWorkspaceButton.Click += (_, _) => OpenRestoreWorkspaceMenu();
+        workspaceActions.Children.Add(addWorkspace);
+        workspaceActions.Children.Add(_restoreWorkspaceButton);
+        var workspaceBar = new DockPanel { Margin = new Thickness(8, 4, 8, 0) };
+        DockPanel.SetDock(workspaceActions, Dock.Right);
+        workspaceBar.Children.Add(workspaceActions);
+        workspaceBar.Children.Add(workspaceScroller);
+        RefreshWorkspaceTabs();
+
         var body = new Grid();
         body.ColumnDefinitions.Add(_sideColumn);
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -239,6 +271,8 @@ public sealed class DockWindow : Window
         var root = new DockPanel();
         DockPanel.SetDock(bar, Dock.Top);
         root.Children.Add(bar);
+        DockPanel.SetDock(workspaceBar, Dock.Top);
+        root.Children.Add(workspaceBar);
         root.Children.Add(body);
         Content = root;
         SetSidePanelOpen(settings.SidePanelOpen);
@@ -252,6 +286,8 @@ public sealed class DockWindow : Window
             }
         };
     }
+
+    public event EventHandler? WorkspaceChanged;
 
     public DockWindowSettings Settings
     {
@@ -277,6 +313,212 @@ public sealed class DockWindow : Window
         }
 
         _whatsNew.Activate();
+    }
+
+    private void RefreshWorkspaceTabs()
+    {
+        _workspaceTabs.Children.Clear();
+        foreach (var workspace in Settings.Workspaces.Where(workspace => !workspace.Deleted))
+        {
+            bool selected = workspace.Id == Settings.ActiveWorkspaceId;
+            var tab = new Button
+            {
+                Content = workspace.Name,
+                Padding = new Thickness(12, 4, 12, 4),
+                Margin = new Thickness(0, 0, 4, 4),
+                BorderThickness = new Thickness(1),
+                ToolTip = "Select workspace. Right-click for rename or delete.",
+                Tag = workspace.Id,
+            };
+            tab.SetResourceReference(Control.ForegroundProperty, "NightText");
+            tab.SetResourceReference(Control.BackgroundProperty, selected ? "NightRaised" : "NightBackground");
+            tab.SetResourceReference(Control.BorderBrushProperty, selected ? "Pumpkin" : "NightBorder");
+            tab.Click += (_, _) => SelectWorkspace(workspace.Id);
+
+            var menu = new ContextMenu();
+            var rename = new MenuItem { Header = "Rename" };
+            rename.Click += (_, _) => RenameWorkspace(workspace);
+            var delete = new MenuItem { Header = "Delete" };
+            delete.Click += (_, _) => DeleteWorkspace(workspace);
+            menu.Items.Add(rename);
+            menu.Items.Add(delete);
+            tab.ContextMenu = menu;
+            _workspaceTabs.Children.Add(tab);
+        }
+
+        _restoreWorkspaceButton.IsEnabled = Settings.Workspaces.Any(workspace => workspace.Deleted);
+    }
+
+    private void SelectWorkspace(string id)
+    {
+        if (Settings.ActiveWorkspaceId == id)
+        {
+            return;
+        }
+
+        Settings.ActiveWorkspaceId = id;
+        RefreshWorkspaceTabs();
+        WorkspaceChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void CreateWorkspace()
+    {
+        string? name = PromptWorkspaceName("Create workspace", "New workspace");
+        if (name is null)
+        {
+            return;
+        }
+
+        Settings.CreateWorkspace(name);
+        RefreshWorkspaceTabs();
+        WorkspaceChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void RenameWorkspace(DockWorkspaceSettings workspace)
+    {
+        string? name = PromptWorkspaceName("Rename workspace", workspace.Name);
+        if (name is null || string.Equals(name, workspace.Name, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        workspace.Name = name;
+        RefreshWorkspaceTabs();
+        WorkspaceChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void DeleteWorkspace(DockWorkspaceSettings workspace)
+    {
+        if (Settings.Workspaces.Count(candidate => !candidate.Deleted) <= 1)
+        {
+            MessageBox.Show(this, "At least one workspace must remain.", "Delete workspace",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var choice = MessageBox.Show(this,
+            $"Delete \"{workspace.Name}\"? Its panels and placements will be kept so you can restore this workspace later.",
+            "Delete workspace", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (choice != MessageBoxResult.Yes || !Settings.DeleteWorkspace(workspace.Id))
+        {
+            return;
+        }
+
+        RefreshWorkspaceTabs();
+        WorkspaceChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OpenRestoreWorkspaceMenu()
+    {
+        var menu = new ContextMenu();
+        foreach (var workspace in Settings.Workspaces.Where(workspace => workspace.Deleted))
+        {
+            var restore = new MenuItem { Header = workspace.Name };
+            restore.Click += (_, _) =>
+            {
+                if (Settings.RestoreWorkspace(workspace.Id))
+                {
+                    RefreshWorkspaceTabs();
+                    WorkspaceChanged?.Invoke(this, EventArgs.Empty);
+                }
+            };
+            menu.Items.Add(restore);
+        }
+
+        if (menu.Items.Count == 0)
+        {
+            return;
+        }
+
+        _restoreWorkspaceButton.ContextMenu = menu;
+        menu.PlacementTarget = _restoreWorkspaceButton;
+        menu.IsOpen = true;
+    }
+
+    private string? PromptWorkspaceName(string title, string initialName)
+    {
+        var nameBox = new TextBox
+        {
+            Text = initialName,
+            Margin = new Thickness(0, 6, 0, 0),
+            Padding = new Thickness(4, 3, 4, 3),
+            MinWidth = 300,
+        };
+        var save = CreateDialogButton("Save");
+        save.IsDefault = true;
+        var cancel = CreateDialogButton("Cancel");
+        cancel.IsCancel = true;
+        cancel.Margin = new Thickness(8, 0, 0, 0);
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 16, 0, 0),
+            Children =
+            {
+                save,
+                cancel,
+            },
+        };
+        var dialog = new Window
+        {
+            Title = title,
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(16),
+                Children =
+                {
+                    new TextBlock { Text = "Workspace name" },
+                    nameBox,
+                    buttons,
+                },
+            },
+        };
+        dialog.SetResourceReference(BackgroundProperty, "NightBackground");
+        dialog.SetResourceReference(ForegroundProperty, "NightText");
+        save.Click += (_, _) =>
+        {
+            if (string.IsNullOrWhiteSpace(nameBox.Text))
+            {
+                MessageBox.Show(dialog, "Enter a workspace name.", title,
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            dialog.DialogResult = true;
+        };
+
+        dialog.Loaded += (_, _) =>
+        {
+            nameBox.Focus();
+            nameBox.SelectAll();
+        };
+        return dialog.ShowDialog() == true ? nameBox.Text.Trim() : null;
+    }
+
+    private static Button CreateDialogButton(string text)
+    {
+        var button = new Button
+        {
+            Content = text,
+            Margin = new Thickness(0),
+            Width = 88,
+            Height = 30,
+            Padding = new Thickness(14, 0, 14, 0),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            BorderThickness = new Thickness(1),
+        };
+        button.SetResourceReference(BackgroundProperty, "NightRaised");
+        button.SetResourceReference(BorderBrushProperty, "NightBorder");
+        button.SetResourceReference(ForegroundProperty, "NightText");
+        return button;
     }
 
     /// <summary>Shows a notice (such as an available update) in the top bar, or hides it when null.</summary>
@@ -314,6 +556,57 @@ public sealed class DockWindow : Window
         return _byKey.ContainsKey(key);
     }
 
+    public bool IsPanelInActiveWorkspace(string key)
+    {
+        return Settings.ActiveWorkspace.Panels.ContainsKey(key);
+    }
+
+    public bool IsPanelInAnyWorkspace(string key)
+    {
+        return Settings.IsPanelInAnyWorkspace(key);
+    }
+
+    public void MovePanelToWorkspace(string key, string workspaceId)
+    {
+        var fallback = _placements.TryGetValue(key, out var currentPlacement)
+            ? currentPlacement.Clone()
+            : new DockPanelSettings();
+        string? activeWorkspaceId = Settings.ActiveWorkspaceId;
+        Settings.MovePanelToWorkspace(key, workspaceId, fallback);
+        if (activeWorkspaceId != Settings.ActiveWorkspaceId)
+        {
+            RefreshWorkspaceTabs();
+            WorkspaceChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public void RefreshWorkspaceMenus()
+    {
+        foreach (var (key, tile) in _byKey)
+        {
+            if (tile.Children.OfType<OverlayPanel>().FirstOrDefault() is { } panel)
+            {
+                SetWorkspaceMenu(panel);
+            }
+        }
+    }
+
+    public void SetPanelInActiveWorkspace(string key, bool docked, OverlayPlacement fallback)
+    {
+        var panels = Settings.ActiveWorkspace.Panels;
+        if (docked)
+        {
+            if (!panels.ContainsKey(key))
+            {
+                panels[key] = DockPanelSettings.From(fallback);
+            }
+        }
+        else
+        {
+            panels.Remove(key);
+        }
+    }
+
     /// <summary>Brings a docked panel forward and scrolls it into view.</summary>
     public void RevealPanel(string key)
     {
@@ -335,23 +628,39 @@ public sealed class DockWindow : Window
             return;
         }
 
+        var workspace = Settings.ActiveWorkspace;
+        if (!workspace.Panels.TryGetValue(panel.Key, out var dockPlacement))
+        {
+            dockPlacement = DockPanelSettings.From(placement);
+            workspace.Panels[panel.Key] = dockPlacement;
+        }
+
         panel.SetDocked(true);
+        if (_workspaceMoveHandlers.Add(panel))
+        {
+            panel.WorkspaceMoveRequested += (_, workspaceId) =>
+            {
+                MovePanelToWorkspace(panel.Key, workspaceId);
+            };
+        }
+
+        SetWorkspaceMenu(panel);
         var tile = new Grid
         {
-            Width = Math.Max(MinTileWidth, placement.DockWidth > 0 ? placement.DockWidth : placement.Width),
-            Height = Math.Max(MinTileHeight, placement.DockHeight > 0 ? placement.DockHeight : placement.Height),
+            Width = Math.Max(MinTileWidth, dockPlacement.DockWidth > 0 ? dockPlacement.DockWidth : placement.Width),
+            Height = Math.Max(MinTileHeight, dockPlacement.DockHeight > 0 ? dockPlacement.DockHeight : placement.Height),
             VerticalAlignment = VerticalAlignment.Top,
             Tag = panel.Key,
             AllowDrop = true,
         };
-        var position = placement.DockLeft is double left && double.IsFinite(left) &&
-            placement.DockTop is double top && double.IsFinite(top)
+        var position = dockPlacement.DockLeft is double left && double.IsFinite(left) &&
+            dockPlacement.DockTop is double top && double.IsFinite(top)
             ? new Point(Math.Max(4, left), Math.Max(4, top))
             : FindEmptyPosition(tile.Width, tile.Height);
         Canvas.SetLeft(tile, position.X);
         Canvas.SetTop(tile, position.Y);
-        placement.DockLeft = position.X;
-        placement.DockTop = position.Y;
+        dockPlacement.DockLeft = position.X;
+        dockPlacement.DockTop = position.Y;
         tile.Children.Add(panel);
 
         var grip = MakeGrip();
@@ -359,8 +668,8 @@ public sealed class DockWindow : Window
         {
             tile.Width = Math.Max(MinTileWidth, tile.Width + e.HorizontalChange);
             tile.Height = Math.Max(MinTileHeight, tile.Height + e.VerticalChange);
-            placement.DockWidth = tile.Width;
-            placement.DockHeight = tile.Height;
+            dockPlacement.DockWidth = tile.Width;
+            dockPlacement.DockHeight = tile.Height;
             _anchorKey = panel.Key;
             CompactLayout();
             ScrollIntoView(tile);
@@ -428,11 +737,20 @@ public sealed class DockWindow : Window
         };
 
         _byKey[panel.Key] = tile;
-        _placements[panel.Key] = placement;
+        _placements[panel.Key] = dockPlacement;
         _tiles.Children.Add(tile);
         BringToFront(tile);
         UpdateEmpty();
         CompactLayout();
+    }
+
+    private void SetWorkspaceMenu(OverlayPanel panel)
+    {
+        panel.SetWorkspaceOptions(
+            Settings.Workspaces
+                .Where(workspace => !workspace.Deleted)
+                .Select(workspace => (workspace.Id, workspace.Name)),
+            Settings.ActiveWorkspaceId ?? "");
     }
 
     public void RemovePanel(string key)
@@ -449,6 +767,22 @@ public sealed class DockWindow : Window
             UpdateEmpty();
             CompactLayout();
         }
+    }
+
+    public void ClearPanelsForWorkspaceChange()
+    {
+        PersistPositions();
+        foreach (var tile in _byKey.Values)
+        {
+            tile.Children.Clear();
+        }
+
+        _byKey.Clear();
+        _placements.Clear();
+        _tiles.Children.Clear();
+        _anchorKey = null;
+        UpdateEmpty();
+        UpdateCanvasSize();
     }
 
     private void BringToFront(Grid tile)

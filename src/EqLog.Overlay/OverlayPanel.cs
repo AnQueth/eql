@@ -142,6 +142,7 @@ public sealed class OverlayPanel : ContentControl
     private readonly TextBlock _hint;
     private readonly TextBlock _dockDragHandle;
     private readonly Button _dockButton;
+    private readonly Button _workspaceButton;
     private readonly Slider _backgroundSlider;
     private readonly StackPanel _backgroundControls;
     private readonly Border _frame;
@@ -151,6 +152,9 @@ public sealed class OverlayPanel : ContentControl
     private readonly Grid _ornaments = new() { IsHitTestVisible = false };
     private readonly ContentControl _toolbar = new();
     private readonly DockPanel _layout = new();
+    private UIElement _baseBody = null!;
+    private UIElement _displayedBody = null!;
+    private UIElement? _alternateBody;
     private IReadOnlyList<OverlayRow> _current = [];
     private string? _titleLink;
     private bool _invalidateRows;
@@ -212,6 +216,29 @@ public sealed class OverlayPanel : ContentControl
         _dockButton.SetResourceReference(BorderBrushProperty, "NightBorder");
         _dockButton.SetResourceReference(ForegroundProperty, "NightText");
 
+        _workspaceButton = new Button
+        {
+            Content = "Move to",
+            FontSize = 11,
+            Padding = new Thickness(5, 0, 5, 0),
+            Margin = new Thickness(4, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Top,
+            Cursor = System.Windows.Input.Cursors.Hand,
+            Focusable = false,
+            ToolTip = "Move this panel to another workspace",
+        };
+        _workspaceButton.SetResourceReference(BackgroundProperty, "NightRaised");
+        _workspaceButton.SetResourceReference(BorderBrushProperty, "NightBorder");
+        _workspaceButton.SetResourceReference(ForegroundProperty, "NightText");
+        _workspaceButton.Click += (_, _) =>
+        {
+            if (_workspaceButton.ContextMenu is { } menu)
+            {
+                menu.PlacementTarget = _workspaceButton;
+                menu.IsOpen = true;
+            }
+        };
+
         var header = new DockPanel();
         _dockDragHandle = new TextBlock
         {
@@ -227,8 +254,10 @@ public sealed class OverlayPanel : ContentControl
         DockPanel.SetDock(_dockDragHandle, Dock.Left);
         header.Children.Add(_dockDragHandle);
         DockPanel.SetDock(_dockButton, Dock.Right);
+        DockPanel.SetDock(_workspaceButton, Dock.Right);
         DockPanel.SetDock(_hint, Dock.Right);
         header.Children.Add(_dockButton);
+        header.Children.Add(_workspaceButton);
         header.Children.Add(_hint);
         header.Children.Add(new StackPanel { Children = { _title, _subtitle } });
 
@@ -315,11 +344,14 @@ public sealed class OverlayPanel : ContentControl
                 new ControlTemplate(typeof(ListBoxItem)) { VisualTree = presenter }));
             _virtualList.ItemContainerStyle = itemStyle;
             layout.Children.Add(_virtualList);
+            _baseBody = _virtualList;
         }
         else
         {
             layout.Children.Add(_scroll);
+            _baseBody = _scroll;
         }
+        _displayedBody = _baseBody;
 
         _inset = new Border { Child = layout };
         _bevel = new Border { Child = _inset };
@@ -376,6 +408,7 @@ public sealed class OverlayPanel : ContentControl
 
     /// <summary>Raised when the user clicks the panel's dock / pop-out button.</summary>
     public event Action<OverlayPanel>? DockToggleRequested;
+    public event Action<OverlayPanel, string>? WorkspaceMoveRequested;
 
     public event Action<string>? LootLookupRequested;
     public event Action<string>? ItemWikiRequested;
@@ -395,15 +428,43 @@ public sealed class OverlayPanel : ContentControl
         _toolbar.Content = toolbar;
     }
 
+    public void SetWorkspaceOptions(IEnumerable<(string Id, string Name)> workspaces, string activeWorkspaceId)
+    {
+        var menu = new ContextMenu();
+        foreach (var (id, name) in workspaces.Where(workspace => workspace.Id != activeWorkspaceId))
+        {
+            var item = new MenuItem { Header = name, Tag = id };
+            item.Click += (_, _) => WorkspaceMoveRequested?.Invoke(this, id);
+            menu.Items.Add(item);
+        }
+
+        if (menu.Items.Count == 0)
+        {
+            menu.Items.Add(new MenuItem { Header = "No other workspaces", IsEnabled = false });
+        }
+
+        _workspaceButton.ContextMenu = menu;
+    }
+
     /// <summary>Replaces the row list with custom interactive content that fills the panel below the toolbar.</summary>
     public void SetBody(UIElement body)
     {
-        _layout.Children.Remove(_scroll);
-        if (_virtualList is not null)
+        _layout.Children.Remove(_displayedBody);
+        _baseBody = body;
+        if (_alternateBody is null)
         {
-            _layout.Children.Remove(_virtualList);
+            _displayedBody = _baseBody;
         }
-        _layout.Children.Add(body);
+
+        _layout.Children.Add(_displayedBody);
+    }
+
+    public void SetAlternateBody(UIElement? body)
+    {
+        _alternateBody = body;
+        _layout.Children.Remove(_displayedBody);
+        _displayedBody = _alternateBody ?? _baseBody;
+        _layout.Children.Add(_displayedBody);
     }
 
     internal static bool IsInteractive(DependencyObject? source)
@@ -470,6 +531,7 @@ public sealed class OverlayPanel : ContentControl
         ApplyDockFrame();
         _hint.Visibility = _locked || _docked ? Visibility.Collapsed : Visibility.Visible;
         _dockDragHandle.Visibility = _docked ? Visibility.Visible : Visibility.Collapsed;
+        _workspaceButton.Visibility = _docked ? Visibility.Visible : Visibility.Collapsed;
 
         // Floating overlays are click-through when locked, so the button only shows while unlocked.
         _dockButton.Visibility = _docked || !_locked ? Visibility.Visible : Visibility.Collapsed;

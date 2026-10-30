@@ -8,6 +8,17 @@ Use floating overlays over the game or arrange panels in the main window on anot
 
 ## Screenshots
 
+### Dashboard workspaces
+
+![Dashboard workspace tabs with docked Motes and Loot panels and the DPS overlay in Full details view showing an ability table.](docs/images/dashboard-workspaces.png)
+
+The dock window groups panels into your own [workspace](#main-window-settings--docked-panels-second-monitor) tabs, such as
+**Dashboard**, **Loot**, **Sky**, **Encounters**, and **Tools**. Use **+** to add a tab,
+right-click a tab to rename or delete it, and **Restore** to bring back a deleted tab with its
+saved layout. Each docked panel has **Move to** to send it to another workspace and
+**Pop out** to float it over the game. The DPS panel here uses **Full details**, which shows the
+live ability table plus **Damage timeline** and **Damage types** graphs right in the dashboard.
+
 ### Dashboard preview
 
 ![Docked dashboard showing combat stats, loot, motes, NPC encounter history, Sky quests, quest opportunities, and inventory.](docs/images/docked-dashboard.png)
@@ -267,6 +278,9 @@ damage type (Melee, each spell, DoT, or proc). Every row spans the whole fight, 
 when that type started landing to when it finished, with marks at each start and finish; a gap of
 more than 7 seconds starts a new bar, so 6-second DoT ticks stay together. In **Healing**,
 click a recipient, incoming healer, or **Observed healers** name for session ability totals.
+Choose **Full details** in the DPS overlay to show the same ability table and damage graph tabs
+directly in the overlay; **Compact** restores the current small rows. The selection is saved.
+Full details update live each second without resetting column widths, sorting, or the selected tab.
 Details show total, DPS/HPS, share, hits, crits, maximum, and healing overheal. They are snapshots
 at click time, not live windows; click again for an updated view. Healing detail rates use the
 span from first to last observed session heal (minimum one second), not the rolling 30-second
@@ -321,12 +335,15 @@ as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels r
 
 The app has one normal window you can put on another monitor, maximize, or keep on top. Settings sit in a
 side panel on the left (toggle it with **⚙ Settings**, drag the divider to resize it); docked panels fill the rest.
-Closing this window exits the app.
+Use **+** to create your own workspaces. Click a tab to switch layouts, or right-click it to rename or delete it.
+Deleted workspaces keep their panels and placements; use **Restore** to bring one back. The current dashboard
+layout becomes the initial **Dashboard** workspace, preserving existing panel positions. Closing this window exits the app.
 
-Tick **docked** next to an overlay to show it as a tile in this window instead of as a floating overlay.
-Each panel also has its own button: **Dock** on a floating overlay (visible while overlays are unlocked) and
-**Pop out** on a docked tile, to move just that one panel.
-**Dock all** docks everything except Alerts; **Float all** turns every panel back into an overlay.
+Tick **docked** next to an overlay to add or remove it from the selected workspace. Each panel also has its own button:
+**Dock** on a floating overlay (visible while overlays are unlocked) and **Pop out** on a docked tile, to move that
+panel out of every workspace and into its own floating overlay.
+To move a docked panel between workspaces, click **Move to** in that panel's title bar and choose a workspace.
+**Dock all** docks everything except Alerts in the selected workspace; **Float all** removes every panel from all workspaces.
 Drag a tile to reorder it on the canvas and drag its gold bottom-right corner to resize it; the
 other panels reflow around it.
 Docked panels use fantasy-style metallic frames with beveled edges, inset content, raised

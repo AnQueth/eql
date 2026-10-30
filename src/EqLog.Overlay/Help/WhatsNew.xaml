@@ -1,8 +1,66 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.22" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.23" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.23
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Organize the dashboard into your own workspace tabs and see full DPS details right in the overlay.
+        This release history ships with your installed version and works offline.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Dashboard workspaces
+        </Paragraph>
+        <Paragraph>
+            The main window now has workspace tabs above the docked panels. Your existing layout
+            becomes the Dashboard workspace, with panel positions kept. Click + to add a workspace,
+            click a tab to switch layouts, and right-click a tab to rename or delete it. Each
+            workspace remembers its own panel sizes and positions.
+        </Paragraph>
+        <Paragraph>
+            Deleting a workspace keeps its panels and placements. Click Restore next to the tabs to
+            bring a deleted workspace back exactly as it was. At least one workspace always stays open.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Move panels between workspaces
+        </Paragraph>
+        <Paragraph>
+            Every docked panel has a Move to button in its title bar. Choose a workspace to send the
+            panel there; the app switches to that workspace so you can place it. You can also pick a
+            workspace for each overlay in Settings &gt; Overlays. Pop out still floats a panel over the
+            game and removes it from every workspace.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Full details view in the DPS overlay
+        </Paragraph>
+        <Paragraph>
+            Use the new view dropdown next to the DPS fight picker. Compact keeps the familiar small
+            rows. Full details shows the ability table with total, DPS, share, hits, crits, and max hit,
+            plus the Damage timeline and Damage types tabs, directly in the overlay. Your choice is saved.
+        </Paragraph>
+        <Paragraph>
+            Full details updates live about once a second without resetting column widths, sorting,
+            the selected row, or the selected tab. It follows the fight chosen in the fight picker.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Themed menus and fixes
+        </Paragraph>
+        <Paragraph>
+            Right-click and dropdown menus, including tab, Move to, Restore, and item lookup menus,
+            now use your selected theme colors instead of the Windows default. The workspace name
+            dialog has properly spaced, aligned Save and Cancel buttons. Fixed a startup error that
+            could occur when a saved workspace no longer existed.
+        </Paragraph>
+    </Section>
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,24,0,6">
         What's New in 1.0.22
     </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
