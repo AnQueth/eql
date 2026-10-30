@@ -76,13 +76,30 @@ public sealed class OverlayPlacement
         get; set;
     }
 
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+
     public OverlayPlacement Clone()
     {
-        return (OverlayPlacement)MemberwiseClone();
+        var copy = (OverlayPlacement)MemberwiseClone();
+        copy.ExtensionData = SettingsExtensionData.Copy(ExtensionData);
+        return copy;
     }
 }
 
-public sealed class DockWindowSettings
+/// <summary>
+/// Keeps settings this version does not recognize (for example, ones added by a newer build) so saving
+/// does not delete them when an older version runs or installs an update.
+/// </summary>
+internal static class SettingsExtensionData
+{
+    public static Dictionary<string, JsonElement>? Copy(Dictionary<string, JsonElement>? source)
+    {
+        return source is null ? null : new Dictionary<string, JsonElement>(source, source.Comparer);
+    }
+}
+
+public sealed class DockWindowSettings : IJsonOnDeserialized
 {
     public double? Left
     {
@@ -131,6 +148,15 @@ public sealed class DockWindowSettings
 
     public string? ActiveWorkspaceId { get; set; }
 
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+
+    void IJsonOnDeserialized.OnDeserialized()
+    {
+        // 1.0.23 also wrote the computed ActiveWorkspace; it is derived from Workspaces, so don't carry it forward.
+        ExtensionData?.Remove(nameof(ActiveWorkspace));
+    }
+
     public DockWorkspaceSettings EnsureActiveWorkspace(IReadOnlyDictionary<string, OverlayPlacement> overlays)
     {
         Workspaces ??= [];
@@ -165,6 +191,7 @@ public sealed class DockWindowSettings
         return active;
     }
 
+    [JsonIgnore]
     public DockWorkspaceSettings ActiveWorkspace
     {
         get
@@ -262,6 +289,7 @@ public sealed class DockWindowSettings
         copy.Workspaces = Workspaces is null
             ? null!
             : Workspaces.Select(workspace => workspace.Clone()).ToList();
+        copy.ExtensionData = SettingsExtensionData.Copy(ExtensionData);
         return copy;
     }
 }
@@ -276,12 +304,16 @@ public sealed class DockWorkspaceSettings
 
     public Dictionary<string, DockPanelSettings> Panels { get; set; } = [];
 
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+
     public DockWorkspaceSettings Clone()
     {
         var copy = (DockWorkspaceSettings)MemberwiseClone();
         copy.Panels = Panels is null
             ? null!
             : Panels.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(), Panels.Comparer);
+        copy.ExtensionData = SettingsExtensionData.Copy(ExtensionData);
         return copy;
     }
 }
@@ -296,6 +328,9 @@ public sealed class DockPanelSettings
 
     public double? DockTop { get; set; }
 
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+
     public static DockPanelSettings From(OverlayPlacement placement)
     {
         return new DockPanelSettings
@@ -309,7 +344,9 @@ public sealed class DockPanelSettings
 
     public DockPanelSettings Clone()
     {
-        return (DockPanelSettings)MemberwiseClone();
+        var copy = (DockPanelSettings)MemberwiseClone();
+        copy.ExtensionData = SettingsExtensionData.Copy(ExtensionData);
+        return copy;
     }
 }
 
@@ -322,7 +359,7 @@ public sealed class AppSettings
 
     public static readonly string MotesPath = Path.Combine(Folder, "motes.json");
 
-    private static readonly JsonSerializerOptions Json = new()
+    internal static readonly JsonSerializerOptions Json = new()
     {
         WriteIndented = true,
         Converters = { new JsonStringEnumConverter() },
@@ -410,6 +447,9 @@ public sealed class AppSettings
     /// <summary>Custom alerts. They fire only for lines written while the app is following the log, never for history.</summary>
     public List<AlertTrigger> Triggers { get; set; } = AlertTrigger.Defaults();
 
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+
     public static async Task<AppSettings> LoadAsync(CancellationToken ct = default)
     {
         try
@@ -480,6 +520,7 @@ public sealed class AppSettings
         copy.DockWindow = DockWindow?.Clone()!;
         copy.ChatChannels = ChatChannels is null ? null! : [.. ChatChannels];
         copy.Triggers = Triggers is null ? null! : Triggers.Select(trigger => trigger?.Clone()!).ToList();
+        copy.ExtensionData = SettingsExtensionData.Copy(ExtensionData);
         return copy;
     }
 }

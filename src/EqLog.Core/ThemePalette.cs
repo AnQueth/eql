@@ -8,12 +8,17 @@ public sealed class ThemePalette
     public string Name { get; set; } = "";
     public Dictionary<string, string> Colors { get; set; } = [];
 
+    /// <summary>Theme settings from a newer version, kept so saving does not delete them.</summary>
+    [System.Text.Json.Serialization.JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+
     public ThemePalette Clone()
     {
         return new ThemePalette
         {
             Name = Name,
             Colors = Colors is null ? null! : new Dictionary<string, string>(Colors, Colors.Comparer),
+            ExtensionData = ExtensionData is null ? null : new Dictionary<string, JsonElement>(ExtensionData, ExtensionData.Comparer),
         };
     }
 

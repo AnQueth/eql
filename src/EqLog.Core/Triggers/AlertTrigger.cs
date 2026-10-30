@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using EqLog.Core.Parsing;
 
@@ -38,9 +40,17 @@ public sealed class AlertTrigger
     /// <summary>How the alert text moves while it is on screen.</summary>
     public AlertEffect Effect { get; set; } = AlertEffect.None;
 
+    /// <summary>Trigger settings from a newer version, kept so saving does not delete them.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+
     public AlertTrigger Clone()
     {
-        return (AlertTrigger)MemberwiseClone();
+        var copy = (AlertTrigger)MemberwiseClone();
+        copy.ExtensionData = ExtensionData is null
+            ? null
+            : new Dictionary<string, JsonElement>(ExtensionData, ExtensionData.Comparer);
+        return copy;
     }
 
     public static List<AlertTrigger> Defaults()
