@@ -24,7 +24,9 @@ where to find it; do not copy raw commit logs.
    version again, update its existing entry rather than duplicating it.
    Put the new version's heading and notes at the top, with older releases below in
    reverse chronological order. Set the document's `Tag` and first visible heading
-   to the release version. Summarize actual changes
+   to the release version. Directly under each version heading, add a muted line with
+   when that release was created: `Released <Month> <day>, <year> at <h:mm AM/PM> CT.`
+   (use the tag creation time for existing releases). Summarize actual changes
    since the previous release, with short, plain-English sections describing benefits,
    exact UI paths, how to try the features, and important limitations. Cover fixes and
    intentional behavior changes. Do not invent features or copy raw commit messages.

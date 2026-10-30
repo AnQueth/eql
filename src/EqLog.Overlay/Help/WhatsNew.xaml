@@ -1,9 +1,35 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.24" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.25" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.25
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 30, 2026 at 6:14 PM CT.
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Your custom themes and alerts survive switching between app versions.
+        This release history ships with your installed version and works offline.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Settings from newer versions are no longer deleted
+        </Paragraph>
+        <Paragraph>
+            If you run an older build after a newer one (for example, rolling back to a previous
+            release), saving your settings used to drop anything the older version did not know
+            about. Custom theme colors and alert trigger options added by a newer version are now
+            kept in your saved settings file, so switching versions no longer loses them. Your
+            existing themes (Settings &gt; Appearance &gt; Theme) and alerts (the Alert triggers tab
+            in Settings) work as before.
+        </Paragraph>
+    </Section>
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,24,0,6">
         What's New in 1.0.24
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 30, 2026 at 11:43 AM CT.
     </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
         See every mote tier, its gear and spell value, and how many you own at a glance.
@@ -27,6 +53,9 @@
     </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,24,0,6">
         What's New in 1.0.23
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 30, 2026 at 10:27 AM CT.
     </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
         Organize the dashboard into your own workspace tabs and see full DPS details right in the overlay.
@@ -86,6 +115,9 @@
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,24,0,6">
         What's New in 1.0.22
     </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 29, 2026 at 8:31 PM CT.
+    </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
         Review recent fights in the DPS overlay and see how damage played out over time.
         This release history ships with your installed version and works offline.
@@ -121,6 +153,9 @@
     </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,24,0,6">
         What's New in 1.0.21
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 29, 2026 at 4:44 PM CT.
     </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
         Adjust overlay backgrounds in place and pick upgrade targets more easily.
@@ -164,6 +199,9 @@
     </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.20
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 29, 2026 at 3:54 PM CT.
     </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
         Manage timers from their overlays and keep floating panels unobtrusive in game.
@@ -219,6 +257,9 @@
     </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.19
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 29, 2026 at 1:24 PM CT.
     </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
         Find exaltations by what they do, not just by the item name.
@@ -282,6 +323,9 @@
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.18
     </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 29, 2026 at 11:04 AM CT.
+    </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
         Keep long NPC encounters together and rebuild tracking data from your logs.
         This release history ships with your installed version and works offline.
@@ -326,6 +370,9 @@
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.17
     </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 29, 2026 at 10:46 AM CT.
+    </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
         Usage and error telemetry is now off by default.
         This release history ships with your installed version and works offline.
@@ -354,6 +401,9 @@
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.16
     </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 29, 2026 at 10:31 AM CT.
+    </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
         A deeper, VS Code-style charcoal look for Neutral Dark.
         This release history ships with your installed version and works offline.
@@ -381,6 +431,9 @@
     </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.15
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 29, 2026 at 10:21 AM CT.
     </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
         A calmer first launch with neutral colors that follow your Windows app appearance.
@@ -419,6 +472,9 @@
     </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.14
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 29, 2026 at 9:58 AM CT.
     </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
         Smoother log loading and inventory updates, plus a usage and error telemetry preference.
@@ -475,6 +531,9 @@
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.13
     </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 29, 2026 at 12:27 AM CT.
+    </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
         The mote upgrade planner is clearer about equipment copies and has a simpler Spell mode.
         This release history is included with your installed version and works offline.
@@ -520,6 +579,9 @@
     </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,24,0,6">
         What's New in 1.0.12
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 28, 2026 at 11:55 PM CT.
     </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
         Plan upgrades, make alerts easier to notice, and choose a more readable theme.
