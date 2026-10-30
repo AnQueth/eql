@@ -773,11 +773,14 @@ The **Motes** overlay counts the Motes of Potential you loot, from corpses and R
   excluded. `?` means inventory is not loaded. Hover for the export date and freshness
   details. Run `/outputfile inventory` after spending,
   selling, or moving motes to refresh counts; log drops alone cannot detect those changes.
-- One row per tier, taken from the item name ("Mote of <Tier> Potential", or the plain "Mote of Potential", so new tiers appear automatically), most collected first, showing this
-  session's count and, in brackets, the all-time count. The subtitle shows the session total and motes per hour.
-- Each known tier shows its upgrade value from the [EQLWiki Mote Guide](https://eqlwiki.com/Mote_Guide) as
-  `equipment points/spell points ≤+max`. For example, `Major  5/16 ≤+4` means a Mote of Major Potential adds 5 points
-  to equipment at +4 or lower, or 16 points to a spell at any rank. Hover a tier for the details.
+- Every known tier has a row, even when none are owned or recorded. Additional tiers found in drops or inventory
+  appear automatically. Each row shows this session's count and, in brackets, the all-time count. Known tiers appear
+  from lowest to highest upgrade rank; unrecognized tiers follow in alphabetical order. The subtitle shows the session
+  total and motes per hour.
+- **Gear/Spell** shows how many points one mote adds: the first number is for gear, the second is for spells.
+  `≤+N` means the mote works on gear at +N or lower. Motes work on spells at any rank. For example,
+  `Major  5/16 ≤+4` means 5 points for gear at +4 or lower, or 16 points for spells at any rank. Values are from
+  the [EQLWiki Mote Guide](https://eqlwiki.com/Mote_Guide). Unknown tiers show `?`. Hover a tier for the details.
 
   | Tier | Equipment points | Equipment up to | Spell points |
   |---|---|---|---|

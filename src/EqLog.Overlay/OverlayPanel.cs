@@ -17,7 +17,13 @@ public sealed record SpawnTrackChange(string Zone, string Mob, bool Tracked);
 
 public sealed record SpellTrackChange(string Spell, bool Tracked);
 
-public sealed record OverlayRow(string Left, string Right = "", double Fraction = 0, Brush? Bar = null, Brush? Foreground = null, bool Wrap = false, bool Bold = false, double Scale = 1, string? LootItem = null, AbilityBreakdown? Breakdown = null, bool QuestHeading = false, string? Details = null, bool Stacked = false, string? ExtraColumn = null, string? ToolTip = null, string? WatchKey = null, bool Watched = false, OverlayTable? Table = null, string? Link = null, bool HasQuestReferences = false, AlertEffect Effect = AlertEffect.None, SpawnTrackChange? SpawnTrack = null, SpellTrackChange? SpellTrack = null);
+/// <summary>One overlay row. A non-null <paramref name="ValueColumn"/> appears between Left and Right; empty reserves the column.</summary>
+public sealed record OverlayRow(string Left, string Right = "", double Fraction = 0, Brush? Bar = null, Brush? Foreground = null,
+    bool Wrap = false, bool Bold = false, double Scale = 1, string? LootItem = null, AbilityBreakdown? Breakdown = null,
+    bool QuestHeading = false, string? Details = null, bool Stacked = false, string? ExtraColumn = null, string? ToolTip = null,
+    string? WatchKey = null, bool Watched = false, OverlayTable? Table = null, string? Link = null, bool HasQuestReferences = false,
+    AlertEffect Effect = AlertEffect.None, SpawnTrackChange? SpawnTrack = null, SpellTrackChange? SpellTrack = null,
+    string? ValueColumn = null);
 
 /// <summary>
 /// A small grid shown inside a row's card, below its title. With <see cref="Header"/> it is a column table
@@ -311,6 +317,8 @@ public sealed class OverlayPanel : ContentControl
         header.Children.Insert(header.Children.IndexOf(_dockButton) + 1, _backgroundControls);
         _titleFrame = new Border { Child = header };
         var layout = _layout;
+        // Separate row grids share column widths within this panel.
+        Grid.SetIsSharedSizeScope(layout, true);
         DockPanel.SetDock(_titleFrame, Dock.Top);
         layout.Children.Add(_titleFrame);
         DockPanel.SetDock(_toolbar, Dock.Top);
@@ -830,23 +838,28 @@ public sealed class OverlayPanel : ContentControl
             {
                 Text = row.ExtraColumn,
                 FontWeight = weight,
-                Width = 48,
                 TextAlignment = TextAlignment.Right,
                 Margin = new Thickness(8, 0, 0, 0),
             };
+            if (row.ValueColumn is null)
+            {
+                extra.Width = 48;
+            }
             if (row.Foreground is not null)
             {
                 extra.Foreground = row.Foreground;
             }
-            DockPanel.SetDock(extra, Dock.Right);
-            text.Children.Add(extra);
+            AddRightColumn(text, extra, row.ValueColumn is null ? null : "OverlayExtraColumn");
         }
-        if (!string.IsNullOrEmpty(row.Right) && !row.Stacked)
+        if ((!string.IsNullOrEmpty(row.Right) || row.ValueColumn is not null) && !row.Stacked)
         {
             var right = new TextBlock { Text = row.Right, FontWeight = weight, Margin = new Thickness(8, 0, 0, 0) };
             if (row.ExtraColumn is not null)
             {
-                right.MinWidth = 100;
+                if (row.ValueColumn is null)
+                {
+                    right.MinWidth = 100;
+                }
                 right.TextAlignment = TextAlignment.Right;
             }
             if (row.Foreground is not null)
@@ -854,8 +867,22 @@ public sealed class OverlayPanel : ContentControl
                 right.Foreground = row.Foreground;
             }
 
-            DockPanel.SetDock(right, Dock.Right);
-            text.Children.Add(right);
+            AddRightColumn(text, right, row.ValueColumn is null ? null : "OverlayRightColumn");
+        }
+        if (row.ValueColumn is not null)
+        {
+            var value = new TextBlock
+            {
+                Text = row.ValueColumn,
+                FontWeight = weight,
+                TextAlignment = TextAlignment.Right,
+                Margin = new Thickness(8, 0, 0, 0),
+            };
+            if (row.Foreground is not null)
+            {
+                value.Foreground = row.Foreground;
+            }
+            AddRightColumn(text, value, "OverlayValueColumn");
         }
 
         var left = new TextBlock
@@ -1010,6 +1037,21 @@ public sealed class OverlayPanel : ContentControl
         }
 
         return grid;
+    }
+
+    private static void AddRightColumn(DockPanel panel, TextBlock column, string? sharedSizeGroup)
+    {
+        UIElement element = column;
+        if (sharedSizeGroup is not null)
+        {
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, SharedSizeGroup = sharedSizeGroup });
+            grid.Children.Add(column);
+            element = grid;
+        }
+
+        DockPanel.SetDock(element, Dock.Right);
+        panel.Children.Add(element);
     }
 
     /// <summary>

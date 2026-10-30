@@ -4,6 +4,9 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using EqLog.Core;
+using EqLog.Core.Parsing;
+using EqLog.Core.Tracking;
 using Xunit;
 
 namespace EqLog.Overlay.Tests;
@@ -112,6 +115,9 @@ public sealed class OverlayChromeTests
                 {
                     window.Close();
                 }
+
+                VerifyMoteColumns();
+                VerifyAllMoteTiersVisible();
             }
             catch (Exception ex)
             {
@@ -125,5 +131,157 @@ public sealed class OverlayChromeTests
         {
             ExceptionDispatchInfo.Capture(failure).Throw();
         }
+    }
+
+    private static void VerifyMoteColumns()
+    {
+        var panel = new OverlayPanel("motes", "Motes", false) { FontSize = 13 };
+        OverlayRow[] content =
+        [
+            new("Tier", "session (all)", Bold: true, ExtraColumn: "Owned", ValueColumn: "Gear/Spell"),
+            new("Infinitesimal", "1  (1)", LootItem: "Mote of Infinitesimal Potential",
+                ExtraColumn: "7", ToolTip: "Tier value details", ValueColumn: "1/1 ≤+0"),
+            new("Infinite", "12  (2222)", LootItem: "Mote of Infinite Potential",
+                ExtraColumn: "3", ValueColumn: "10/512 ≤+9"),
+            new("Total", "13  (2223)", Bold: true, ExtraColumn: "10", ValueColumn: ""),
+        ];
+        panel.Update("Motes", null, content);
+        var rows = LayoutMoteRows(panel, 300);
+        var name = Assert.IsType<TextBlock>(rows[1].Children[3]);
+        var valueColumn = Assert.IsType<Grid>(rows[2].Children[2]);
+        var value = Assert.Single(valueColumn.Children.OfType<TextBlock>());
+        Assert.Equal("Infinitesimal", name.Text);
+        Assert.Equal("10/512 ≤+9", value.Text);
+        AssertTextFits(name);
+        AssertTextFits(value);
+        var itemGrid = Assert.IsType<Grid>(rows[1].Parent);
+        var itemButton = Assert.IsType<Button>(itemGrid.Parent);
+        Assert.Equal("Tier value details", itemGrid.ToolTip);
+        Assert.NotNull(itemButton.ContextMenu);
+        string? selectedItem = null;
+        panel.ItemWikiRequested += item =>
+        {
+            selectedItem = item;
+        };
+        itemButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert.Equal("Mote of Infinitesimal Potential", selectedItem);
+
+        var original = content;
+        content = [.. content];
+        content[1] = content[1] with
+        {
+            Right = "100000  (2000000)",
+            ExtraColumn = "3000000"
+        };
+        panel.Update("Motes", null, content);
+        rows = LayoutMoteRows(panel, 450);
+        var countColumn = Assert.IsType<Grid>(rows[1].Children[1]);
+        var count = Assert.Single(countColumn.Children.OfType<TextBlock>());
+        Assert.Equal("100000  (2000000)", count.Text);
+        AssertTextFits(count);
+
+        panel.Update("Motes", null, original);
+        LayoutMoteRows(panel, 300);
+
+        panel.SetDocked(true);
+        panel.FontSize = 18;
+        panel.Update("Motes", null, content);
+        rows = LayoutMoteRows(panel, 540);
+        AssertTextFits(Assert.IsType<TextBlock>(rows[1].Children[3]));
+        valueColumn = Assert.IsType<Grid>(rows[2].Children[2]);
+        AssertTextFits(Assert.Single(valueColumn.Children.OfType<TextBlock>()));
+    }
+
+    private static DockPanel[] LayoutMoteRows(OverlayPanel panel, double width)
+    {
+        panel.Measure(new Size(width, 400));
+        panel.Arrange(new Rect(0, 0, width, 400));
+        panel.UpdateLayout();
+
+        var scroll = PanelScroll(panel);
+        var stack = Assert.IsType<StackPanel>(scroll.Content);
+        var rows = stack.Children.Cast<UIElement>()
+            .Select(element => element is Button button ? Assert.IsType<Grid>(button.Content) : Assert.IsType<Grid>(element))
+            .Select(grid => Assert.Single(grid.Children.OfType<DockPanel>()))
+            .ToArray();
+
+        Assert.Equal(4, rows.Length);
+        double nameX = Assert.IsType<TextBlock>(rows[0].Children[3]).TranslatePoint(new Point(0, 0), stack).X;
+        double valueX = Assert.IsType<Grid>(rows[0].Children[2]).TranslatePoint(new Point(0, 0), stack).X;
+        double countX = Assert.IsType<Grid>(rows[0].Children[1]).TranslatePoint(new Point(0, 0), stack).X;
+        double ownedX = Assert.IsType<Grid>(rows[0].Children[0]).TranslatePoint(new Point(0, 0), stack).X;
+        Assert.True(nameX < valueX && valueX < countX && countX < ownedX);
+
+        for (int columnIndex = 0; columnIndex < 3; columnIndex++)
+        {
+            var header = Assert.IsType<Grid>(rows[0].Children[columnIndex]);
+            double headerX = header.TranslatePoint(new Point(0, 0), stack).X;
+            foreach (var row in rows)
+            {
+                var column = Assert.IsType<Grid>(row.Children[columnIndex]);
+                Assert.Equal(header.ActualWidth, column.ActualWidth, 2);
+                Assert.Equal(headerX, column.TranslatePoint(new Point(0, 0), stack).X, 2);
+                AssertTextFits(Assert.Single(column.Children.OfType<TextBlock>()));
+            }
+        }
+        foreach (var row in rows)
+        {
+            AssertTextFits(Assert.IsType<TextBlock>(row.Children[3]));
+        }
+
+        return rows;
+    }
+
+    private static void VerifyAllMoteTiersVisible()
+    {
+        var definition = Assert.Single(OverlayPresenters.All, item => item.Key == "motes");
+        var engine = new LogEngine { CharacterName = "Que" };
+        var inventory = new QuestInventory();
+        inventory.ApplyExport("Que", [], DateTime.UtcNow);
+        var view = new OverlayView(new HashSet<ChatChannel>(), [], Inventory: inventory);
+        var content = definition.Render(engine.Snapshot(DateTime.UtcNow), engine, view);
+        var panel = new OverlayPanel(definition.Key, definition.Caption, false) { FontSize = 13 };
+        panel.Update(content.Title, content.Subtitle, content.Rows);
+
+        foreach (bool docked in new[] { false, true })
+        {
+            panel.SetDocked(docked);
+            panel.Measure(new Size(definition.Width, definition.Height));
+            panel.Arrange(new Rect(0, 0, definition.Width, definition.Height));
+            panel.UpdateLayout();
+
+            var scroll = PanelScroll(panel);
+            var stack = Assert.IsType<StackPanel>(scroll.Content);
+            Assert.Equal(MoteValues.MaxRank + 2, stack.Children.Count);
+            Assert.True(scroll.ScrollableHeight <= 1,
+                $"The default {(docked ? "docked" : "floating")} overlay hides {scroll.ScrollableHeight:0.#} pixels.");
+        }
+    }
+
+    private static ScrollViewer PanelScroll(OverlayPanel panel)
+    {
+        var frame = Assert.IsType<Border>(panel.Content);
+        var frameContent = Assert.IsType<Grid>(frame.Child);
+        var bevel = Assert.IsType<Border>(frameContent.Children[0]);
+        var inset = Assert.IsType<Border>(bevel.Child);
+        var layout = Assert.IsType<DockPanel>(inset.Child);
+        return Assert.Single(layout.Children.OfType<ScrollViewer>());
+    }
+
+    private static void AssertTextFits(TextBlock actual)
+    {
+        var unbounded = new TextBlock
+        {
+            Text = actual.Text,
+            FontFamily = actual.FontFamily,
+            FontSize = actual.FontSize,
+            FontWeight = actual.FontWeight,
+            FontStyle = actual.FontStyle,
+            FontStretch = actual.FontStretch,
+        };
+        TextOptions.SetTextFormattingMode(unbounded, TextFormattingMode.Display);
+        unbounded.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        Assert.True(actual.ActualWidth + 1 >= unbounded.DesiredSize.Width,
+            $"'{actual.Text}' needs {unbounded.DesiredSize.Width:0.#} pixels but has {actual.ActualWidth:0.#}.");
     }
 }

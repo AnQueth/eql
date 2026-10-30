@@ -1,8 +1,31 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.23" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.24" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.24
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        See every mote tier, its gear and spell value, and how many you own at a glance.
+        This release history ships with your installed version and works offline.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Mote tiers and values at a glance
+        </Paragraph>
+        <Paragraph>
+            Open the Motes overlay (turn it on under Settings &gt; General &gt; Overlays) to see all
+            ten known mote tiers, even the ones you do not own. Tiers are listed from the smallest
+            upgrade value to the largest. New, unrecognized tiers appear at the end.
+        </Paragraph>
+        <Paragraph>
+            The Gear/Spell column tells you how many points one mote adds: gear first, spells
+            second. For example, 5/16 ≤+4 means 5 points for gear at +4 or lower, or 16 points for
+            spells at any rank. The Owned column shows zero when an inventory export is available,
+            and ? when your owned count is not known. Hover over a tier for details.
+        </Paragraph>
+    </Section>
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,24,0,6">
         What's New in 1.0.23
     </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">

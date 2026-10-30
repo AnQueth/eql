@@ -191,8 +191,10 @@ public static class OverlayPresenters
     }
 
     private const string MoteValuesTip =
-        "Values from the EQLWiki Mote Guide: equipment points / spell points, and the highest equipment +rank the mote works on.\n" +
-        "Going from +N to +N+1 takes 2^N points; extra points carry over. Spells have no rank limit.";
+        "A mote adds points to gear and spells. In the Gear/Spell column, the first number is for gear; the second is for spells.\n" +
+        "The ≤+N part means this mote works on gear at +N or lower. Motes work on spells at any rank.\n" +
+        "Example: 5/16 ≤+4 means 5 gear points at +4 or lower, or 16 spell points at any rank. " +
+        "Values are from the EQLWiki Mote Guide.";
 
     private static OverlayContent Motes(EngineSnapshot s, LogEngine _, OverlayView view)
     {
@@ -213,35 +215,36 @@ public static class OverlayPresenters
             "\nRun /outputfile inventory after spending or moving motes to refresh.";
         var ownedByTier = held?.ToDictionary(g => g.Key, g => g.Sum(i => i.Item.Owned), StringComparer.OrdinalIgnoreCase)
             ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        rows.Add(new("Tier  item/spell pts ≤max", "session (all)", Foreground: Header, Bold: true,
-            ExtraColumn: "Owned", ToolTip: MoteValuesTip + "\n\n" + inventoryTip));
+        rows.Add(new("Tier", "session (all)", Foreground: Header, Bold: true,
+            ExtraColumn: "Owned", ToolTip: MoteValuesTip + "\n\n" + inventoryTip, ValueColumn: "Gear/Spell"));
         var allTime = m.AllTime.ToDictionary(c => c.Tier, c => c.Count, StringComparer.OrdinalIgnoreCase);
         var session = m.Session.ToDictionary(c => c.Tier, c => c.Count, StringComparer.OrdinalIgnoreCase);
         var tiers = allTime.Keys.Union(session.Keys, StringComparer.OrdinalIgnoreCase)
             .Union(ownedByTier.Keys, StringComparer.OrdinalIgnoreCase)
-            .OrderByDescending(t => allTime.GetValueOrDefault(t)).ThenByDescending(t => session.GetValueOrDefault(t))
+            .Union(MoteValues.Tiers, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(t => MoteValues.RankOf(t) ?? int.MaxValue)
             .ThenBy(t => t, StringComparer.OrdinalIgnoreCase);
         foreach (var tier in tiers)
         {
             int n = session.GetValueOrDefault(tier);
             string owned = hasExport || ownedByTier.ContainsKey(tier)
                 ? ownedByTier.GetValueOrDefault(tier).ToString("N0") : "?";
-            string label = tier;
-            string tip = inventoryTip;
+            string value = "?";
+            string tip = $"No upgrade value is known for {tier}.\n\n{inventoryTip}";
             if (MoteValues.RankOf(tier) is int rank)
             {
-                label = $"{tier}  {MoteValues.ItemPoints(rank)}/{MoteValues.SpellPoints(rank)} ≤+{MoteValues.ItemMaxTier(rank)}";
+                value = $"{MoteValues.ItemPoints(rank)}/{MoteValues.SpellPoints(rank)} ≤+{MoteValues.ItemMaxTier(rank)}";
                 tip = $"{MoteTiers.ItemName(tier)} (rank {rank})\n" +
-                    $"Equipment: +{MoteValues.ItemPoints(rank)} pts, usable on items up to +{MoteValues.ItemMaxTier(rank)}\n" +
-                    $"Spells: +{MoteValues.SpellPoints(rank)} pts, any rank\n\n" + inventoryTip;
+                    $"Adds {MoteValues.ItemPoints(rank)} points to gear at +{MoteValues.ItemMaxTier(rank)} or lower.\n" +
+                    $"Adds {MoteValues.SpellPoints(rank)} points to spells at any rank.\n\n" + inventoryTip;
             }
-            rows.Add(new(label, $"{n}  ({allTime.GetValueOrDefault(tier)})", Foreground: n > 0 ? Good : Dim,
-                LootItem: MoteTiers.ItemName(tier), ExtraColumn: owned, ToolTip: tip));
+            rows.Add(new(tier, $"{n}  ({allTime.GetValueOrDefault(tier)})", Foreground: n > 0 ? Good : Dim,
+                LootItem: MoteTiers.ItemName(tier), ExtraColumn: owned, ToolTip: tip, ValueColumn: value));
         }
 
         rows.Add(new("Total", $"{m.SessionTotal}  ({m.AllTimeTotal})", Bold: true,
             ExtraColumn: hasExport || ownedByTier.Count > 0 ? ownedByTier.Values.Sum().ToString("N0") : "?",
-            ToolTip: inventoryTip));
+            ToolTip: inventoryTip, ValueColumn: ""));
 
         if (m.Recent.Count > 0)
         {
