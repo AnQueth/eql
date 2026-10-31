@@ -122,7 +122,7 @@ public partial class MainWindow
             _questProgress = $"Used cached wiki references for {cacheHits:N0} items (no HTTP needed).";
         }
 
-        if (!_questWorking)
+        if (!_questWorking && !WikiLookupPaused)
         {
             var next = items.FirstOrDefault(i =>
             {
@@ -139,11 +139,12 @@ public partial class MainWindow
         }
     }
 
-    private async Task<QuestLookupResult> GetQuestResultAsync(string item, WikiPriority priority = WikiPriority.Interactive)
+    private async Task<QuestLookupResult> GetQuestResultAsync(string item, CancellationToken token, WikiPriority priority = WikiPriority.Interactive)
     {
         item = QuestLookup.ItemTitle(item);
-        var result = await _wikiRepository.GetQuestAsync(item, priority, false, _wikiCts.Token);
-        await _questSaveGate.WaitAsync(_wikiCts.Token);
+        var result = await _wikiRepository.GetQuestAsync(item, priority, false, token);
+        token.ThrowIfCancellationRequested();
+        await _questSaveGate.WaitAsync(token);
         try
         {
             var previous = _questCache.GetValueOrDefault(item);
@@ -151,7 +152,8 @@ public partial class MainWindow
             {
                 return result;
             }
-            await QuestLookupStore.AppendAsync(QuestCachePath, result, _wikiCts.Token);
+            await QuestLookupStore.AppendAsync(QuestCachePath, result, token);
+            token.ThrowIfCancellationRequested();
             _questCache[item] = result;
             if ((previous?.HasQuestReferences == true) != result.HasQuestReferences)
             {
@@ -182,18 +184,26 @@ public partial class MainWindow
 
     private async Task AutoLookupQuestAsync(string item)
     {
+        if (WikiLookupPaused)
+        {
+            return;
+        }
+        using var lookup = BeginWikiLookup();
+        var token = lookup.Token;
         _questWorking = true;
         _questActiveItem = QuestLookup.ItemTitle(item);
         _questProgress = $"Looking up {item}...";
         try
         {
-            var result = await GetQuestResultAsync(item, WikiPriority.Background);
+            var result = await GetQuestResultAsync(item, token, WikiPriority.Background);
             _questFailed.Remove(QuestLookup.ItemTitle(item));
             _questActiveItem = null;
             _questProgress = result.Found ? $"Wiki references checked: {item}."
                 : $"Wiki item page not found: {item}. Cached for 24 hours.";
         }
-        catch (OperationCanceledException) when (_wikiCts.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or IOException or
             UnauthorizedAccessException or JsonException or InvalidOperationException)
         {
@@ -581,13 +591,19 @@ public partial class MainWindow
 
     private async Task LookupSelectedQuestItemAsync(QuestInventoryItem selected)
     {
+        if (WikiLookupPaused)
+        {
+            return;
+        }
+        using var lookup = BeginWikiLookup();
+        var token = lookup.Token;
         long version = ++_questSelectionVersion;
         string item = selected.Item;
         QuestResults.ItemsSource = null;
         QuestLookupStatus.Text = $"Looking up {item} on EQLWiki...";
         try
         {
-            var result = await GetQuestResultAsync(item);
+            var result = await GetQuestResultAsync(item, token);
             if (version != _questSelectionVersion)
             {
                 return;
@@ -600,7 +616,7 @@ public partial class MainWindow
                 ? "No linked quest pages found. This does not prove the item has no quest use; wiki coverage may be incomplete."
                 : $"{result.Quests.Count} quest reference(s). Open a page to check requirements versus rewards.";
         }
-        catch (OperationCanceledException) when (_wikiCts.IsCancellationRequested)
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             if (version == _questSelectionVersion)
             {

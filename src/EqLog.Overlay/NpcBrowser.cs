@@ -257,6 +257,10 @@ public partial class MainWindow
 
     private void StartNpcWikiLookup(bool force)
     {
+        if (WikiLookupPaused)
+        {
+            return;
+        }
         if (_settings.NpcSelectedMob is not { } mob || _settings.NpcSelectedZone is not { } zone)
         {
             _npcWikiStatus = "Choose an NPC or enter an exact name first.";
@@ -316,6 +320,10 @@ public partial class MainWindow
         else
         {
             AddNpcOverviewRows(rows, entry, mob, zone);
+        }
+        if (_settings.NpcView != 0)
+        {
+            rows.AddRange(MobQuestRows(resistanceInfo.Wiki));
         }
         return new(mob, zone, rows, QuestLookup.SearchUrl(mob));
     }

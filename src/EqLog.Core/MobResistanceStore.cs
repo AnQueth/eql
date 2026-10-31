@@ -69,7 +69,7 @@ public sealed record ResistanceObservation(ResistanceType Type, long Landed, lon
 }
 public sealed record MobWikiInfo(string Title, string Url, DateTime CheckedUtc, bool Found,
     string? Level, string? Class, string? HitPoints, IReadOnlyDictionary<ResistanceType, string> Resistances,
-    string? Special = null, MobWikiStats? Stats = null);
+    string? Special = null, MobWikiStats? Stats = null, IReadOnlyList<QuestReference>? Quests = null);
 public sealed record MobWikiStats(string? Race, string? ArmorClass, string? HpRegen, string? ManaRegen,
     string? AttacksPerRound, string? AttackSpeed, string? DamagePerHit, string? AggroRadius,
     string? RunSpeed, string? RespawnTime, string? Location);
@@ -394,6 +394,39 @@ public sealed class MobResistanceStore
         }
     }
 
+    /// <summary>Clears NPC and spell wiki metadata without removing recorded outcomes or reset cutoffs.</summary>
+    /// <param name="path">The resistance observations file.</param>
+    /// <returns>A task completing after the cleared cache is persisted.</returns>
+    public async Task ResetWikiCachesAsync(string path)
+    {
+        await _saveGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            Data snapshot;
+            long version;
+            lock (_gate)
+            {
+                _data.Wiki.Clear();
+                _data.Spells.Clear();
+                _pendingSpells.Clear();
+                _damageBaselines.Clear();
+                version = ++_version;
+                snapshot = _data.Snapshot();
+            }
+            File.Delete(SpellCachePath(path));
+            File.Delete(LegacySpellCachePath(path));
+            await AtomicFile.WriteJsonAsync(path, snapshot).ConfigureAwait(false);
+            lock (_gate)
+            {
+                _savedVersion = version;
+            }
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
+    }
+
     public async Task SaveAsync(string path, CancellationToken ct = default)
     {
         // One save at a time, so overlapping periodic/final saves cannot overwrite newer data with an older snapshot.
@@ -447,7 +480,9 @@ public sealed class MobResistanceStore
                 data.Mobs.Values.Any(spells => spells is null || spells.Values.Any(s => s is null ||
                     string.IsNullOrWhiteSpace(s.Spell) || s.Landed < 0 || s.Resisted < 0 ||
                     s.DamageSamples?.Values.Any(h => h is null || h.Any(pair => pair.Key <= 0 || pair.Value <= 0)) == true)) ||
-                data.Wiki.Values.Any(w => w is null || w.Resistances is null) ||
+                data.Wiki.Values.Any(w => w is null || w.Resistances is null ||
+                    w.Quests?.Any(quest => quest is null || string.IsNullOrWhiteSpace(quest.Title) ||
+                        string.IsNullOrWhiteSpace(quest.Url)) == true) ||
                 data.Spells.Values.Any(s => s is null || string.IsNullOrWhiteSpace(s.Spell)) ||
                 data.Watermarks.Values.Any(w => w is null))
             {

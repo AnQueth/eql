@@ -34,7 +34,7 @@ public partial class MainWindow
 
     private void CheckSpawnWiki()
     {
-        if (_wikiCts.IsCancellationRequested)
+        if (WikiLookupPaused)
         {
             return;
         }
@@ -58,14 +58,17 @@ public partial class MainWindow
 
     private async Task LookupSpawnWikiAsync(string mob)
     {
+        using var lookup = BeginWikiLookup();
+        var token = lookup.Token;
         try
         {
-            var wiki = await _wikiRepository.GetMobAsync(mob, WikiPriority.Background, false, _wikiCts.Token);
+            var wiki = await _wikiRepository.GetMobAsync(mob, WikiPriority.Background, false, token);
+            token.ThrowIfCancellationRequested();
             _engine.SetSpawnWikiRespawn(mob,
                 SpawnStore.TryParseWikiRespawn(wiki.Stats?.RespawnTime, out double seconds) ? seconds : null);
             _spawnsSignature = "";
         }
-        catch (OperationCanceledException) when (_wikiCts.IsCancellationRequested)
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or UnauthorizedAccessException or
@@ -341,6 +344,10 @@ public partial class MainWindow
 
     private void StartMobWikiLookup(bool force, WikiPriority priority)
     {
+        if (WikiLookupPaused)
+        {
+            return;
+        }
         _mobLookupCts?.Cancel();
         _mobLookupCts?.Dispose();
         _mobLookupCts = CancellationTokenSource.CreateLinkedTokenSource(_wikiCts.Token);
@@ -353,6 +360,12 @@ public partial class MainWindow
     private async Task LookupMobInfoAsync(string mob, string zone, bool force, CancellationToken token, WikiPriority priority,
         Action<string>? report = null)
     {
+        if (WikiLookupPaused)
+        {
+            return;
+        }
+        using var lookup = BeginWikiLookup(token);
+        token = lookup.Token;
         void Report(string message)
         {
             if (token.IsCancellationRequested)
@@ -459,6 +472,7 @@ public partial class MainWindow
         {
             rows.Add(new($"Special (wiki): {traits.Special}", Wrap: true, Bold: true));
         }
+        rows.AddRange(MobQuestRows(info.Wiki));
         rows.Add(new("Resistance", "Observed result", Bold: true));
         foreach (var observation in info.Observations)
         {
@@ -526,6 +540,34 @@ public partial class MainWindow
                 Wrap: true, Foreground: Brushes.Coral, Scale: 0.85));
         }
         return new(mob, zone, rows, QuestLookup.SearchUrl(mob));
+    }
+
+    internal static IReadOnlyList<OverlayRow> MobQuestRows(MobWikiInfo? wiki)
+    {
+        if (wiki is not { Found: true })
+        {
+            return [];
+        }
+        var rows = new List<OverlayRow>
+        {
+            new("Associated quests (wiki)", Bold: true, QuestHeading: true),
+        };
+        if (wiki.Quests is null)
+        {
+            rows.Add(new("Quest references have not been loaded yet. Use Refresh wiki.", Wrap: true, Scale: 0.85));
+        }
+        else if (wiki.Quests.Count == 0)
+        {
+            rows.Add(new("No associated quests found in the cached wiki references.", Wrap: true, Scale: 0.85));
+        }
+        else
+        {
+            rows.AddRange(wiki.Quests.Select(quest => new OverlayRow(quest.Title, Link: quest.Url,
+                ToolTip: "Open quest on EQLWiki", Wrap: true)));
+            rows.Add(new("Wiki associations may identify quest givers, enemies, or other mentions; not a turn-in checklist.",
+                Wrap: true, Scale: 0.8));
+        }
+        return rows;
     }
 }
 

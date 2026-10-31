@@ -236,10 +236,12 @@ public partial class MainWindow
 
     private async Task LookupExaltationEffectsAsync(bool force)
     {
-        if (_itemEffectsWorking || _wikiCts.IsCancellationRequested)
+        if (_itemEffectsWorking || WikiLookupPaused)
         {
             return;
         }
+        using var lookup = BeginWikiLookup();
+        var token = lookup.Token;
         _itemEffectsWorking = true;
         if (_refreshExaltations is not null)
         {
@@ -252,7 +254,7 @@ public partial class MainWindow
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             foreach (string item in items)
             {
-                if (_wikiCts.IsCancellationRequested)
+                if (token.IsCancellationRequested)
                 {
                     break;
                 }
@@ -269,7 +271,8 @@ public partial class MainWindow
                 try
                 {
                     var result = await _wikiRepository.GetItemEffectsAsync(item,
-                        force ? WikiPriority.Interactive : WikiPriority.Background, force, _wikiCts.Token);
+                        force ? WikiPriority.Interactive : WikiPriority.Background, force, token);
+                    token.ThrowIfCancellationRequested();
                     _itemEffects[item] = result;
                     _itemEffectErrors.Remove(item);
                     _itemEffectRetries.Remove(item);
@@ -277,7 +280,7 @@ public partial class MainWindow
                     {
                         try
                         {
-                            await AtomicFile.WriteJsonAsync(ItemEffectsPath, _itemEffects.Values.ToArray(), ct: _wikiCts.Token);
+                            await AtomicFile.WriteJsonAsync(ItemEffectsPath, _itemEffects.Values.ToArray(), ct: token);
                             _itemEffectsStorageError = null;
                         }
                         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
@@ -287,7 +290,7 @@ public partial class MainWindow
                         }
                     }
                 }
-                catch (OperationCanceledException) when (_wikiCts.IsCancellationRequested)
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
                     break;
                 }

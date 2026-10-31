@@ -1,7 +1,81 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.28" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.29" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.29
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 31, 2026 at 4:31 PM CT.
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Find quests associated with an NPC, refresh all wiki caches without restarting,
+        and plan upgrades using Equipment-storage items and spare copies.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            NPC quest links in Mob info and NPC compendium
+        </Paragraph>
+        <Paragraph>
+            Use /consider to open Mob info, or select an NPC in NPC compendium. Associated quests
+            (wiki) now lists linked quest pages in every compendium view. Click a quest to open
+            EQLWiki. Unlock floating overlays to use links; docked links are always interactive.
+        </Paragraph>
+        <Paragraph>
+            Associations include the NPC page's related quests and quest pages linking to or
+            embedding that NPC. These are references, not a verified turn-in checklist. Missing
+            associations do not prove an NPC has no quest use. Older NPC caches refresh on lookup;
+            Refresh wiki forces an update. Lookup failures keep previously cached data.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Reset all wiki caches immediately
+        </Paragraph>
+        <Paragraph>
+            Open Settings &gt; General &gt; Wiki caches and click Reset all wiki caches. Pending
+            lookups are cancelled and drained before clearing NPC pages and their quest links,
+            spell metadata, item quest references, Sky quests and drop sources, item effects,
+            and wiki-derived timer fallbacks. Legacy cache files are cleared too.
+        </Paragraph>
+        <Paragraph>
+            No restart is needed. Next lookups fetch fresh information through the normal paced
+            wiki queue; visible panels and inventory checks may refill caches immediately.
+            Tracking history, resistance samples and reset cutoffs, NPC encounters, learned timers,
+            inventory, quest completion and watch lists, and settings are preserved.
+        </Paragraph>
+        <Paragraph>
+            Resistance categories can temporarily show unknown until spell metadata returns.
+            Progress and file errors appear inline without a popup; retry an incomplete reset
+            after fixing its error. Reset is blocked if mob tracking data could not be loaded,
+            so damaged tracking files are not overwritten.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Mote planner includes stored equipment
+        </Paragraph>
+        <Paragraph>
+            In Mote upgrade planner, clear the equipment search to see every exported item,
+            including Equipment storage and installed or collection entries. Selecting an item
+            sets Current to its best exported rank. Run /outputfile inventory to update the list.
+            Selection alone does not verify whether the game allows upgrading that item.
+        </Paragraph>
+        <Paragraph>
+            Use inventory copies now includes Equipment-storage copies as well as loose copies.
+            Your selected Current-rank copy is the target, not a spare; higher-rank copies remain
+            excluded from spares. Installed augments and other collections are selectable targets
+            but are not counted as mergeable copies. For example, a worn Cloak of Scales +8 can
+            use both exported Equipment-storage +2 copies as spares.
+        </Paragraph>
+        <Paragraph>
+            Resource and feeding checkboxes stay visible above the tabs instead of being hidden
+            in an expander. Feed copies with motes first is now unchecked by default. Enable it
+            explicitly to spend motes raising spare copies before merging; feeding can make
+            lower-rank farmed copies useful with mote tiers that higher-rank copies cannot take.
+            Equipment-only controls remain hidden in Spell mode.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.28
     </Paragraph>

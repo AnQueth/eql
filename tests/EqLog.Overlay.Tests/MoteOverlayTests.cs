@@ -10,6 +10,72 @@ namespace EqLog.Overlay.Tests;
 public sealed class MoteOverlayTests
 {
     [Fact]
+    public void PlannerTargets_IncludeEveryExportedItem_WhileCopiesIncludeEquipmentStorage()
+    {
+        var rows = InventoryExport.Parse(
+            "Location\tName\tID\tCount\tSlots\n" +
+            "Bank1\tWhite Dragonscale Cloak +4\t11603\t2\t0\n" +
+            "Back-Slot7\tWhite Dragonscale Cloak (Exaltation)\t11603\t1\t11\n" +
+            "General1\tMote of Greater Potential\t1\t3\t0\n" +
+            "KeyRing\tName\tID\n" +
+            "Equipment\tWhite Dragonscale Cloak +9\t11603\n" +
+            "Augmentation\tWhite Dragonscale Cloak (Exaltation)\t11603\n" +
+            "Mount\tA mount\t2\n");
+
+        var names = MainWindow.PlanTargetNames(rows, "");
+
+        Assert.Equal(["A mount", "Mote of Greater Potential", "White Dragonscale Cloak",
+            "White Dragonscale Cloak (Exaltation)"], names);
+        Assert.Equal(["White Dragonscale Cloak", "White Dragonscale Cloak (Exaltation)"],
+            MainWindow.PlanTargetNames(rows, "white dragonscale"));
+        Assert.Equal(9, MainWindow.PlanTargetRank(rows, "White Dragonscale Cloak"));
+        Assert.Equal([4, 4, 9], MainWindow.PlanCopyRanks(rows, "White Dragonscale Cloak"));
+        Assert.Empty(MainWindow.PlanCopyRanks(rows, "White Dragonscale Cloak (Exaltation)"));
+        Assert.Empty(MainWindow.PlanCopyRanks(rows, "A mount"));
+        Assert.Null(MainWindow.PlanTargetRank(rows, "Missing"));
+    }
+
+    [Fact]
+    public void PlannerTargets_StoredOnlyCloakCountsTargetButNotInstalledAugments()
+    {
+        InventoryExportItem[] rows =
+        [
+            new("Equipment", "White Dragonscale Cloak +9", 11603, 1, InventoryStorage.Other, Collection: true),
+            new("Augmentation", "White Dragonscale Cloak (Exaltation)", 11603, 1, InventoryStorage.Other,
+                Collection: true, Installed: true),
+        ];
+
+        Assert.Contains("White Dragonscale Cloak", MainWindow.PlanTargetNames(rows, "cloak"));
+        Assert.Equal(9, MainWindow.PlanTargetRank(rows, "White Dragonscale Cloak"));
+        var copies = MainWindow.PlanCopyRanks(rows, "White Dragonscale Cloak");
+        Assert.Equal([9], copies);
+        Assert.True(copies.Remove(9));
+        Assert.Empty(copies);
+        Assert.Empty(MainWindow.PlanCopyRanks(rows, "White Dragonscale Cloak (Exaltation)"));
+    }
+
+    [Fact]
+    public void PlannerCopies_CloakOfScalesIncludesBothStoredSparesAfterRemovingWornTarget()
+    {
+        var rows = InventoryExport.Parse(
+            "Location\tName\tID\tCount\tSlots\n" +
+            "Back\tCloak of Scales +8\t1546\t1\t11\n" +
+            "KeyRing\tName\tID\n" +
+            "Equipment\tCloak of Scales +2\t1546\n" +
+            "Equipment\tCloak of Scales +2\t1546\n" +
+            "Augmentation\tCloak of Scales +2\t1546\n" +
+            "Mount\tCloak of Scales +2\t1546\n");
+
+        var copies = MainWindow.PlanCopyRanks(rows, "Cloak of Scales");
+
+        Assert.Equal(8, MainWindow.PlanTargetRank(rows, "Cloak of Scales"));
+        Assert.Equal([2, 2, 8], copies);
+        Assert.True(copies.Remove(8));
+        Assert.Equal([2, 2], copies);
+        Assert.Equal(8, copies.Sum(MoteValues.CopyPoints));
+    }
+
+    [Fact]
     public void PlannerTabs_SwitchTasksWithoutMixingPagesOrRefreshingForNestedControls()
     {
         Exception? failure = null;

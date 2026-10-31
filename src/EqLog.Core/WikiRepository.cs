@@ -16,6 +16,8 @@ public sealed class WikiRepository : IAsyncDisposable
     private readonly AsyncLocal<WikiRequestContext?> _context = new();
     private SkyQuestCatalog? _sky;
     private bool _disposed;
+    private bool _resetting;
+    private long _cacheGeneration;
 
     public event Action<string, Exception>? BackgroundFailed;
 
@@ -58,7 +60,7 @@ public sealed class WikiRepository : IAsyncDisposable
             var cached = _mobs.Get("", mob).Wiki;
             lock (_gate)
             {
-                if (!operation.Force && cached is not null && !(cached.Found && cached.Stats is null) &&
+                if (!operation.Force && cached is not null && !(cached.Found && (cached.Stats is null || cached.Quests is null)) &&
                     DateTime.UtcNow - cached.CheckedUtc < TimeSpan.FromDays(1))
                 {
                     operation.CacheHit = true;
@@ -206,23 +208,23 @@ public sealed class WikiRepository : IAsyncDisposable
         string key = MobResistanceStore.MobKey(spell);
         lock (_gate)
         {
-            if (_disposed || _retryAfter.GetValueOrDefault(key) > DateTime.UtcNow ||
+            if (_disposed || _resetting || _retryAfter.GetValueOrDefault(key) > DateTime.UtcNow ||
                 _operations.ContainsKey("spell:" + key))
             {
                 return;
             }
             // Start the repository operation while holding the same gate used by duplicate observations.
-            _ = ObserveSpellAsync(spell, key);
+            _ = ObserveSpellAsync(spell, key, _cacheGeneration);
         }
     }
 
-    private async Task ObserveSpellAsync(string spell, string key)
+    private async Task ObserveSpellAsync(string spell, string key, long generation)
     {
         try
         {
             await GetSpellAsync(spell, WikiPriority.Background, false, _stop.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (_disposed)
+        catch (OperationCanceledException) when (_disposed || generation != Volatile.Read(ref _cacheGeneration))
         {
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or UnauthorizedAccessException or
@@ -230,6 +232,10 @@ public sealed class WikiRepository : IAsyncDisposable
         {
             lock (_gate)
             {
+                if (generation != _cacheGeneration)
+                {
+                    return;
+                }
                 _retryAfter[key] = DateTime.UtcNow.AddMinutes(5);
             }
             BackgroundFailed?.Invoke(spell, ex);
@@ -244,6 +250,10 @@ public sealed class WikiRepository : IAsyncDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_resetting)
+            {
+                throw new OperationCanceledException("Wiki caches are being reset.");
+            }
             if (!_operations.TryGetValue(key, out operation!) || operation.Cancellation.IsCancellationRequested ||
                 (force && operation.CacheHit))
             {
@@ -333,6 +343,57 @@ public sealed class WikiRepository : IAsyncDisposable
                 }
             }
             _context.Value = null;
+        }
+    }
+
+    /// <summary>Cancels and drains old requests before clearing caches and their application-owned persistence.</summary>
+    /// <param name="resetStorage">Clears persistent caches and application-side copies while new requests are paused.</param>
+    /// <returns>A task completing after caches are cleared and new lookups can start.</returns>
+    public async Task ResetCachesAsync(Func<Task> resetStorage)
+    {
+        ArgumentNullException.ThrowIfNull(resetStorage);
+        Operation[] operations;
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_resetting)
+            {
+                throw new InvalidOperationException("A wiki cache reset is already running.");
+            }
+            _resetting = true;
+            _cacheGeneration++;
+            operations = _operations.Values.ToArray();
+            foreach (var operation in operations)
+            {
+                if (!operation.Finished)
+                {
+                    operation.Cancellation.Cancel();
+                }
+            }
+        }
+        try
+        {
+            await Task.WhenAll(operations.Select(async operation =>
+            {
+                var finished = await Task.WhenAny(operation.Worker, operation.Context.Abandoned).ConfigureAwait(false);
+                await finished.ConfigureAwait(false);
+            })).ConfigureAwait(false);
+            lock (_gate)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                _quests.Clear();
+                _itemEffects.Clear();
+                _sky = null;
+                _retryAfter.Clear();
+            }
+            await resetStorage().ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                _resetting = false;
+            }
         }
     }
 

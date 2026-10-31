@@ -19,7 +19,14 @@ public sealed class MobWikiLookup(HttpClient http)
             return new(mob, QuestLookup.PageUrl(mob), DateTime.UtcNow, false, null, null, null,
                 new Dictionary<ResistanceType, string>());
         }
-        return ParseMob(page.Value.Title, page.Value.Text, DateTime.UtcNow);
+        var info = ParseMob(page.Value.Title, page.Value.Text, DateTime.UtcNow);
+        var references = await new QuestLookup(http).FindReferencesAsync(page.Value.Title, token);
+        return info with
+        {
+            Quests = info.Quests!.Concat(references)
+                .DistinctBy(quest => quest.Url, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(quest => quest.Title, StringComparer.OrdinalIgnoreCase).ToArray(),
+        };
     }
 
     public async Task<SpellResistanceInfo> FindSpellAsync(string spell, CancellationToken token = default)
@@ -92,7 +99,29 @@ public sealed class MobWikiLookup(HttpClient http)
             new MobWikiStats(Field(text, "race"), Field(text, "AC"), Field(text, "HP_regen"), Field(text, "mana_regen"),
                 Field(text, "attacks_per_round"), Field(text, "attack_speed"), Field(text, "damage_per_hit"),
                 Field(text, "agro_radius", "aggro_radius"), Field(text, "run_speed"), Field(text, "respawn_time"),
-                Field(text, "location")));
+                Field(text, "location")), ParseQuestReferences(text));
+    }
+
+    private static IReadOnlyList<QuestReference> ParseQuestReferences(string text)
+    {
+        var field = Regex.Match(text,
+            @"^[ \t]*\|[ \t]*related_quests[ \t]*=([\s\S]*?)(?=^[ \t]*\|[ \t]*[A-Za-z_][A-Za-z0-9_ ]*[ \t]*=|^[ \t]*\}\}|\z)",
+            RegexOptions.Multiline | RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
+        if (!field.Success)
+        {
+            return [];
+        }
+        string value = Regex.Replace(field.Groups[1].Value, @"<!--[\s\S]*?-->", "",
+            RegexOptions.None, TimeSpan.FromSeconds(1));
+        var links = Regex.Matches(value, @"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]|\{\{\s*:([^{}|]+)(?:\|[^{}]*)?\}\}",
+            RegexOptions.None, TimeSpan.FromSeconds(1));
+        return links.Select(link => WebUtility.HtmlDecode(
+                (link.Groups[1].Success ? link.Groups[1].Value : link.Groups[2].Value)
+                    .Split('#')[0].Replace('_', ' ').Trim()))
+            .Where(title => title.Length > 0 && !title.Contains(':'))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .Select(title => new QuestReference(title, QuestLookup.PageUrl(title))).ToArray();
     }
 
     private static string? Field(string text, params string[] aliases)

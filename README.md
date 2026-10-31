@@ -381,6 +381,12 @@ Five color-coded rows show **Magic, Fire, Cold, Poison, and Disease**:
   **Special (wiki)** highlights listed traits such as Cyndreela's **Immune to Flee, See Invis**.
   These traits are separate from elemental resistance values. Use **Refresh wiki** to update
   an older cached page that does not yet include special traits.
+  **Associated quests (wiki)** lists clickable quest pages from the NPC page's related quests
+  and quest-category pages linking to or transcluding that NPC. These appear in Mob info and
+  every NPC compendium view. Click a quest name to open it on EQLWiki; unlock floating overlays
+  first. Associations can mean a quest giver, an enemy, or another mention, not a turn-in checklist.
+  Older NPC caches refresh automatically on lookup; **Refresh wiki** forces an update. Cached links
+  remain available offline, and lookup failures preserve the previous cache and show an error.
 - **Observed result** shows a plain label followed by the percentage and resisted/assessed counts,
   for example **Partial — 65% (13/20)**. Only explicit resist messages enter the resisted count.
   Confirmed damage hits count as landed, even below the damage baseline or while learning it.
@@ -809,6 +815,17 @@ Missing item, NPC, and spell pages are cached for 24 hours before another automa
 Missing item pages are distinguished from existing pages with no quest references.
 Network/API errors are not cached as missing pages; explicit force refresh bypasses cached results.
 
+To check fresh information for every lookup type, use **Settings > General > Wiki caches >
+Reset all wiki caches**. This immediately cancels pending lookups and clears NPC pages (including
+associated quests), spell metadata, item quest references, the Sky catalog/drop sources, item
+effects, and derived wiki timer fallbacks, including legacy cache files. No restart is needed:
+the next lookups fetch from EQLWiki through the normal paced queue. Visible panels and inventory
+lookups refill automatically, so the cache may begin filling again immediately. Learned
+resistances, damage samples, NPC encounters, timers, inventory, quest completion/watch lists,
+and settings are kept. Resistance categories can temporarily show unknown until spell metadata
+is fetched again. Reset progress and any file errors appear inline; an incomplete reset can be
+retried. Reset is blocked if mob tracking data could not be loaded, to avoid overwriting history.
+
 ## Motes
 
 The **Motes** overlay counts the Motes of Potential you loot, from corpses and Reward Chests:
@@ -861,18 +878,24 @@ Choose a task tab:
   apply only to this tab, not Upgrade or Farm copies.
 - **Math**: detailed tables for the actual-inventory Upgrade plan.
 
-The item, **Current**, and **Points** are shared. Expand **Resources and feeding (shared settings)**
-to change which motes and inventory copies are used, or whether spare copies are raised first.
+The item, **Current**, and **Points** are shared. The resource and feeding checkboxes are always
+visible above the tabs so you can change which motes and inventory copies are used, or whether
+spare copies are raised first. Equipment-only controls are hidden in Spell mode.
+**Feed copies with motes first** is unchecked by default; enable it explicitly to spend motes
+on spare copies before merging them.
 
 - Choose **Equipment** or **Spell**, then type a name in the text field. For equipment, typing filters the
   separate inventory dropdown below; clear the text to see all items from your last inventory export. Picking an
-  item sets **Current** to your best copy's rank. Enter **Points** if it already has progress toward the next rank.
+  item sets **Current** to your best exported copy's rank. Every exported item is selectable, including
+  Equipment storage, other collections, installed augments/exaltations, and motes; selection does not
+  verify that the game permits upgrading that item. Enter **Points** if it already has progress toward the next rank.
 - **Use owned motes** spends the motes you own (inventory export plus newer loot). For equipment, each rank uses
   only its matching mote tier; higher tiers are reserved for later ranks rather than spent to reach a lower rank.
 - **Use inventory copies** (equipment only) then merges spare copies of the same item from your inventory export,
   lowest first. A +N copy counts as exactly +N (2^N points), with no partial progress. One copy at the current rank
   is treated as the item being upgraded. Copies ranked above **Current** are never counted as spares (pick their rank
-  as **Current** to plan from them). Collections and installed augments are left out.
+  as **Current** to plan from them). Equipment-storage copies are included alongside loose copies.
+  Other collections and installed augments are selectable targets but are not counted as mergeable spare copies.
 - **What if: change spare copy ranks** lets you choose a hypothetical rank for each inventory
   spare without changing the main item's **Current** rank, actual inventory, or upgrade history.
   For example, two spares changed from +0 and +1 to +5 and +5 supply 64 merge points,

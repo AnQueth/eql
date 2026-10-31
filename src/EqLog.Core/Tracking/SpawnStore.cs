@@ -27,6 +27,12 @@ public sealed partial class SpawnStore : ISnapshotStore<Dictionary<string, Dicti
     private readonly Dictionary<string, Dictionary<string, Entry>> _zones = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, double> _wikiRespawns = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Clears wiki fallback times without changing learned samples, overrides, or tracking choices.</summary>
+    public void ResetWikiCache()
+    {
+        _wikiRespawns.Clear();
+    }
+
     public void SetWikiRespawn(string mob, double? seconds)
     {
         if (seconds is > 0 && double.IsFinite(seconds.Value))

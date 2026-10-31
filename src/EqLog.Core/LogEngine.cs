@@ -473,6 +473,17 @@ public sealed class LogEngine
         }
     }
 
+    /// <summary>Clears derived wiki timer fallbacks while retaining all learned tracking data.</summary>
+    public void ResetWikiCaches()
+    {
+        lock (_gate)
+        {
+            _spawns.Store.ResetWikiCache();
+            _timers.Store.ResetWikiCache();
+            _wikiDurationSources.Clear();
+        }
+    }
+
     public Task SaveSpawnsAsync(string path, bool onlyIfDirty = true, CancellationToken ct = default)
     {
         return SnapshotStore.SaveAsync(_spawns.Store, _gate, path, onlyIfDirty, ct);

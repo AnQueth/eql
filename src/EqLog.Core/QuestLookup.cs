@@ -57,7 +57,6 @@ public sealed class QuestLookup(HttpClient http)
     public async Task<QuestLookupResult> FindAsync(string item, CancellationToken cancellationToken = default)
     {
         item = ItemTitle(item);
-        var quests = new Dictionary<string, QuestReference>(StringComparer.OrdinalIgnoreCase);
         using var resolved = await QueryAsync(new()
         {
             ["titles"] = item,
@@ -70,6 +69,14 @@ public sealed class QuestLookup(HttpClient http)
         }
 
         string title = page.GetProperty("title").GetString()!;
+        var quests = await FindReferencesAsync(title, cancellationToken);
+        return new(item, DateTime.UtcNow, quests);
+    }
+
+    /// <summary>Finds quest references to an already resolved wiki page without normalizing it as an item.</summary>
+    internal async Task<IReadOnlyList<QuestReference>> FindReferencesAsync(string title, CancellationToken cancellationToken)
+    {
+        var quests = new Dictionary<string, QuestReference>(StringComparer.OrdinalIgnoreCase);
         foreach (string generator in new[] { "backlinks", "embeddedin" })
         {
             var args = new Dictionary<string, string>
@@ -127,7 +134,7 @@ public sealed class QuestLookup(HttpClient http)
             while (true);
         }
 
-        return new(item, DateTime.UtcNow, quests.Values.OrderBy(q => q.Title, StringComparer.OrdinalIgnoreCase).ToArray());
+        return quests.Values.OrderBy(q => q.Title, StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
     private async Task<JsonDocument> QueryAsync(Dictionary<string, string> args, CancellationToken cancellationToken)

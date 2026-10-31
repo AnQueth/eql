@@ -40,6 +40,10 @@ public partial class MainWindow
 
     private async Task LoadSkyQuestsAsync(bool refresh, WikiPriority priority = WikiPriority.Interactive)
     {
+        if (WikiLookupPaused)
+        {
+            return;
+        }
         if (_skyLoading)
         {
             if (priority < _skyLoadPriority)
@@ -51,6 +55,8 @@ public partial class MainWindow
             return;
         }
 
+        using var lookup = BeginWikiLookup();
+        var token = lookup.Token;
         _skyLoading = true;
         _skyLoadPriority = priority;
         _skyForceRefresh = refresh;
@@ -62,7 +68,7 @@ public partial class MainWindow
             {
                 try
                 {
-                    _skyCatalog = JsonSerializer.Deserialize<SkyQuestCatalog>(await File.ReadAllTextAsync(SkyCachePath, _wikiCts.Token))
+                    _skyCatalog = JsonSerializer.Deserialize<SkyQuestCatalog>(await File.ReadAllTextAsync(SkyCachePath, token))
                         ?? throw new JsonException("Empty Sky quest cache.");
                     if (_skyCatalog.Quests.Count == 0)
                     {
@@ -83,12 +89,15 @@ public partial class MainWindow
                 {
                     _wikiRepository.SeedSky(_skyCatalog);
                 }
-                _skyCatalog = await _wikiRepository.GetSkyAsync(_skyLoadPriority, _skyForceRefresh, _wikiCts.Token);
-                await AtomicFile.WriteJsonAsync(SkyCachePath, _skyCatalog, ct: _wikiCts.Token);
+                _skyCatalog = await _wikiRepository.GetSkyAsync(_skyLoadPriority, _skyForceRefresh, token);
+                token.ThrowIfCancellationRequested();
+                await AtomicFile.WriteJsonAsync(SkyCachePath, _skyCatalog, ct: token);
             }
             _skyStatus = "";
         }
-        catch (OperationCanceledException) when (_wikiCts.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or
             HttpRequestException or OperationCanceledException or InvalidOperationException or FormatException)
         {
@@ -202,7 +211,7 @@ public partial class MainWindow
 
     private OverlayContent SkyOverlayContent()
     {
-        if (_skyCatalog is null && !_skyLoading && !_skyOverlayLoadAttempted)
+        if (_skyCatalog is null && !_skyLoading && !_skyOverlayLoadAttempted && !WikiLookupPaused)
         {
             _skyOverlayLoadAttempted = true;
             _ = LoadSkyQuestsAsync(false, WikiPriority.Background);

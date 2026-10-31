@@ -23,6 +23,13 @@ public sealed class SpellDurationStore : ISnapshotStore<SpellDurationStore.Dto>
     private readonly HashSet<string> _removed = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _relearnSince = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Clears wiki fallback durations without changing learned samples, overrides, or tracking choices.</summary>
+    public void ResetWikiCache()
+    {
+        _wikiDurations.Clear();
+        IsDirty = true;
+    }
+
     public bool IsDirty
     {
         get; private set;

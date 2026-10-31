@@ -100,7 +100,7 @@ public partial class MainWindow
         _planFeed = new CheckBox
         {
             Content = "Feed copies with motes first",
-            IsChecked = true,
+            IsChecked = false,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 10, 0),
             ToolTip = "Raise spare copies before merging them. A lower-rank copy may still take motes the main item can no longer use, " +
@@ -172,13 +172,7 @@ public partial class MainWindow
         {
             Children =
             {
-                nameRow, _planInventoryName, optionsRow,
-                new Expander
-                {
-                    Header = "Resources and feeding (shared settings)",
-                    Content = new StackPanel { Children = { resourcesRow, feedRow } },
-                    Margin = new Thickness(0, 4, 0, 6),
-                },
+                nameRow, _planInventoryName, optionsRow, resourcesRow, feedRow,
             },
         };
         DockPanel.SetDock(top, Dock.Top);
@@ -206,7 +200,8 @@ public partial class MainWindow
         {
             // An item name left over from Equipment mode is not a spell, so start the spell blank.
             if (_planKind.SelectedIndex == 1 && _planName.Text.Trim().Length > 0 &&
-                CopyRanks(_planName.Text.Trim()).Count > 0)
+                PlanInventoryRows().Any(row => InventoryExport.SplitRank(row.Name).BaseName.Equals(
+                    _planName.Text.Trim(), StringComparison.OrdinalIgnoreCase)))
             {
                 _planName.Text = "";
             }
@@ -314,7 +309,7 @@ public partial class MainWindow
         return owned;
     }
 
-    /// <summary>This character's loose export rows (no collections or installed augments), or none if the export is for someone else.</summary>
+    /// <summary>All export rows for this character, or none if the export is for someone else.</summary>
     private IReadOnlyList<InventoryExportItem> PlanInventoryRows()
     {
         bool current = _inventoryRowsCharacter is not null &&
@@ -324,14 +319,20 @@ public partial class MainWindow
             return [];
         }
 
-        return _inventoryRows.Where(i => !i.Collection && !i.Installed).ToArray();
+        return _inventoryRows;
     }
 
     /// <summary>The +rank of every copy of <paramref name="baseName"/> (one entry per item, so stacks count each copy).</summary>
     private List<int> CopyRanks(string baseName)
     {
+        return PlanCopyRanks(PlanInventoryRows(), baseName);
+    }
+
+    internal static List<int> PlanCopyRanks(IEnumerable<InventoryExportItem> rows, string baseName)
+    {
         var ranks = new List<int>();
-        foreach (var row in PlanInventoryRows())
+        foreach (var row in rows.Where(row => !row.Installed &&
+            (!row.Collection || row.Location.Equals("Equipment", StringComparison.OrdinalIgnoreCase))))
         {
             var (name, rank) = InventoryExport.SplitRank(row.Name);
             if (name.Equals(baseName, StringComparison.OrdinalIgnoreCase))
@@ -351,12 +352,28 @@ public partial class MainWindow
             return;
         }
 
-        var ranks = CopyRanks(baseName);
-        if (ranks.Count > 0)
+        int? rank = PlanTargetRank(PlanInventoryRows(), baseName);
+        if (rank is not null)
         {
-            _planRank.SelectedIndex = Math.Min(ranks[^1], MoteValues.MaxRank);
+            _planRank.SelectedIndex = Math.Min(rank.Value, MoteValues.MaxRank);
             _planPoints.Text = "0";
         }
+    }
+
+    internal static int? PlanTargetRank(IEnumerable<InventoryExportItem> rows, string baseName)
+    {
+        return rows.Select(row => InventoryExport.SplitRank(row.Name))
+            .Where(item => item.BaseName.Equals(baseName, StringComparison.OrdinalIgnoreCase))
+            .Select(item => (int?)item.Rank).Max();
+    }
+
+    internal static string[] PlanTargetNames(IEnumerable<InventoryExportItem> rows, string filter)
+    {
+        return rows.Select(row => InventoryExport.SplitRank(row.Name).BaseName)
+            .Where(name => name.Contains(filter, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private void RefreshHypotheticalCopies(string name, int startRank, List<int> copies, bool equipment)
@@ -431,13 +448,7 @@ public partial class MainWindow
         // The inventory export only lists items, so spells are typed in by name.
         var names = kind == UpgradeKind.Spell
             ? Array.Empty<string>()
-            : PlanInventoryRows()
-                .Select(r => InventoryExport.SplitRank(r.Name).BaseName)
-                .Where(n => MoteTiers.TierOf(n) is null)
-                .Where(n => n.Contains(_planNameFilter, StringComparison.OrdinalIgnoreCase))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+            : PlanTargetNames(PlanInventoryRows(), _planNameFilter);
         _refreshingPlanNames = true;
         try
         {
