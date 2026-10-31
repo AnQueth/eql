@@ -25,6 +25,7 @@ public sealed class DockWindow : Window
     private readonly Dictionary<string, Grid> _byKey = [];
     private readonly Dictionary<string, DockPanelSettings> _placements = [];
     private readonly HashSet<OverlayPanel> _workspaceMoveHandlers = [];
+    private readonly HashSet<(string WorkspaceId, string PanelKey)> _appendOnAdd = [];
     private readonly TextBlock _empty;
     private readonly Border _side = new() { Padding = new Thickness(0) };
     private readonly ColumnDefinition _sideColumn = new() { MinWidth = MinSideWidth };
@@ -591,19 +592,21 @@ public sealed class DockWindow : Window
         }
     }
 
-    public void SetPanelInActiveWorkspace(string key, bool docked, OverlayPlacement fallback)
+    public void SetPanelInActiveWorkspace(string key, bool docked, OverlayPlacement fallback, bool append = false)
     {
-        var panels = Settings.ActiveWorkspace.Panels;
+        var workspace = Settings.ActiveWorkspace;
         if (docked)
         {
-            if (!panels.ContainsKey(key))
+            workspace.DockPanel(key, DockPanelSettings.From(fallback));
+            if (append)
             {
-                panels[key] = DockPanelSettings.From(fallback);
+                _appendOnAdd.Add((Settings.ActiveWorkspace.Id, key));
             }
         }
         else
         {
-            panels.Remove(key);
+            workspace.UndockPanel(key);
+            _appendOnAdd.Remove((Settings.ActiveWorkspace.Id, key));
         }
     }
 
@@ -629,6 +632,8 @@ public sealed class DockWindow : Window
         }
 
         var workspace = Settings.ActiveWorkspace;
+        bool appendRequested = _appendOnAdd.Remove((workspace.Id, panel.Key));
+        bool append = appendRequested && Settings.AutoArrange;
         if (!workspace.Panels.TryGetValue(panel.Key, out var dockPlacement))
         {
             dockPlacement = DockPanelSettings.From(placement);
@@ -653,10 +658,9 @@ public sealed class DockWindow : Window
             Tag = panel.Key,
             AllowDrop = true,
         };
-        var position = dockPlacement.DockLeft is double left && double.IsFinite(left) &&
-            dockPlacement.DockTop is double top && double.IsFinite(top)
-            ? new Point(Math.Max(4, left), Math.Max(4, top))
-            : FindEmptyPosition(tile.Width, tile.Height);
+        var position = RedockPosition(dockPlacement, appendRequested, Settings.AutoArrange,
+            _byKey.Values.Select(other => new Rect(Canvas.GetLeft(other), Canvas.GetTop(other), other.Width, other.Height)))
+            ?? FindEmptyPosition(tile.Width, tile.Height);
         Canvas.SetLeft(tile, position.X);
         Canvas.SetTop(tile, position.Y);
         dockPlacement.DockLeft = position.X;
@@ -739,9 +743,39 @@ public sealed class DockWindow : Window
         _byKey[panel.Key] = tile;
         _placements[panel.Key] = dockPlacement;
         _tiles.Children.Add(tile);
+        if (append)
+        {
+            _anchorKey = panel.Key;
+        }
         BringToFront(tile);
         UpdateEmpty();
         CompactLayout();
+    }
+
+    internal static Point? RedockPosition(DockPanelSettings placement, bool appendRequested, bool autoArrange,
+        IEnumerable<Rect> bounds)
+    {
+        if (appendRequested && autoArrange)
+        {
+            return AppendPosition(bounds);
+        }
+
+        if (placement.DockLeft is double left && double.IsFinite(left) &&
+            placement.DockTop is double top && double.IsFinite(top))
+        {
+            return new Point(Math.Max(CanvasMargin, left), Math.Max(CanvasMargin, top));
+        }
+
+        return null;
+    }
+
+    internal static Point AppendPosition(IEnumerable<Rect> bounds)
+    {
+        double bottom = bounds
+            .Select(rect => rect.Bottom)
+            .DefaultIfEmpty(CanvasMargin - TileGap)
+            .Max();
+        return new Point(CanvasMargin, bottom + TileGap);
     }
 
     private void SetWorkspaceMenu(OverlayPanel panel)

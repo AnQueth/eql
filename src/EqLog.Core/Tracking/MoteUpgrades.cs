@@ -244,11 +244,17 @@ public static class MoteUpgradePlanner
     /// <param name="copies">+rank of each spare equipment copy to merge in (ignored for spells).</param>
     /// <param name="feed">Feed spare copies with motes first (equipment only); null plans without feeding.</param>
     public static UpgradePlan Plan(UpgradeKind kind, int startRank, int startPoints,
-        IReadOnlyDictionary<int, int> ownedMotes, IReadOnlyList<int> copies, FeedOptions? feed = null)
+        IReadOnlyDictionary<int, int> ownedMotes, IReadOnlyList<int> copies, FeedOptions? feed = null,
+        int targetRank = MoteValues.MaxRank)
     {
         if (startRank is < 0 or > MoteValues.MaxRank)
         {
             throw new ArgumentOutOfRangeException(nameof(startRank), "Rank must be 0 to 10.");
+        }
+
+        if (targetRank < startRank || targetRank > MoteValues.MaxRank)
+        {
+            throw new ArgumentOutOfRangeException(nameof(targetRank), "Target rank must be between the current rank and 10.");
         }
 
         var motes = new int[MoteValues.MaxRank + 1];
@@ -277,24 +283,27 @@ public static class MoteUpgradePlanner
         int points = startRank < MoteValues.MaxRank
             ? Math.Clamp(startPoints, 0, MoteValues.PointsToNext(startRank) - 1)
             : 0;
-        var baseline = new UpgradePlan(kind, Simulate(kind, startRank, points, (int[])motes.Clone(), [.. availableCopies]));
-        if (kind != UpgradeKind.Equipment || feed is not { Enabled: true } || startRank >= MoteValues.MaxRank)
+        var baseline = new UpgradePlan(kind, Simulate(kind, startRank, points, (int[])motes.Clone(), [.. availableCopies], targetRank));
+        if (kind != UpgradeKind.Equipment || feed is not { Enabled: true } || startRank >= targetRank)
         {
             return baseline;
         }
 
-        int remaining = (1 << MoteValues.MaxRank) - (1 << startRank) - points;
+        int remaining = (1 << targetRank) - (1 << startRank) - points;
         var fedMotes = (int[])motes.Clone();
         var fed = Feed(fedMotes, spareCopies, extraCopyCount, extraCopyRank, feed.FeedUsableMotes, startRank, remaining);
-        var fedSteps = Simulate(kind, startRank, points, fedMotes, fed.Select(f => f.EndRank).OrderBy(r => r).ToList());
+        var fedSteps = Simulate(kind, startRank, points, fedMotes, fed.Select(f => f.EndRank).OrderBy(r => r).ToList(), targetRank);
         var fedPlan = new UpgradePlan(kind, fedSteps, fed.Where(f => f.Motes.Count > 0).ToArray(), baseline);
         return fedPlan.FedCopies.Count > 0 && fedPlan.IsBetterThan(baseline)
             ? fedPlan
-            : baseline with { Baseline = baseline };
+            : baseline with
+            {
+                Baseline = baseline,
+            };
     }
 
     /// <summary>
-    /// Finds the fewest additional copies of the selected rank needed to reach +10 using the supplied motes and copies.
+    /// Finds the fewest additional copies of the selected rank needed to reach the target using the supplied motes and copies.
     /// Any extra copies already listed in <paramref name="feed"/> are included in the plan.
     /// </summary>
     /// <param name="startRank">The current equipment rank.</param>
@@ -302,9 +311,10 @@ public static class MoteUpgradePlanner
     /// <param name="ownedMotes">Owned motes by rank (1-10).</param>
     /// <param name="copies">Available spare equipment copies by rank.</param>
     /// <param name="feed">Feeding settings and any extra copies already available to farm.</param>
-    /// <returns>The minimum number of additional copies of the selected farm rank required to reach +10.</returns>
+    /// <returns>The minimum number of additional copies of the selected farm rank required to reach the target.</returns>
     public static int MinimumAdditionalCopiesToFinish(int startRank, int startPoints,
-        IReadOnlyDictionary<int, int> ownedMotes, IReadOnlyList<int> copies, FeedOptions feed)
+        IReadOnlyDictionary<int, int> ownedMotes, IReadOnlyList<int> copies, FeedOptions feed,
+        int targetRank = MoteValues.MaxRank)
     {
         ArgumentNullException.ThrowIfNull(ownedMotes);
         ArgumentNullException.ThrowIfNull(copies);
@@ -323,10 +333,10 @@ public static class MoteUpgradePlanner
         int effectivePoints = startRank < MoteValues.MaxRank
             ? Math.Clamp(startPoints, 0, MoteValues.PointsToNext(startRank) - 1)
             : 0;
-        int pointsRemaining = Math.Max(0, (1 << MoteValues.MaxRank) - (1 << startRank) - effectivePoints);
+        int pointsRemaining = Math.Max(0, (1 << targetRank) - (1 << startRank) - effectivePoints);
         int farmCopyPoints = MoteValues.CopyPoints(feed.FodderRank);
         int high = CeilDiv(pointsRemaining, farmCopyPoints);
-        var current = Plan(UpgradeKind.Equipment, startRank, effectivePoints, ownedMotes, copies, feed);
+        var current = Plan(UpgradeKind.Equipment, startRank, effectivePoints, ownedMotes, copies, feed, targetRank);
         if (current.MissingPoints == 0 || high == 0)
         {
             return 0;
@@ -336,8 +346,11 @@ public static class MoteUpgradePlanner
         while (low < high)
         {
             int additional = low + (high - low) / 2;
-            var candidateFeed = feed with { FodderCopies = Math.Max(0, feed.FodderCopies) + additional };
-            var candidate = Plan(UpgradeKind.Equipment, startRank, effectivePoints, ownedMotes, copies, candidateFeed);
+            var candidateFeed = feed with
+            {
+                FodderCopies = Math.Max(0, feed.FodderCopies) + additional,
+            };
+            var candidate = Plan(UpgradeKind.Equipment, startRank, effectivePoints, ownedMotes, copies, candidateFeed, targetRank);
             if (candidate.MissingPoints == 0)
             {
                 high = additional;
@@ -448,10 +461,11 @@ public static class MoteUpgradePlanner
         return true;
     }
 
-    private static List<UpgradeStep> Simulate(UpgradeKind kind, int startRank, int points, int[] motes, List<int> spareCopies)
+    private static List<UpgradeStep> Simulate(UpgradeKind kind, int startRank, int points, int[] motes, List<int> spareCopies,
+        int targetRank)
     {
         var steps = new List<UpgradeStep>();
-        for (int rank = startRank; rank < MoteValues.MaxRank; rank++)
+        for (int rank = startRank; rank < targetRank; rank++)
         {
             int needed = MoteValues.PointsToNext(rank);
             int start = points;

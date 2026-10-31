@@ -16,7 +16,7 @@ public sealed record ActiveAlert(string Text, Brush Color, DateTime Expires, Ale
 /// <summary>Per-render options the presenters need from the app.</summary>
 public sealed record OverlayView(ISet<ChatChannel> ChatChannels, IReadOnlyList<ActiveAlert> Alerts, int LootGrouping = 0,
     QuestInventory? Inventory = null, WikiActivitySnapshot? WikiActivity = null, QuestWikiActivity? QuestWiki = null,
-    IReadOnlyList<ChatEvent>? RecentChat = null, DpsFightKey? DpsFight = null);
+    IReadOnlyList<ChatEvent>? RecentChat = null, DpsFightKey? DpsFight = null, string? CharacterName = null);
 
 /// <summary>Identifies one fight chosen in the DPS overlay picker.</summary>
 public sealed record DpsFightKey(string Target, DateTime Start)
@@ -110,12 +110,46 @@ public static class OverlayPresenters
         new("npcs", "NPC compendium", 620, 720, false, (_, _, _) => new("NPC compendium", null, [])),
         new("wiki", "Wiki activity", 480, 360, false, WikiActivity),
         new("inventory", "Inventory & loot quests", 680, 620, false, (_, _, _) => new("Inventory & loot quests", null, [])),
+        new("itemupgrades", "Item upgrades", 460, 320, false, ItemUpgrades),
         new("moteplan", "Mote upgrade planner", 520, 560, false, (_, _, _) => new("Mote upgrade planner", null, [])),
         new("exaltations", "Exaltations", 620, 560, false, (_, _, _) => new("Exaltations", null, [])),
     ];
 
     private const int MaxRequestRows = 15;
     private const int MaxQueuedTooltipItems = 40;
+
+    private static OverlayContent ItemUpgrades(EngineSnapshot _, LogEngine __, OverlayView view)
+    {
+        string? character = view.CharacterName;
+        var upgrades = view.Inventory?.RecentUpgrades
+            .Where(entry => character is not null &&
+                entry.Character.Equals(character, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(entry => entry.TimeUtc)
+            .Take(100)
+            .ToArray() ?? [];
+        var rows = new List<OverlayRow>();
+        if (character is null)
+        {
+            rows.Add(new("Waiting for a character inventory export.", Wrap: true, Foreground: Dim));
+        }
+        else if (upgrades.Length == 0)
+        {
+            rows.Add(new("No item rank-ups recorded. A new export showing a higher +rank will appear here.",
+                Wrap: true, Foreground: Dim));
+        }
+        else
+        {
+            foreach (var upgrade in upgrades)
+            {
+                string previous = upgrade.PreviousRank == 0 ? "+0" : $"+{upgrade.PreviousRank}";
+                string current = upgrade.NewRank == 0 ? "+0" : $"+{upgrade.NewRank}";
+                rows.Add(new(upgrade.Item, $"{previous} to {current}",
+                    Details: upgrade.TimeUtc.ToLocalTime().ToString("g"), Bold: true));
+            }
+        }
+
+        return new("Item upgrades", character, rows);
+    }
 
     private static OverlayContent WikiActivity(EngineSnapshot _, LogEngine __, OverlayView view)
     {

@@ -20,6 +20,8 @@ public sealed class QuestInventory : IJsonOnDeserialized
     public HashSet<string> Completed { get; set; } = [];
     public Dictionary<string, DateTime> ExportTimes { get; set; } = [];
     public List<InventoryLootDelta> RecentLoot { get; set; } = [];
+    public List<InventoryItemRank> ItemRanks { get; set; } = [];
+    public List<InventoryUpgradeEvent> RecentUpgrades { get; set; } = [];
 
     /// <summary>A detached copy that can be serialized on another thread while this one keeps changing.</summary>
     public QuestInventory Clone()
@@ -31,12 +33,16 @@ public sealed class QuestInventory : IJsonOnDeserialized
             Completed = new(Completed, Completed.Comparer),
             ExportTimes = new(ExportTimes, ExportTimes.Comparer),
             RecentLoot = [.. RecentLoot],
+            ItemRanks = [.. ItemRanks],
+            RecentUpgrades = [.. RecentUpgrades],
         };
     }
 
     void IJsonOnDeserialized.OnDeserialized()
     {
         LootWatermarks ??= [];
+        ItemRanks ??= [];
+        RecentUpgrades ??= [];
         if (ImportedLines is null)
         {
             return;
@@ -123,6 +129,7 @@ public sealed class QuestInventory : IJsonOnDeserialized
     public void ApplyExport(string character, IReadOnlyList<InventoryExportItem> rows, DateTime writtenUtc)
     {
         string key = character.ToUpperInvariant();
+        RecordItemUpgrades(character, rows, writtenUtc);
         var byName = new Dictionary<string, QuestInventoryItem>(ItemNames.Comparer);
         foreach (var item in Items.Where(i => i.Character.Equals(character, StringComparison.OrdinalIgnoreCase)))
         {
@@ -165,6 +172,45 @@ public sealed class QuestInventory : IJsonOnDeserialized
         }
 
         ExportTimes[key] = writtenUtc;
+    }
+
+    private void RecordItemUpgrades(string character, IReadOnlyList<InventoryExportItem> rows, DateTime writtenUtc)
+    {
+        var knownRanks = ItemRanks
+            .Where(item => item.Character.Equals(character, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(item => item.Item, ItemNames.Comparer)
+            .ToDictionary(group => group.Key, group => group.Max(item => item.Rank), ItemNames.Comparer);
+        var observedRanks = rows
+            .Select(row => InventoryExport.SplitRank(row.Name))
+            .GroupBy(item => item.BaseName, ItemNames.Comparer)
+            .ToDictionary(group => group.Key, group => group.Max(item => item.Rank), ItemNames.Comparer);
+
+        foreach (var (item, rank) in observedRanks)
+        {
+            if (knownRanks.TryGetValue(item, out int previousRank) && rank > previousRank)
+            {
+                RecentUpgrades.Add(new(character, item, previousRank, rank, writtenUtc));
+            }
+        }
+
+        ItemRanks.RemoveAll(item => item.Character.Equals(character, StringComparison.OrdinalIgnoreCase));
+        ItemRanks.AddRange(observedRanks.Select(item => new InventoryItemRank(character, item.Key, item.Value)));
+
+        var excessUpgradeIndexes = RecentUpgrades
+            .Select((entry, index) => (Entry: entry, Index: index))
+            .Where(pair => pair.Entry.Character.Equals(character, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(pair => pair.Entry.TimeUtc)
+            .ThenByDescending(pair => pair.Index)
+            .Skip(100)
+            .Select(pair => pair.Index)
+            .ToHashSet();
+        for (int index = RecentUpgrades.Count - 1; index >= 0; index--)
+        {
+            if (excessUpgradeIndexes.Contains(index))
+            {
+                RecentUpgrades.RemoveAt(index);
+            }
+        }
     }
 
     public static string CompletionKey(string character, string quest)
@@ -280,3 +326,7 @@ public sealed class QuestInventoryItem : INotifyPropertyChanged
 }
 
 public sealed record InventoryLootDelta(string Character, string Item, int Quantity, DateTime TimeUtc);
+
+public sealed record InventoryItemRank(string Character, string Item, int Rank);
+
+public sealed record InventoryUpgradeEvent(string Character, string Item, int PreviousRank, int NewRank, DateTime TimeUtc);

@@ -8,6 +8,78 @@ public class MoteUpgradeTests
     private static readonly Dictionary<int, int> NoMotes = [];
 
     [Theory]
+    [InlineData(6, 7, 2)]
+    [InlineData(7, 8, 4)]
+    [InlineData(8, 9, 8)]
+    [InlineData(9, 10, 16)]
+    [InlineData(6, 8, 6)]
+    [InlineData(6, 9, 14)]
+    public void FarmedPlusFiveCopiesCoverSelectedTarget(int startRank, int targetRank, int expected)
+    {
+        var feed = new FeedOptions(Enabled: false, FodderRank: 5);
+        int additional = MoteUpgradePlanner.MinimumAdditionalCopiesToFinish(
+            startRank, 0, NoMotes, [], feed, targetRank);
+
+        Assert.Equal(expected, additional);
+        var plan = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, startRank, 0, NoMotes, [],
+            feed with
+            {
+                FodderCopies = additional,
+            }, targetRank);
+        Assert.Equal(0, plan.MissingPoints);
+        Assert.Equal(targetRank, plan.Steps[^1].ToRank);
+        var fewer = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, startRank, 0, NoMotes, [],
+            feed with
+            {
+                FodderCopies = additional - 1,
+            }, targetRank);
+        Assert.True(fewer.MissingPoints > 0);
+    }
+
+    [Fact]
+    public void FarmTargetSubtractsExistingCopiesAndProgress()
+    {
+        int additional = MoteUpgradePlanner.MinimumAdditionalCopiesToFinish(
+            6, 32, NoMotes, [5], new FeedOptions(FodderRank: 5), targetRank: 7);
+
+        Assert.Equal(0, additional);
+    }
+
+    [Fact]
+    public void FarmTargetCanFeedSelectedCopiesWithOwnedMotes()
+    {
+        var motes = new Dictionary<int, int> { [6] = 6 };
+        int additional = MoteUpgradePlanner.MinimumAdditionalCopiesToFinish(
+            6, 0, motes, [], new FeedOptions(FodderRank: 5), targetRank: 7);
+
+        Assert.Equal(1, additional);
+        Assert.Equal(2, MoteUpgradePlanner.MinimumAdditionalCopiesToFinish(
+            6, 0, motes, [], new FeedOptions(Enabled: false, FodderRank: 5), targetRank: 7));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void HypotheticalPlusFiveCopiesFinishThePlusSixStepWithoutChangingInventory(bool feed)
+    {
+        var inventoryCopies = new List<int> { 0, 1 };
+        var original = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 6, 0, NoMotes, inventoryCopies,
+            new FeedOptions(Enabled: feed));
+        var hypothetical = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 6, 0, NoMotes, [5, 5],
+            new FeedOptions(Enabled: feed));
+
+        Assert.Equal(9, original.Steps[0].Missing);
+        var step = hypothetical.Steps[0];
+        Assert.Equal(6, step.FromRank);
+        Assert.Equal(7, step.ToRank);
+        Assert.Equal(64, step.Needed);
+        Assert.Equal(0, step.Missing);
+        Assert.Equal(0, step.CarryAfter);
+        Assert.Equal([new UpgradeUse(5, 2, IsCopy: true)], step.Used);
+        Assert.Equal([0, 1], inventoryCopies);
+    }
+
+    [Theory]
     [InlineData("Infinitesimal", 1, 1, 0, 1)]
     [InlineData("Potential", 4, 4, 3, 8)]
     [InlineData("Major", 5, 5, 4, 16)]

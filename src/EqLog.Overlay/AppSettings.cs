@@ -269,7 +269,7 @@ public sealed class DockWindowSettings : IJsonOnDeserialized
         {
             if (workspace != target)
             {
-                workspace.Panels.Remove(key);
+                workspace.UndockPanel(key);
             }
         }
 
@@ -304,8 +304,26 @@ public sealed class DockWorkspaceSettings
 
     public Dictionary<string, DockPanelSettings> Panels { get; set; } = [];
 
+    public Dictionary<string, DockPanelSettings> UndockedPanels { get; set; } = [];
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+
+    public void UndockPanel(string key)
+    {
+        if (Panels.Remove(key, out var placement))
+        {
+            UndockedPanels[key] = placement.Clone();
+        }
+    }
+
+    public void DockPanel(string key, DockPanelSettings fallback)
+    {
+        if (!Panels.ContainsKey(key))
+        {
+            Panels[key] = UndockedPanels.Remove(key, out var saved) ? saved.Clone() : fallback.Clone();
+        }
+    }
 
     public DockWorkspaceSettings Clone()
     {
@@ -313,6 +331,7 @@ public sealed class DockWorkspaceSettings
         copy.Panels = Panels is null
             ? null!
             : Panels.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(), Panels.Comparer);
+        copy.UndockedPanels = UndockedPanels.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(), UndockedPanels.Comparer);
         copy.ExtensionData = SettingsExtensionData.Copy(ExtensionData);
         return copy;
     }

@@ -1,8 +1,58 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.25" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.26" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.26
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 30, 2026 at 10:31 PM CT.
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Track item rank-ups and explore more ways to plan upgrades with the items and motes you have.
+        This release history ships with your installed version and works offline.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            See item rank-ups from inventory exports
+        </Paragraph>
+        <Paragraph>
+            Turn on Item upgrades under Settings &gt; General &gt; Overlays. After the first inventory
+            export establishes each item's starting rank, a later export that shows a higher +rank
+            adds an entry with the previous and new rank and the export's local date and time.
+        </Paragraph>
+        <Paragraph>
+            In game, run /outputfile inventory to create or update the export. The overlay keeps the
+            latest 100 rank-ups per character across restarts. It compares ranks, not quantities, so
+            the first export is a baseline and only later rank increases are recorded.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Compare farming plans and spare-copy scenarios
+        </Paragraph>
+        <Paragraph>
+            Enable Mote upgrade planner under Settings &gt; General &gt; Overlays. For equipment, use
+            Farm copies to choose a copy rank and see how many additional copies would reach each
+            target with your selected motes and inventory copies. Extra copies already planned are
+            included in that scenario; its totals stay separate from the Upgrade instructions.
+        </Paragraph>
+        <Paragraph>
+            In What if, change the ranks of spare copies to compare a simulated plan while keeping
+            your main item's current rank unchanged. These hypothetical ranks affect only that view
+            and never change your inventory or recorded upgrade history.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Docked panels return to their saved placement
+        </Paragraph>
+        <Paragraph>
+            Undocking a panel now remembers its last position and size in that workspace. Dock it
+            again to restore that placement instead of having to arrange the panel from scratch.
+        </Paragraph>
+    </Section>
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,24,0,6">
         What's New in 1.0.25
     </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">

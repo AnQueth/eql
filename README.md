@@ -257,8 +257,11 @@ window position and size.
 Newly docked panels without saved positions are placed in available space automatically.
 **Auto-arrange** in the dock window's top bar is off by default: panels stay exactly where you
 drag and resize them (they may overlap and never reflow on window or splitter resizes).
+Undocking remembers the panel's last position and size in that workspace; redocking restores
+them when Auto-arrange is off, including after restarting the app.
 Tick it to re-pack the current layout and enable automatic rearranging. The choice is saved
-across restarts.
+across restarts. With Auto-arrange on, undocking reflows the remaining panels and redocking
+places the panel after the others.
 Buttons, filters, and scrollbars remain interactive even when floating overlays are locked.
 
 The **Loot** overlay selector offers **Recent drops**, **Grouped: most recent**, and
@@ -305,6 +308,7 @@ as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels r
 | Mote upgrade planner | Motes and spare item copies needed for each step from an item's or spell's current +rank to +10 (see below) |
 | Sky quest tracker | Plane of Sky class quests, rewards, required items, drop sources, and watched quests |
 | Inventory & loot quests | Owned counts by storage location, item/quest wiki links, quest completion, and upgrade-rank merge candidates |
+| Item upgrades | Item ranks that increased between inventory exports, with the local date and time of each upgrade |
 | Exaltations | Search by effect to find installed and loose exaltations, their host items, and exact exported locations |
 | Quest opportunities | Searchable item-to-quest references with inventory counts and lookup progress |
 
@@ -554,6 +558,14 @@ panel; unlock a floating copy to type in it). It has two tabs:
   listed, because they look like stackable items. Collections and installed augments are left out.
   Repeated worn slots (ears, wrists, rings, Any Slot) are numbered by their order in the export.
   The filter box matches item names and locations.
+
+### Item upgrades overlay
+
+The **Item upgrades** overlay records an item when a later inventory export shows a higher
+`+N` rank than the previous export for that character (for example, `+1` to `+2`). The first
+export for an item establishes its baseline; item quantities are not tracked for upgrade events.
+Each entry includes the export's local date and time. The most recent 100 rank-ups per character
+are saved in the tracking data and remain available after restarting the app.
 
 ### Exaltations overlay
 
@@ -806,6 +818,18 @@ counted, so reading the same log again on the next launch doesn't count drops tw
 The **Mote upgrade planner** overlay (hidden and docked by default) works out what it takes to get an item or spell
 to +10. Going from +N to +N+1 takes 2^N points (1, 2, 4 … 512), and extra points carry into the next step.
 
+Choose a task tab:
+- **Upgrade**: instructions using your actual inventory and selected owned motes.
+- **Farm copies**: choose **Copy level to farm** and see how many more copies reach each target.
+  **Extra copies already planned** subtracts copies you have already included in your farming scenario.
+  This tab does not mix farming totals with the Upgrade instructions.
+- **What if**: change spare copy ranks and see the simulated upgrade instructions. These changes
+  apply only to this tab, not Upgrade or Farm copies.
+- **Math**: detailed tables for the actual-inventory Upgrade plan.
+
+The item, **Current**, and **Points** are shared. Expand **Resources and feeding (shared settings)**
+to change which motes and inventory copies are used, or whether spare copies are raised first.
+
 - Choose **Equipment** or **Spell**, then type a name in the text field. For equipment, typing filters the
   separate inventory dropdown below; clear the text to see all items from your last inventory export. Picking an
   item sets **Current** to your best copy's rank. Enter **Points** if it already has progress toward the next rank.
@@ -815,12 +839,18 @@ to +10. Going from +N to +N+1 takes 2^N points (1, 2, 4 … 512), and extra poin
   lowest first. A +N copy counts as exactly +N (2^N points), with no partial progress. One copy at the current rank
   is treated as the item being upgraded. Copies ranked above **Current** are never counted as spares (pick their rank
   as **Current** to plan from them). Collections and installed augments are left out.
+- **What if: change spare copy ranks** lets you choose a hypothetical rank for each inventory
+  spare without changing the main item's **Current** rank, actual inventory, or upgrade history.
+  For example, two spares changed from +0 and +1 to +5 and +5 supply 64 merge points,
+  enough to take a +6 main item to +7 without motes. Feeding remains available.
+  **Reset to inventory ranks** restores the exported values; changing the item, character,
+  current rank, or inventory export also resets the hypothetical ranks.
 - Each step shows the points needed, the points carried in, what is used, any **Missing** motes (counted in the tier
   that matches the step, such as Major for +4 → +5) and the carry into the next step. Totals are listed underneath.
   When a merge alone finishes a step, the plan says so; any motes listed for that step only go in first because they
   stop working at the next rank, and their points carry over.
   A plain-language **What to do** list comes first, including why a tier is needed (for example, Infinite is the only
-  mote that still works on a +9 item); tick **Show the math** for the full tables.
+  mote that still works on a +9 item); open **Math** for the full tables of the actual-inventory plan.
 - **Feed copies with motes first** (on by default) raises spare copies with motes before merging them. A lower-rank
   copy may still take motes the main item can no longer use, and raising a copy to +N costs 2^N − 1 points while
   merging it gives 2^N, so feeding can turn those motes into a more valuable copy. For example, with the main item
@@ -832,9 +862,15 @@ to +10. Going from +N to +N+1 takes 2^N points (1, 2, 4 … 512), and extra poin
     exactly 2^N.
   - **Include motes the item can still use** (on by default) also feeds motes the main item could take now, which
     helps when you have more of a tier than the main item can use before it outgrows it.
-  - **Extra copies to farm** and **at** let you set how many more copies you could get and their current +rank. The plain-language
-    plan estimates the minimum number of additional copies at that rank needed to finish using your selected motes and copies.
-    It assumes the extra copies are available whether they are fed or merged as-is.
+  - In **Farm copies**, set **Copy level to farm** and **Extra copies already planned**.
+    Extra copies are counted whether they are fed or merged as-is, only in the farming scenario.
+    The tab gives simple answers such as
+    **Reach +8: farm 1 more +4 copy.** Each answer starts from **Current** and uses your
+    selected motes, copies, progress and feeding. Pick ONE target; do not add the totals together.
+    Open **Upgrade** for the mote-based plan, or expand
+    **Compare: copies only, one level at a time** in Farm copies to ignore
+    all resources and feeding. For +5 copies alone, +6 to +7 takes 2, +7 to +8 takes 4,
+    and +8 to +9 takes 8.
   - Feeding is only used when it leaves fewer points missing, or the same with smaller motes spent.
 - In **Spell** mode the copy, feeding and farming options are hidden, the name list is empty (type the spell name) and
   an item name left over from Equipment mode is cleared.

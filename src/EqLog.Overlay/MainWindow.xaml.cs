@@ -599,7 +599,7 @@ public partial class MainWindow : Window
     private void SetDocked(string key, bool docked)
     {
         bool changed = _dock.IsPanelInActiveWorkspace(key) != docked;
-        _dock.SetPanelInActiveWorkspace(key, docked, _settings.Overlays[key]);
+        _dock.SetPanelInActiveWorkspace(key, docked, _settings.Overlays[key], append: docked && changed);
         _settings.Overlays[key].Docked = _dock.IsPanelInAnyWorkspace(key);
         _dockToggles[key].IsChecked = _dock.IsPanelInActiveWorkspace(key);
         ApplyMode(key);
@@ -756,7 +756,7 @@ public partial class MainWindow : Window
 
     private static OverlayPlacement DefaultPlacement(OverlayDefinition def, int index, Rect work)
     {
-        if (def.Key is "npcs" or "wiki" or "inventory" or "moteplan" or "exaltations")
+        if (def.Key is "npcs" or "wiki" or "inventory" or "itemupgrades" or "moteplan" or "exaltations")
         {
             return new OverlayPlacement
             {
@@ -1143,9 +1143,16 @@ public partial class MainWindow : Window
             RefreshDpsChoices(snap);
         }
 
-        var view = new OverlayView(_chatChannels, UpdateAlerts(real), _settings.LootGrouping, _questInventory,
+        var view = new OverlayView(
+            _chatChannels,
+            UpdateAlerts(real),
+            _settings.LootGrouping,
+            _questInventory,
             renderWiki ? _wikiRepository.GetActivity() : null,
-            renderWiki ? GetQuestWikiActivity() : null, frame.Chat, _dpsFight);
+            renderWiki ? GetQuestWikiActivity() : null,
+            frame.Chat,
+            _dpsFight,
+            _characterName);
         if (LogLinesTab.IsSelected)
         {
             RefreshRawLines();

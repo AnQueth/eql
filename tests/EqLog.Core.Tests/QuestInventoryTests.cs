@@ -174,4 +174,86 @@ public class QuestInventoryTests
         Assert.Equal(0, duplicate.Owned);
         Assert.Equal(2, inventory.Items.Count);
     }
+
+    [Fact]
+    public void ApplyExport_RecordsOnlyNewHigherRanksAndPersistsUpgradeHistory()
+    {
+        var firstExport = new DateTime(2026, 10, 29, 12, 0, 0, DateTimeKind.Utc);
+        var secondExport = firstExport.AddHours(1);
+        var inventory = new QuestInventory();
+
+        inventory.ApplyExport("Que",
+            [new("Held", "Sword +1", 1, 1, InventoryStorage.Carried)], firstExport);
+        Assert.Empty(inventory.RecentUpgrades);
+
+        inventory.ApplyExport("Que",
+            [new("Held", "sword +2", 1, 30, InventoryStorage.Carried)], secondExport);
+
+        var upgrade = Assert.Single(inventory.RecentUpgrades);
+        Assert.Equal("Que", upgrade.Character);
+        Assert.Equal("sword", upgrade.Item);
+        Assert.Equal(1, upgrade.PreviousRank);
+        Assert.Equal(2, upgrade.NewRank);
+        Assert.Equal(secondExport, upgrade.TimeUtc);
+
+        var loaded = System.Text.Json.JsonSerializer.Deserialize<QuestInventory>(
+            System.Text.Json.JsonSerializer.Serialize(inventory))!;
+        loaded.ApplyExport("QUE",
+            [new("Held", "SWORD +2", 1, 1, InventoryStorage.Carried)], secondExport.AddHours(1));
+        loaded.ApplyExport("QUE",
+            [new("Held", "Sword +3", 1, 1, InventoryStorage.Carried)], secondExport.AddHours(2));
+
+        Assert.Equal(2, loaded.RecentUpgrades.Count);
+        Assert.Equal(2, loaded.RecentUpgrades[1].PreviousRank);
+        Assert.Equal(3, loaded.RecentUpgrades[1].NewRank);
+        Assert.Equal(3, Assert.Single(loaded.ItemRanks, item => item.Character == "QUE").Rank);
+    }
+
+    [Fact]
+    public void ApplyExport_UsesThePreviousExportRankAfterAnItemDowngrades()
+    {
+        var inventory = new QuestInventory();
+        var written = new DateTime(2026, 10, 29, 12, 0, 0, DateTimeKind.Utc);
+
+        inventory.ApplyExport("Que",
+            [new("Held", "Sword +1", 1, 1, InventoryStorage.Carried)], written);
+        inventory.ApplyExport("Que",
+            [new("Held", "Sword +2", 1, 1, InventoryStorage.Carried)], written.AddMinutes(1));
+        inventory.ApplyExport("Que",
+            [new("Held", "Sword +1", 1, 1, InventoryStorage.Carried)], written.AddMinutes(2));
+        inventory.ApplyExport("Que",
+            [new("Held", "Sword +2", 1, 1, InventoryStorage.Carried)], written.AddMinutes(3));
+
+        Assert.Equal(2, inventory.RecentUpgrades.Count);
+        Assert.All(inventory.RecentUpgrades, entry =>
+        {
+            Assert.Equal(1, entry.PreviousRank);
+            Assert.Equal(2, entry.NewRank);
+        });
+    }
+
+    [Fact]
+    public void ApplyExport_SeedsEachCharacterIndependentlyAndKeepsOnlyLatestHundredUpgrades()
+    {
+        var inventory = new QuestInventory();
+        var written = new DateTime(2026, 10, 29, 12, 0, 0, DateTimeKind.Utc);
+
+        inventory.ApplyExport("Que",
+            [new("Held", "Sword +2", 1, 1, InventoryStorage.Carried)], written);
+        inventory.ApplyExport("Other",
+            [new("Held", "Sword +3", 1, 1, InventoryStorage.Carried)], written);
+        Assert.Empty(inventory.RecentUpgrades);
+
+        for (int rank = 1; rank <= 101; rank++)
+        {
+            string item = $"Item {rank}";
+            inventory.ApplyExport("Que",
+                [new("Held", $"{item} +1", 1, 1, InventoryStorage.Carried)], written.AddMinutes(rank));
+            inventory.ApplyExport("Que",
+                [new("Held", $"{item} +2", 1, 1, InventoryStorage.Carried)], written.AddMinutes(rank + 1));
+        }
+
+        Assert.Equal(100, inventory.RecentUpgrades.Count(entry => entry.Character == "Que"));
+        Assert.DoesNotContain(inventory.RecentUpgrades, entry => entry.Item == "Item 1");
+    }
 }

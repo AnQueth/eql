@@ -21,6 +21,9 @@ public partial class MainWindow
     private TextBox? _planPoints;
     private CheckBox? _planUseMotes;
     private CheckBox? _planUseCopies;
+    private TabControl? _planTabs;
+    private TabItem? _planFarmTab;
+    private TabItem? _planWhatIfTab;
     private CheckBox? _planFeed;
     private CheckBox? _planFeedUsable;
     private TextBox? _planFodder;
@@ -31,9 +34,14 @@ public partial class MainWindow
     private TextBlock? _planSummary;
     private StackPanel? _planHost;
     private OverlayPanel? _planPanel;
-    private bool _planShowMath;
     private string _planSignature = "";
     private IReadOnlyList<InventoryExportItem>? _planNamesSource;
+    private Expander? _planCopyEditor;
+    private StackPanel? _planCopyControls;
+    private readonly List<int> _planHypotheticalCopies = [];
+    private List<int> _planOriginalCopies = [];
+    private string _planCopyContext = "";
+    private IReadOnlyList<InventoryExportItem>? _planCopySource;
 
     private void ConfigureMotePlanOverlay(OverlayPanel panel)
     {
@@ -134,8 +142,9 @@ public partial class MainWindow
         optionsRow.Children.Add(_planRank);
         optionsRow.Children.Add(PlanLabel("Points"));
         optionsRow.Children.Add(_planPoints);
-        optionsRow.Children.Add(_planUseMotes);
-        optionsRow.Children.Add(_planUseCopies);
+        var resourcesRow = new WrapPanel { Margin = new Thickness(0, 4, 0, 4) };
+        resourcesRow.Children.Add(_planUseMotes);
+        resourcesRow.Children.Add(_planUseCopies);
 
         var feedRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
         feedRow.Children.Add(_planFeed);
@@ -144,13 +153,34 @@ public partial class MainWindow
 
         // Each label stays with its input so the row never wraps between them.
         var fodderRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
-        fodderRow.Children.Add(PlanGroup("Extra copies to farm", _planFodder));
-        fodderRow.Children.Add(PlanGroup("at", _planFodderRank));
+        fodderRow.Children.Add(PlanGroup("Copy level to farm", _planFodderRank));
+        fodderRow.Children.Add(PlanGroup("Extra copies already planned", _planFodder));
         _planFodderRow = fodderRow;
 
         _planSummary = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 2) };
         _planSummary.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
-        var top = new StackPanel { Children = { nameRow, _planInventoryName, optionsRow, feedRow, fodderRow, _planSummary } };
+        _planCopyControls = new StackPanel();
+        _planCopyEditor = new Expander
+        {
+            Header = "What if: change spare copy ranks",
+            IsExpanded = true,
+            Content = _planCopyControls,
+            Margin = new Thickness(0, 0, 0, 4),
+            ToolTip = "Only changes this plan. Your inventory and recorded item upgrades are never changed.",
+        };
+        var top = new StackPanel
+        {
+            Children =
+            {
+                nameRow, _planInventoryName, optionsRow,
+                new Expander
+                {
+                    Header = "Resources and feeding (shared settings)",
+                    Content = new StackPanel { Children = { resourcesRow, feedRow } },
+                    Margin = new Thickness(0, 4, 0, 6),
+                },
+            },
+        };
         DockPanel.SetDock(top, Dock.Top);
 
         _planHost = new StackPanel();
@@ -160,9 +190,17 @@ public partial class MainWindow
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             Content = _planHost,
         };
+        var tabBody = new DockPanel();
+        var tabTop = new StackPanel { Children = { fodderRow, _planCopyEditor, _planSummary } };
+        DockPanel.SetDock(tabTop, Dock.Top);
+        tabBody.Children.Add(tabTop);
+        tabBody.Children.Add(scroll);
+        _planTabs = CreatePlanTabs(tabBody, RefreshMotePlan);
+        _planFarmTab = (TabItem)_planTabs.Items[1];
+        _planWhatIfTab = (TabItem)_planTabs.Items[2];
         var body = new DockPanel { Margin = new Thickness(2, 4, 2, 2) };
         body.Children.Add(top);
-        body.Children.Add(scroll);
+        body.Children.Add(_planTabs);
 
         _planKind.SelectionChanged += (_, _) =>
         {
@@ -196,6 +234,35 @@ public partial class MainWindow
 
         panel.SetBody(body);
         RefreshMotePlan();
+    }
+
+    internal static TabControl CreatePlanTabs(FrameworkElement content, Action refresh)
+    {
+        var tabs = new TabControl { Margin = new Thickness(0, 4, 0, 0) };
+        foreach (string header in new[] { "Upgrade", "Farm copies", "What if", "Math" })
+        {
+            tabs.Items.Add(new TabItem { Header = header });
+        }
+        tabs.SelectedIndex = 0;
+        ((TabItem)tabs.Items[0]).Content = content;
+        tabs.SelectionChanged += (_, e) =>
+        {
+            if (e.Source != tabs)
+            {
+                return;
+            }
+
+            foreach (TabItem tab in tabs.Items)
+            {
+                tab.Content = null;
+            }
+            if (tabs.SelectedItem is TabItem selected)
+            {
+                selected.Content = content;
+            }
+            refresh();
+        };
+        return tabs;
     }
 
     private static TextBlock PlanLabel(string text)
@@ -292,6 +359,64 @@ public partial class MainWindow
         }
     }
 
+    private void RefreshHypotheticalCopies(string name, int startRank, List<int> copies, bool equipment)
+    {
+        if (_planCopyEditor is null || _planCopyControls is null)
+        {
+            return;
+        }
+
+        _planCopyEditor.Visibility = equipment && _planTabs?.SelectedIndex == 2 && copies.Count > 0
+            ? Visibility.Visible : Visibility.Collapsed;
+        _planCopyEditor.IsEnabled = _planUseCopies?.IsChecked == true;
+        string context = $"{_characterName}|{name.ToUpperInvariant()}|{startRank}|{equipment}";
+        if (_planCopyContext == context && ReferenceEquals(_planCopySource, _inventoryRows) &&
+            _planOriginalCopies.SequenceEqual(copies))
+        {
+            return;
+        }
+
+        _planCopyContext = context;
+        _planCopySource = _inventoryRows;
+        _planOriginalCopies = [.. copies];
+        _planHypotheticalCopies.Clear();
+        _planHypotheticalCopies.AddRange(copies);
+        _planCopyControls.Children.Clear();
+        var explanation = new TextBlock
+        {
+            Text = $"Keep the main item at +{startRank}; change only the spare copies below. " +
+                "Hypothetical ranks cost nothing in this simulation. Feeding still follows your selected options.",
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 4, 0, 4),
+        };
+        _planCopyControls.Children.Add(explanation);
+        for (int index = 0; index < copies.Count; index++)
+        {
+            int copyIndex = index;
+            var rank = new ComboBox
+            {
+                ItemsSource = Enumerable.Range(0, startRank + 1).Select(value => $"+{value}").ToArray(),
+                SelectedIndex = copies[index],
+                MinWidth = 60,
+                Margin = new Thickness(4, 0, 0, 0),
+            };
+            rank.SelectionChanged += (_, _) =>
+            {
+                _planHypotheticalCopies[copyIndex] = rank.SelectedIndex;
+                RefreshMotePlan();
+            };
+            _planCopyControls.Children.Add(PlanGroup($"Copy {index + 1} (export +{copies[index]})", rank));
+        }
+
+        var reset = new Button { Content = "Reset to inventory ranks", Margin = new Thickness(0, 4, 0, 0) };
+        reset.Click += (_, _) =>
+        {
+            _planCopyContext = "";
+            RefreshMotePlan();
+        };
+        _planCopyControls.Children.Add(reset);
+    }
+
     private void RefreshPlanNames(UpgradeKind kind)
     {
         if (_planName is null || _planInventoryName is null ||
@@ -342,12 +467,23 @@ public partial class MainWindow
         var kind = _planKind.SelectedIndex == 1 ? UpgradeKind.Spell : UpgradeKind.Equipment;
         RefreshPlanNames(kind);
         bool equipment = kind == UpgradeKind.Equipment;
+        int activeTab = _planTabs?.SelectedIndex ?? 0;
+        if (_planFarmTab is not null && _planWhatIfTab is not null)
+        {
+            _planFarmTab.Visibility = equipment ? Visibility.Visible : Visibility.Collapsed;
+            _planWhatIfTab.Visibility = equipment ? Visibility.Visible : Visibility.Collapsed;
+            if (!equipment && activeTab is 1 or 2 && _planTabs is not null)
+            {
+                _planTabs.SelectedIndex = 0;
+                return;
+            }
+        }
         var equipmentOnly = equipment ? Visibility.Visible : Visibility.Collapsed;
         _planUseCopies.Visibility = equipmentOnly;
         if (_planFeedRow is not null && _planFodderRow is not null)
         {
             _planFeedRow.Visibility = equipmentOnly;
-            _planFodderRow.Visibility = equipmentOnly;
+            _planFodderRow.Visibility = equipment && activeTab == 1 ? Visibility.Visible : Visibility.Collapsed;
         }
 
         _planName.ToolTip = equipment
@@ -369,7 +505,7 @@ public partial class MainWindow
         int fodderRank = Math.Clamp(_planFodderRank?.SelectedIndex ?? 0, 0, MoteValues.MaxRank - 1);
         FeedOptions? feed = equipment
             ? new FeedOptions(_planFeed?.IsChecked == true, _planFeedUsable?.IsChecked == true,
-                fodderOk ? fodder : 0, fodderRank)
+                fodderOk && activeTab == 1 ? fodder : 0, fodderRank)
             : null;
         int startRank = Math.Max(0, _planRank.SelectedIndex);
         int maxPoints = startRank >= MoteValues.MaxRank ? 0 : MoteValues.PointsToNext(startRank) - 1;
@@ -397,17 +533,29 @@ public partial class MainWindow
             copies = copies.Where(c => c <= startRank).ToList();
         }
 
-        var spare = _planUseCopies.IsChecked == true ? copies : [];
+        RefreshHypotheticalCopies(name, startRank, copies, equipment);
+        bool hypothetical = equipment && activeTab == 2 && _planUseCopies.IsChecked == true &&
+            !_planHypotheticalCopies.SequenceEqual(copies);
+        var spare = _planUseCopies.IsChecked == true
+            ? (activeTab == 2 ? _planHypotheticalCopies.ToList() : copies)
+            : [];
         var plannerMotes = _planUseMotes.IsChecked == true ? owned : new Dictionary<int, int>();
         var plan = MoteUpgradePlanner.Plan(kind, startRank, pointsOk ? points : 0, plannerMotes, spare, feed);
 
         var notes = new List<string>();
+        if (hypothetical)
+        {
+            int originalPoints = copies.Sum(MoteValues.CopyPoints);
+            int hypotheticalPoints = spare.Sum(MoteValues.CopyPoints);
+            notes.Add($"WHAT IF: spare merge value {originalPoints:N0} to {hypotheticalPoints:N0} points " +
+                $"before feeding; main item stays +{startRank}. Inventory is unchanged.");
+        }
         if (!pointsOk)
         {
             notes.Add($"Points must be a whole number from 0 to {maxPoints} at +{startRank}; using 0.");
         }
 
-        if (!fodderOk)
+        if (!fodderOk && activeTab == 1)
         {
             notes.Add("Extra copies must be a whole number from 0 to 1023; using 0.");
         }
@@ -444,7 +592,7 @@ public partial class MainWindow
                 "Smallest motes are spent first. Condensing and Void-Touched motes are not used.";
         }
 
-        _planSummary.Text = string.Join(" ", notes);
+        _planSummary.Text = string.Join(Environment.NewLine, notes);
         _planSummary.Visibility = notes.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         _planHost.Children.Clear();
@@ -455,25 +603,67 @@ public partial class MainWindow
             return;
         }
 
-        AddPlanGuide(plan, startRank, pointsOk ? points : 0, plannerMotes, spare, feed);
+        if (activeTab is 0 or 2)
+        {
+            AddPlanGuide(plan, startRank);
+            return;
+        }
 
-        var details = new StackPanel
+        if (activeTab == 1 && feed is not null)
         {
-            Visibility = _planShowMath ? Visibility.Visible : Visibility.Collapsed,
-        };
-        var showMath = new CheckBox
-        {
-            Content = "Show the math",
-            IsChecked = _planShowMath,
-            Margin = new Thickness(2, 8, 0, 2),
-            ToolTip = "Show the full tables: what each copy is fed, every step's points, and the totals",
-        };
-        showMath.Click += (_, _) =>
-        {
-            _planShowMath = showMath.IsChecked == true;
-            details.Visibility = _planShowMath ? Visibility.Visible : Visibility.Collapsed;
-        };
-        _planHost.Children.Add(showMath);
+            AddGuideHeading($"How many +{fodderRank} copies should I farm?");
+            AddGuideLine($"Your item starts at +{startRank}. Pick the level you want:", muted: true);
+            for (int target = startRank + 1; target <= MoteValues.MaxRank; target++)
+            {
+                int additional = MoteUpgradePlanner.MinimumAdditionalCopiesToFinish(startRank, pointsOk ? points : 0,
+                    plannerMotes, spare, feed, targetRank: target);
+                AddGuideLine(FarmTargetSummary(target, fodderRank, additional), bold: true);
+            }
+
+            AddGuideLine("Each number is the TOTAL to farm from where you are now. Do not add the numbers together.",
+                muted: true);
+            AddGuideLine("These numbers use the motes, spare copies and progress selected above.", muted: true);
+            if (feed.FodderCopies > 0)
+            {
+                AddGuideLine($"The {feed.FodderCopies:N0} extra copies you entered are already counted. " +
+                    "Only copies beyond those are listed here.", muted: true);
+            }
+            if (feed.Enabled)
+            {
+                AddGuideLine("Feeding is on: the plan may spend your motes to raise farmed copies before merging them.",
+                    muted: true);
+            }
+
+            int copyPoints = MoteValues.CopyPoints(fodderRank);
+            var copiesOnly = new StackPanel();
+            copiesOnly.Children.Add(new TextBlock
+            {
+                Text = $"No motes, no spare copies, no feeding, and no saved progress. " +
+                    $"Just merge +{fodderRank} copies for ONE level at a time:",
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(2, 4, 0, 4),
+            });
+            for (int rank = startRank; rank < MoteValues.MaxRank; rank++)
+            {
+                int count = (MoteValues.PointsToNext(rank) + copyPoints - 1) / copyPoints;
+                copiesOnly.Children.Add(new TextBlock
+                {
+                    Text = $"+{rank} to +{rank + 1}: {count:N0} cop{(count == 1 ? "y" : "ies")} at +{fodderRank}.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(2, 4, 0, 4),
+                });
+            }
+            _planHost.Children.Add(new Expander
+            {
+                Header = "Compare: copies only, one level at a time",
+                Content = copiesOnly,
+                Margin = new Thickness(2, 8, 0, 6),
+            });
+            return;
+        }
+
+        AddGuideHeading("The numbers behind the Upgrade tab");
+        var details = new StackPanel();
         _planHost.Children.Add(details);
 
         if (plan.FedCopies.Count > 0)
@@ -562,8 +752,7 @@ public partial class MainWindow
     }
 
     /// <summary>Adds the plain-language "What to do" list above the detailed tables.</summary>
-    private void AddPlanGuide(UpgradePlan plan, int startRank, int startPoints,
-        IReadOnlyDictionary<int, int> ownedMotes, IReadOnlyList<int> copies, FeedOptions? feed)
+    private void AddPlanGuide(UpgradePlan plan, int startRank)
     {
         if (_planHost is null)
         {
@@ -662,31 +851,11 @@ public partial class MainWindow
             }
 
             AddGuideLine(why, muted: true);
-            AddGuideLine("Still need: " + DescribeCounts(plan.Missing, r => MoteValues.Tiers[r - 1]), bold: true);
+            AddGuideLine("If you finish with motes, get: " + DescribeCounts(plan.Missing, r => MoteValues.Tiers[r - 1]), bold: true);
         }
         else
         {
             AddGuideLine("You already have everything you need!", bold: true);
-        }
-
-        if (equipment && feed is not null)
-        {
-            int additional = MoteUpgradePlanner.MinimumAdditionalCopiesToFinish(
-                startRank, startPoints, ownedMotes, copies, feed);
-            if (additional == 0)
-            {
-                AddGuideLine("No more copies to farm; the copies and motes above are enough.", bold: true);
-            }
-            else
-            {
-                int rank = feed.FodderRank;
-                string copy = additional == 1 ? "copy" : "copies";
-                string entered = feed.FodderCopies > 0
-                    ? $" after the {feed.FodderCopies:N0} extra +{rank} copies you entered"
-                    : "";
-                AddGuideLine($"Farm {additional:N0} more {copy} at +{rank}{entered} to finish using the motes and copies selected above.",
-                    bold: true);
-            }
         }
 
         if (plan.FedCopies.Count > 0)
@@ -713,6 +882,13 @@ public partial class MainWindow
         };
         heading.SetResourceReference(TextBlock.ForegroundProperty, "NightText");
         _planHost?.Children.Add(heading);
+    }
+
+    internal static string FarmTargetSummary(int targetRank, int farmRank, int additional)
+    {
+        return additional == 0
+            ? $"Reach +{targetRank}: no more copies needed."
+            : $"Reach +{targetRank}: farm {additional:N0} more +{farmRank} cop{(additional == 1 ? "y" : "ies")}.";
     }
 
     private void AddGuideLine(string text, bool indent = false, bool muted = false, bool bold = false)

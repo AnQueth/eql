@@ -1,3 +1,5 @@
+using System.Runtime.ExceptionServices;
+using System.Windows.Controls;
 using EqLog.Core;
 using EqLog.Core.Parsing;
 using EqLog.Core.Tracking;
@@ -7,6 +9,70 @@ namespace EqLog.Overlay.Tests;
 
 public sealed class MoteOverlayTests
 {
+    [Fact]
+    public void PlannerTabs_SwitchTasksWithoutMixingPagesOrRefreshingForNestedControls()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var selector = new ComboBox { ItemsSource = new[] { "+0", "+5" } };
+                var page = new StackPanel { Children = { selector } };
+                int refreshes = 0;
+                var tabs = MainWindow.CreatePlanTabs(page, () => refreshes++);
+                Assert.Equal(["Upgrade", "Farm copies", "What if", "Math"],
+                    tabs.Items.Cast<TabItem>().Select(tab => (string)tab.Header));
+                foreach (int index in new[] { 1, 2, 3, 0 })
+                {
+                    tabs.SelectedIndex = index;
+                    Assert.Same(page, ((TabItem)tabs.Items[index]).Content);
+                    Assert.All(tabs.Items.Cast<TabItem>().Where(tab => tab != tabs.SelectedItem),
+                        tab => Assert.Null(tab.Content));
+                }
+                Assert.Equal(4, refreshes);
+                selector.SelectedIndex = 1;
+                Assert.Equal(4, refreshes);
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure is not null)
+        {
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+    }
+
+    [Theory]
+    [InlineData(8, 4, 1, "Reach +8: farm 1 more +4 copy.")]
+    [InlineData(9, 4, 6, "Reach +9: farm 6 more +4 copies.")]
+    [InlineData(10, 4, 24, "Reach +10: farm 24 more +4 copies.")]
+    [InlineData(7, 5, 0, "Reach +7: no more copies needed.")]
+    public void FarmTargetSummary_ExplainsTargetAndFarmRankInPlainLanguage(
+        int targetRank, int farmRank, int count, string expected)
+    {
+        Assert.Equal(expected, MainWindow.FarmTargetSummary(targetRank, farmRank, count));
+    }
+
+    [Theory]
+    [InlineData(8, 7)]
+    [InlineData(9, 22)]
+    [InlineData(10, 54)]
+    public void FarmTargetSummary_UsesTotalFromCurrentRankRatherThanIndividualStep(int targetRank, int expected)
+    {
+        var motes = new Dictionary<int, int> { [8] = 3, [9] = 2 };
+        int additional = MoteUpgradePlanner.MinimumAdditionalCopiesToFinish(
+            7, 0, motes, [], new FeedOptions(FodderRank: 4), targetRank);
+
+        Assert.Equal(expected, additional);
+        Assert.Contains($"Reach +{targetRank}:", MainWindow.FarmTargetSummary(targetRank, 4, additional));
+    }
+
     [Theory]
     [InlineData(false, false, "?")]
     [InlineData(true, false, "?")]
