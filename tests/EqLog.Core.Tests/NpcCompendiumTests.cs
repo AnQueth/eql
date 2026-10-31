@@ -310,12 +310,12 @@ public sealed class NpcCompendiumTests : IDisposable
         store.Record("log", 6, "Sky", "Target", "Flame IX", true, T0);
         var exact = store.Get("Sky", "Target", "flame x");
         var fire = exact.Observations.Single(o => o.Type == ResistanceType.Fire);
-        Assert.Equal(3, fire.Landed);
-        Assert.Equal(2, fire.Resisted);
+        Assert.Equal(4, fire.Landed);
+        Assert.Equal(1, fire.Resisted);
         Assert.Equal(1, fire.EstimatedPartial);
-        Assert.Equal("Partially Resistant \u2014 40% (2/5)", fire.DisplayText);
+        Assert.Equal("Partially Resistant \u2014 20% (1/5)", fire.DisplayText);
         Assert.Single(exact.Spells);
-        Assert.Equal(3, store.Get("Sky", "Target").Observations.Single(o => o.Type == ResistanceType.Fire).Resisted);
+        Assert.Equal(2, store.Get("Sky", "Target").Observations.Single(o => o.Type == ResistanceType.Fire).Resisted);
     }
 
     [Fact]

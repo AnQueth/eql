@@ -113,6 +113,7 @@ public static class OverlayPresenters
         new("itemupgrades", "Item upgrades", 460, 320, false, ItemUpgrades),
         new("moteplan", "Mote upgrade planner", 520, 560, false, (_, _, _) => new("Mote upgrade planner", null, [])),
         new("exaltations", "Exaltations", 620, 560, false, (_, _, _) => new("Exaltations", null, [])),
+        new("merge", "Ready to merge", 680, 620, false, (_, _, _) => new("Ready to merge", null, [])),
     ];
 
     private const int MaxRequestRows = 15;

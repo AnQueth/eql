@@ -1,7 +1,105 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.27" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.28" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.28
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 31, 2026 at 1:51 PM CT.
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Give merge candidates their own overlay, distinguish confirmed resists from reduced damage,
+        and keep Mob info open while reading it. This history ships with your installed version and works offline.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Ready to merge is its own overlay
+        </Paragraph>
+        <Paragraph>
+            Enable Ready to merge under Settings &gt; General &gt; Overlays. It now has independent
+            visibility, workspace, floating position, text size, background opacity, and lock controls.
+            Inventory &amp; loot quests opens directly to items and quest references, without the old tabs.
+        </Paragraph>
+        <Paragraph>
+            Existing inventory-overlay users get the new panel with matching visibility and appearance.
+            It is added below existing panels in each workspace containing inventory; floating inventory
+            users get a floating merge overlay. This happens once, so later hide and placement choices
+            survive restarts. New users enable the panel separately.
+        </Paragraph>
+        <Paragraph>
+            Run /outputfile inventory in game to update merge candidates. Filter by name or location,
+            check each copy's rank and quantity, and use item and Quest links as before. Collections,
+            installed augments, and duplicate plain copies without upgraded ranks remain excluded.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Resistance percentages use confirmed outcomes
+        </Paragraph>
+        <Paragraph>
+            Mob info and NPC compendium now count only explicit resist messages as resisted outcomes.
+            Confirmed damage hits count as landed, including lower-damage hits and hits awaiting a
+            damage baseline. Partially Resistant means 20% through 50%; Not Resistant means below
+            20%. Partial remains above 50% and below 100%, and Resists means all assessed outcomes resisted.
+        </Paragraph>
+        <Paragraph>
+            Reduced-damage estimates appear separately with cause unknown and never increase the
+            resist percentage. Typical damage now uses the sample-count-weighted median instead
+            of the highest historical hit, after at least three eligible hits for the same character,
+            class loadout, level, and exact spell rank. Hits below 90% of this median are flagged
+            as reduced damage, not proof of resistance. Critical, modified, and identified finishing
+            hits remain excluded; DoTs still count once per confirmed cast outcome.
+        </Paragraph>
+        <Paragraph>
+            Restart this updated build to recalculate displays from saved samples; no resistance
+            reset or log replay is required. Buffs, mitigation, and incomplete logs can still affect
+            observations. Labels are not exact NPC resistance stats or guaranteed immunity.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Reset one mob's resistance history inside Mob info
+        </Paragraph>
+        <Paragraph>
+            Use /consider in game, then click Reset resistances in Mob info. Confirm reset or Cancel
+            directly inside the overlay; progress, success, and save errors appear there without a popup.
+            Unlock floating overlays with Ctrl+Shift+L to use the buttons.
+        </Paragraph>
+        <Paragraph>
+            Reset affects only the displayed mob in its current logged zone, across characters.
+            It clears spell outcomes and damage samples but preserves wiki data, NPC encounters,
+            and other mobs or zones. The saved cutoff excludes old log events, including copied
+            or renamed logs; new events resume learning. The button is disabled if persistent mob
+            storage could not be loaded. Older builds do not preserve these reset cutoffs.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Read Mob info without racing its timeout
+        </Paragraph>
+        <Paragraph>
+            Hover over an active Mob info panel to keep it visible, including locked floating overlays.
+            Leaving starts a fresh full timeout. Set the duration under Settings &gt; General &gt;
+            Consider / mob information; 0 still keeps it until the next consider. New considers update
+            the panel while hovered, and it stays open while confirming or saving a resistance reset.
+            The normal EverQuest visibility rule still applies to floating panels.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Rounded overlays and safer mouse-over opacity
+        </Paragraph>
+        <Paragraph>
+            Floating and docked overlays now use more rounded outer corners, with contents clipped
+            to the outline as you resize. Drag grips and resize controls keep their existing behavior.
+        </Paragraph>
+        <Paragraph>
+            Under Settings &gt; General &gt; Overlays &gt; Individual overlay appearance and locks,
+            Mouse-over background is ignored whenever it is lower than Background. Hovering can
+            make a panel more opaque, never more transparent. Both saved settings are preserved.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.27
     </Paragraph>

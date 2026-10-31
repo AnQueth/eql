@@ -227,6 +227,7 @@ public partial class MainWindow : Window
     private void CreateOverlays()
     {
         var work = SystemParameters.WorkArea;
+        InitializeMergeOverlay(_settings, work);
         for (int i = 0; i < OverlayPresenters.All.Count; i++)
         {
             var def = OverlayPresenters.All[i];
@@ -306,6 +307,10 @@ public partial class MainWindow : Window
             if (def.Key == "inventory")
             {
                 ConfigureInventoryOverlay(panel);
+            }
+            if (def.Key == "merge")
+            {
+                ConfigureMergeOverlay(panel);
             }
             if (def.Key == "moteplan")
             {
@@ -447,6 +452,10 @@ public partial class MainWindow : Window
         {
             placement.FontSize = value;
             window.Panel.FontSize = value;
+            if (window.Panel.Key == "merge")
+            {
+                RefreshMergeView();
+            }
         }, value => $"{value:0} pt");
         var backgroundSlider = AddSlider("Background", 0, 1, placement.BackgroundOpacity!.Value, 0.05, value =>
         {
@@ -763,7 +772,7 @@ public partial class MainWindow : Window
 
     private static OverlayPlacement DefaultPlacement(OverlayDefinition def, int index, Rect work)
     {
-        if (def.Key is "npcs" or "wiki" or "inventory" or "itemupgrades" or "moteplan" or "exaltations")
+        if (def.Key is "npcs" or "wiki" or "inventory" or "merge" or "itemupgrades" or "moteplan" or "exaltations")
         {
             return new OverlayPlacement
             {
@@ -1184,6 +1193,7 @@ public partial class MainWindow : Window
                 "mobinfo" => MobInfoContent(),
                 "npcs" => NpcCompendiumContent(),
                 "inventory" => new("Inventory & loot quests", _characterName, []),
+                "merge" => new("Ready to merge", _characterName, []),
                 "moteplan" => new("Mote upgrade planner", _characterName, []),
                 "exaltations" => ExaltationsContent(),
                 _ => def.Render(snap, _engine, view),

@@ -21,6 +21,10 @@ public sealed record SpellOutcome(string Spell, long Landed, long Resisted,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     Dictionary<string, Dictionary<long, long>>? DamageSamples = null,
     long DotLanded = 0, long DotResisted = 0);
+/// <summary>
+/// Confirmed cast outcomes by school. EstimatedPartial counts reduced-damage landings (cause unknown),
+/// and UnassessedDamage counts landings awaiting a baseline; neither adds to Resisted.
+/// </summary>
 public sealed record ResistanceObservation(ResistanceType Type, long Landed, long Resisted, long OtherResisted,
     long EstimatedPartial = 0, long UnassessedDamage = 0)
 {
@@ -42,7 +46,7 @@ public sealed record ResistanceObservation(ResistanceType Type, long Landed, lon
         get
         {
             decimal total = (decimal)Landed + Resisted;
-            if (total == 0 || UnassessedDamage > 0)
+            if (total == 0)
             {
                 return "Unknown";
             }
@@ -55,7 +59,7 @@ public sealed record ResistanceObservation(ResistanceType Type, long Landed, lon
             {
                 return "Partial";
             }
-            if (rate >= 0.1m)
+            if (rate >= 0.2m)
             {
                 return "Partially Resistant";
             }
@@ -129,7 +133,7 @@ public sealed class MobResistanceStore
     private long _version;
     private long _savedVersion;
     private readonly SemaphoreSlim _saveGate = new(1, 1);
-    private readonly Dictionary<(string Spell, string Character), long?> _damageBaselines = [];
+    private readonly Dictionary<(string Spell, string Character), decimal?> _damageBaselines = [];
 
     /// <summary>Spell metadata set since the last save, waiting to be appended to the spell cache file.</summary>
     private readonly List<SpellResistanceInfo> _pendingSpells = [];
@@ -184,6 +188,11 @@ public sealed class MobResistanceStore
     {
         lock (_gate)
         {
+            string key = Key(zone, mob);
+            if (_data.ResistanceResetTimes.TryGetValue(key, out var resetTime) && time <= resetTime)
+            {
+                return;
+            }
             string source = log.ToUpperInvariant();
             bool counted = Advance(source, time, line);
             bool dotCounted = damageOverTime && Advance(source + "\nDOT", time, line);
@@ -195,7 +204,6 @@ public sealed class MobResistanceStore
             {
                 return;
             }
-            string key = Key(zone, mob);
             if (!_data.Mobs.TryGetValue(key, out var spells))
             {
                 spells = [];
@@ -226,6 +234,25 @@ public sealed class MobResistanceStore
                 };
                 _damageBaselines.Remove((spellKey, characterKey));
             }
+            _version++;
+        }
+    }
+
+    /// <summary>
+    /// Clears resistance outcomes and damage samples for one mob in one zone, preserving wiki caches and other mobs.
+    /// </summary>
+    /// <param name="zone">The exact logged zone, including instance or difficulty suffixes.</param>
+    /// <param name="mob">The mob name; matching ignores case and repeated whitespace.</param>
+    /// <param name="resetTime">Local log-time cutoff; outcomes at or before this time remain excluded on replay.</param>
+    public void ResetResistances(string zone, string mob, DateTime resetTime)
+    {
+        lock (_gate)
+        {
+            string key = Key(zone, mob);
+            _data.Mobs.Remove(key);
+            _data.ResistanceResetTimes[key] = _data.ResistanceResetTimes.TryGetValue(key, out var previous) &&
+                previous > resetTime ? previous : resetTime;
+            _damageBaselines.Clear();
             _version++;
         }
     }
@@ -261,9 +288,10 @@ public sealed class MobResistanceStore
                 {
                     foreach (var (character, samples) in spell.DamageSamples ?? [])
                     {
-                        long? baseline = DamageBaseline(MobKey(spell.Spell), character);
+                        decimal? baseline = DamageBaseline(MobKey(spell.Spell), character);
                         foreach (var (amount, count) in samples)
                         {
+                            landed += count;
                             if (baseline is null)
                             {
                                 unknown += count;
@@ -271,10 +299,6 @@ public sealed class MobResistanceStore
                             else if ((decimal)amount < baseline.Value * 0.9m)
                             {
                                 partial += count;
-                            }
-                            else
-                            {
-                                landed += count;
                             }
                         }
                     }
@@ -285,7 +309,7 @@ public sealed class MobResistanceStore
                 long other = matching.Where(s => !_data.Spells[MobKey(s.Spell)].SingleTargetDirectDamage).Sum(s => s.Resisted) -
                     dots.Sum(s => Math.Min(s.DotResisted, s.Resisted));
                 return new ResistanceObservation(type, landed,
-                    comparable.Sum(s => s.Resisted) + partial + dots.Sum(s => s.DotResisted),
+                    comparable.Sum(s => s.Resisted) + dots.Sum(s => s.DotResisted),
                     other, partial, unknown);
             }).ToArray();
             long unclassified = spells.Where(s => _data.Spells.GetValueOrDefault(MobKey(s.Spell))?.Type is null)
@@ -306,7 +330,7 @@ public sealed class MobResistanceStore
         }
     }
 
-    private long? DamageBaseline(string spell, string character)
+    private decimal? DamageBaseline(string spell, string character)
     {
         var key = (spell, character);
         if (_damageBaselines.TryGetValue(key, out var cached))
@@ -316,17 +340,31 @@ public sealed class MobResistanceStore
         var samples = _data.Mobs.Values.SelectMany(m => m.Values)
             .Where(s => MobKey(s.Spell) == spell && s.DamageSamples?.ContainsKey(character) == true)
             .SelectMany(s => s.DamageSamples![character]).ToArray();
-        if (samples.Length == 0)
+        long total = samples.Sum(sample => sample.Value);
+        if (total < 3)
         {
             _damageBaselines[key] = null;
             return null;
         }
-        long maximum = samples.Max(s => s.Key);
-        // Require repeat evidence near the upper observed damage, not one potentially anomalous hit.
-        long evidence = samples.Where(s => (decimal)s.Key >= maximum * 0.9m).Sum(s => s.Value);
-        long? baseline = evidence >= 3 ? maximum : null;
-        _damageBaselines[key] = baseline;
-        return baseline;
+        long lowerIndex = (total - 1) / 2;
+        long upperIndex = total / 2;
+        long cumulative = 0;
+        long? lower = null;
+        foreach (var sample in samples.OrderBy(sample => sample.Key))
+        {
+            cumulative += sample.Value;
+            if (cumulative > lowerIndex)
+            {
+                lower ??= sample.Key;
+            }
+            if (cumulative > upperIndex && lower is long lowerAmount)
+            {
+                decimal baseline = ((decimal)lowerAmount + sample.Key) / 2;
+                _damageBaselines[key] = baseline;
+                return baseline;
+            }
+        }
+        throw new InvalidOperationException("Damage samples did not contain their median.");
     }
 
     public SpellResistanceInfo? GetSpell(string spell)
@@ -405,6 +443,7 @@ public sealed class MobResistanceStore
                 ?? throw new JsonException("Mob resistance data is empty.");
             var data = store._data;
             if (data.Mobs is null || data.Spells is null || data.Wiki is null || data.Watermarks is null ||
+                data.ResistanceResetTimes is null ||
                 data.Mobs.Values.Any(spells => spells is null || spells.Values.Any(s => s is null ||
                     string.IsNullOrWhiteSpace(s.Spell) || s.Landed < 0 || s.Resisted < 0 ||
                     s.DamageSamples?.Values.Any(h => h is null || h.Any(pair => pair.Key <= 0 || pair.Value <= 0)) == true)) ||
@@ -441,6 +480,8 @@ public sealed class MobResistanceStore
         public Dictionary<string, MobWikiInfo> Wiki { get; set; } = [];
         public Dictionary<string, SpellResistanceInfo> Spells { get; set; } = [];
         public Dictionary<string, ResistanceWatermark> Watermarks { get; set; } = [];
+        /// <summary>Per-zone/mob local timestamps excluding pre-reset observations, including copied or renamed logs.</summary>
+        public Dictionary<string, DateTime> ResistanceResetTimes { get; set; } = [];
 
         /// <summary>
         /// A copy safe to serialize outside the lock: containers are copied, immutable records are shared,
@@ -469,6 +510,7 @@ public sealed class MobResistanceStore
                 // The spell cache lives in its own append-only file.
                 Spells = [],
                 Watermarks = new(Watermarks, Watermarks.Comparer),
+                ResistanceResetTimes = new(ResistanceResetTimes, ResistanceResetTimes.Comparer),
             };
         }
     }

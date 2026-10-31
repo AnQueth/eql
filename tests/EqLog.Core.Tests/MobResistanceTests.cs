@@ -14,9 +14,11 @@ public class MobResistanceTests
     [InlineData(0, 4, 0, "Resists \u2014 100% (4/4)")]
     [InlineData(10, 0, 0, "Not Resistant \u2014 0% (0/10)")]
     [InlineData(1, 1, 0, "Partially Resistant \u2014 50% (1/2)")]
+    [InlineData(80, 20, 0, "Partially Resistant \u2014 20% (20/100)")]
+    [InlineData(81, 19, 0, "Not Resistant \u2014 19% (19/100)")]
     [InlineData(0, 0, 0, "Unknown \u2014 no assessed outcomes")]
     [InlineData(0, 0, 3, "Unknown \u2014 no assessed outcomes")]
-    [InlineData(7, 13, 3, "Unknown \u2014 65% (13/20)")]
+    [InlineData(7, 13, 3, "Partial \u2014 65% (13/20)")]
     public void Observation_DisplayText_ShowsLabelPercentageAndAssessedCounts(long landed, long resisted,
         long unassessed, string expected)
     {
@@ -32,8 +34,12 @@ public class MobResistanceTests
     [InlineData(1, 99, "Partial")]
     [InlineData(49, 51, "Partial")]
     [InlineData(50, 50, "Partially Resistant")]
-    [InlineData(89, 11, "Partially Resistant")]
-    [InlineData(90, 10, "Partially Resistant")]
+    [InlineData(79, 21, "Partially Resistant")]
+    [InlineData(80, 20, "Partially Resistant")]
+    [InlineData(801, 199, "Not Resistant")]
+    [InlineData(81, 19, "Not Resistant")]
+    [InlineData(89, 11, "Not Resistant")]
+    [InlineData(90, 10, "Not Resistant")]
     [InlineData(91, 9, "Not Resistant")]
     [InlineData(100, 0, "Not Resistant")]
     public void Observation_Status_UsesExactConfirmedThresholds(long landed, long resisted, string expected)
@@ -178,7 +184,7 @@ public class MobResistanceTests
             }
         }
         var fire = store.Get("Plane of Sky", "an azarack").Observations.Single(o => o.Type == ResistanceType.Fire);
-        Assert.Equal(0, fire.Landed);
+        Assert.Equal(1, fire.Landed);
         Assert.Equal(1, fire.Resisted);
         Assert.Equal(1, fire.UnassessedDamage);
         Assert.Equal(0, store.Get("Plane of Sky", "An azarack").Unclassified);

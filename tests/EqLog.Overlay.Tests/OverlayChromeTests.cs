@@ -30,6 +30,7 @@ public sealed class OverlayChromeTests
 
                 var panel = new OverlayPanel("timers", "Spell Timers", false);
                 var frame = Assert.IsType<Border>(panel.Content);
+                VerifyRoundedFrame(panel, frame);
                 var frameContent = Assert.IsType<Grid>(frame.Child);
                 var bevel = Assert.IsType<Border>(frameContent.Children[0]);
                 var inset = Assert.IsType<Border>(bevel.Child);
@@ -140,6 +141,8 @@ public sealed class OverlayChromeTests
     {
         var panel = new OverlayPanel("timers", "Spell Timers", false);
         var frame = Assert.IsType<Border>(panel.Content);
+        var hoverChanges = new List<bool>();
+        panel.BackgroundHoverChanged += hovered => hoverChanges.Add(hovered);
         panel.SetBackgroundOpacity(0.2);
         panel.SetHoverBackgroundOpacity(0.9);
         Assert.Equal((byte)(0.2 * 255), Assert.IsType<SolidColorBrush>(frame.Background).Color.A);
@@ -155,10 +158,48 @@ public sealed class OverlayChromeTests
             Assert.Equal((byte)(0.9 * 255), Assert.IsType<SolidColorBrush>(frame.Background).Color.A);
             panel.SetHoverBackgroundOpacity(0.8);
             Assert.Equal((byte)(0.8 * 255), Assert.IsType<SolidColorBrush>(frame.Background).Color.A);
+            panel.SetBackgroundOpacity(0.9);
+            Assert.Equal((byte)(0.9 * 255), Assert.IsType<SolidColorBrush>(frame.Background).Color.A);
+            panel.SetHoverBackgroundOpacity(0.1);
+            Assert.Equal((byte)(0.9 * 255), Assert.IsType<SolidColorBrush>(frame.Background).Color.A);
+            panel.SetHoverBackgroundOpacity(0.9);
+            Assert.Equal((byte)(0.9 * 255), Assert.IsType<SolidColorBrush>(frame.Background).Color.A);
+            panel.SetHoverBackgroundOpacity(0.8);
+            panel.SetBackgroundOpacity(0.3);
+            Assert.Equal((byte)(0.8 * 255), Assert.IsType<SolidColorBrush>(frame.Background).Color.A);
             panel.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = UIElement.MouseLeaveEvent });
             Assert.Equal((byte)(0.3 * 255), Assert.IsType<SolidColorBrush>(frame.Background).Color.A);
+            panel.SetBackgroundOpacity(0.9);
+            panel.SetHoverBackgroundOpacity(0.1);
+            panel.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = UIElement.MouseEnterEvent });
+            Assert.Equal((byte)(0.9 * 255), Assert.IsType<SolidColorBrush>(frame.Background).Color.A);
+            panel.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = UIElement.MouseLeaveEvent });
+            Assert.Equal((byte)(0.9 * 255), Assert.IsType<SolidColorBrush>(frame.Background).Color.A);
             panel.SetBackgroundOpacity(0.2);
             panel.SetHoverBackgroundOpacity(0.9);
+        }
+        Assert.Equal(new[] { true, false, true, false, true, false, true, false }, hoverChanges);
+    }
+
+    private static void VerifyRoundedFrame(OverlayPanel panel, Border frame)
+    {
+        foreach (bool docked in new[] { false, true, false })
+        {
+            panel.SetDocked(docked);
+            Assert.Equal(new CornerRadius(12), frame.CornerRadius);
+            foreach (var size in new[] { new Size(300, 220), new Size(420, 320) })
+            {
+                panel.Measure(size);
+                panel.Arrange(new Rect(size));
+                panel.UpdateLayout();
+                var clip = Assert.IsType<RectangleGeometry>(frame.Clip);
+                Assert.Equal(12, clip.RadiusX);
+                Assert.Equal(12, clip.RadiusY);
+                Assert.Equal(frame.ActualWidth, clip.Rect.Width);
+                Assert.Equal(frame.ActualHeight, clip.Rect.Height);
+                Assert.False(clip.FillContains(new Point(0, 0)));
+                Assert.True(clip.FillContains(new Point(frame.ActualWidth / 2, frame.ActualHeight / 2)));
+            }
         }
     }
 

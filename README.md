@@ -40,7 +40,7 @@ Highlights from the screenshot:
   quest givers, required dialogue, HAVE/NEED item counts, drop sources, and a watched-quest list.
 - **[Inventory & loot quests](#inventory--loot-quests-overlay):** compare owned, carried,
   bank, hoard, and depot counts; open item/quest wiki pages; mark quests complete or reopen them;
-  and find upgrade-rank duplicates in **Ready to merge**.
+  with a separate **Ready to merge** overlay for upgrade-rank duplicates.
 - **[Quest opportunities](#loot-quest-lookup):** sort or search items and quest references,
   watch lookup progress and cache/queue totals, and compare inventory locations with historical
   loot. Historical loot is unconfirmed, not proof that you still own an item.
@@ -307,7 +307,8 @@ as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels r
 | Motes | Motes of Potential looted per tier (session and all time), motes/hr, recent drops, drop rates here, and each tier's upgrade value (see below) |
 | Mote upgrade planner | Motes and spare item copies needed for each step from an item's or spell's current +rank to +10 (see below) |
 | Sky quest tracker | Plane of Sky class quests, rewards, required items, drop sources, and watched quests |
-| Inventory & loot quests | Owned counts by storage location, item/quest wiki links, quest completion, and upgrade-rank merge candidates |
+| Inventory & loot quests | Owned counts by storage location, item/quest wiki links, and quest completion |
+| Ready to merge | Upgrade-rank merge candidates with quantities and exact storage locations |
 | Item upgrades | Item ranks that increased between inventory exports, with the local date and time of each upgrade |
 | Exaltations | Search by effect to find installed and loose exaltations, their host items, and exact exported locations |
 | Quest opportunities | Searchable item-to-quest references with inventory counts and lookup progress |
@@ -325,8 +326,10 @@ as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels r
 - Expand **General > Overlays > Individual overlay appearance and locks**, then an overlay's name,
   to adjust its text size, background opacity, and floating-window lock independently.
   Size and opacity apply to both floating and docked panels, update live, and are saved with positions.
+  Floating and docked overlays use rounded outer corners, with contents clipped to the rounded outline.
   Existing settings retain the previous global appearance and lock values until individually changed.
   **Mouse-over background** sets a separate background opacity while the pointer is over that overlay.
+  If it is lower than **Background**, it is ignored: hovering never reduces the background opacity.
   Moving away restores **Background**; text stays unchanged. This works for docked panels and locked
   or unlocked floating overlays. Initially the mouse-over value matches the normal background opacity.
 - Unlocked floating overlays also have a compact background-opacity slider just left of **Dock**. Adjust it over
@@ -379,25 +382,27 @@ Five color-coded rows show **Magic, Fire, Cold, Poison, and Disease**:
   These traits are separate from elemental resistance values. Use **Refresh wiki** to update
   an older cached page that does not yet include special traits.
 - **Observed result** shows a plain label followed by the percentage and resisted/assessed counts,
-  for example **Partial — 65% (13/20)**. Estimated reduced-damage resists are included in the
-  resisted count; hits still awaiting a baseline and other-spell resists are not in this denominator.
+  for example **Partial — 65% (13/20)**. Only explicit resist messages enter the resisted count.
+  Confirmed damage hits count as landed, even below the damage baseline or while learning it.
+  Other-spell resists are not in this denominator.
   With no assessed outcomes it shows **Unknown — no assessed outcomes**.
   **Resists** (all recorded outcomes resisted), **Partial** (more than half but not all),
-  **Partially Resistant** (10% through 50%), and **Not Resistant** (less than 10%).
+  **Partially Resistant** (20% through 50%), and **Not Resistant** (less than 20%).
   **Unknown** means no comparable observations, not zero resistance.
   Labels cover your spells whose wiki metadata identifies
   single-target instant direct damage, including instant **Lifetap** spells such as Life Leech.
   Ranked spells fall back to their base wiki page if needed.
   A successful outcome must match a recent, uninterrupted personal cast.
   Repeated damage lines for that cast and target do not inflate the count.
-  Reduced-damage hits now count as **estimated partial resists** if they deal less than **90%**
-  of learned normal damage. Normal damage is learned separately for each character, reported
-  class loadout, level, and exact spell rank from non-critical, unmodified hits. At least three hits within 90% of the highest
-  observed damage are needed before using that baseline. Until then, damage observations stay
-  unassessed rather than being assumed full hits; saved samples are re-evaluated as learning improves.
-  Each estimated partial resist counts as one resisted outcome for the labels above.
-  Buff changes, mitigation, and an entirely partially resisted training sample can skew this
-  estimate, so it is not proof of a resist.
+  **Reduced-damage hits (cause unknown)** are shown separately if they deal less than **90%**
+  of typical damage. The baseline is the **sample-count-weighted median**, not the maximum,
+  learned separately for each character, reported class loadout, level, and exact spell rank
+  across mobs/zones from non-critical, unmodified hits. At least three eligible hits are required;
+  for an even sample count the middle two damage values are averaged. Until then, hits await a
+  damage baseline but still count as confirmed landings. Saved samples are re-evaluated as
+  learning improves, including after updating the app; no resistance reset is needed.
+  Reduced-damage estimates never enter the resisted count or affect the resistance label.
+  Buff changes and mitigation can skew these estimates, so reduced damage is not proof of a resist.
   Damage observations wait briefly for death messages. The latest candidate hit on that mob is
   excluded from both learning and resistance outcomes when a death is logged within **3 seconds**,
   even if another player gets the kill. Without a death message (or with one delayed longer than
@@ -422,9 +427,20 @@ Observations accumulate across characters and sessions; **Reset session** does n
 Reopening the same log does not count its recorded history again. Moving a log to a different
 path can reimport its observations.
 
+Use **Reset resistances** in Mob info to clear observations for the displayed mob in its current
+zone. Confirm or cancel directly inside the overlay; reset progress, success, and save errors also
+appear there, without a popup. The panel stays open while confirming or saving.
+This clears its spell outcomes and damage samples across characters,
+but keeps wiki stats, spell metadata, NPC encounters, and other mobs/zones. The saved reset cutoff
+excludes events logged at or before the reset, even from renamed/copied logs; new events resume
+learning. Unlock floating overlays to use the button. It is disabled if persistent mob storage
+could not be loaded. Running older builds that do not understand reset cutoffs can discard them.
+
 Under **General > Consider / mob information**, set the display timeout (default **5 seconds**;
 `0` keeps it until your next consider). Mob info supports the usual docking, independent text
 size, opacity, and lock controls. Timed expiry hides it in both docked and floating modes.
+Hovering holds an active Mob info panel open, including locked floating overlays. When the pointer
+leaves, a fresh full display timeout starts. A new consider still updates the panel while hovered.
 The normal EverQuest visibility rule still applies to floating windows.
 
 Unlock the panel to use **Wiki** or **Refresh wiki**; docked buttons are always interactive.
@@ -482,8 +498,8 @@ spell names against long status text.
   start plus one second, minimum one second. Other-attacker damage/DPS is separate and includes
   all observed attackers, not guaranteed group members. These are log-observed damage rates,
   not estimates of NPC health or remaining HP.
-- **Per-spell resistance history** separates full resists, estimated reduced-damage resists,
-  full/near-full landings, and hits awaiting a reliable baseline. It uses the same saved
+- **Per-spell resistance history** separates explicit full resists, confirmed landings,
+  reduced-damage estimates, and landed hits awaiting a typical-damage baseline. It uses the same saved
   observations and finishing-hit exclusions as Mob info. Encounter spell rows separately show
   damage, confirmed direct landings (including partial/finishing hits), and explicit resists;
   DoT ticks contribute damage, not additional direct landings.
@@ -548,13 +564,23 @@ No inventory file is uploaded.
 ### Inventory & loot quests overlay
 
 Turn it on under **Settings > General > Overlays** (it docks by default and can float like any other
-panel; unlock a floating copy to type in it). It has two tabs:
+panel; unlock a floating copy to type in it).
 
-- **Items & quests**: the inventory grid (editable Owned plus Carried, Bank, Hoard, Depot, Other,
+It contains an inventory grid (editable Owned plus Carried, Bank, Hoard, Depot, Other,
   Collection and Installed counts), quest lookups, item wiki pages, and Complete / reopen.
   Drag the horizontal divider to share space between the inventory and quest references.
   The quest heading stays with its results, and both panes retain a minimum height.
-- **Ready to merge**: items you hold more than once at different `+N` ranks, grouped by name without the
+
+### Ready to merge overlay
+
+**Ready to merge** is a separate overlay under **Settings > General > Overlays**, with its own
+visibility, workspace, floating position, text size, opacity, and lock controls.
+When upgrading from the combined inventory overlay, it inherits inventory's visibility and appearance
+and is added to every workspace containing inventory, below the existing panels. Floating inventory
+users get a floating merge overlay too. This happens only once; hiding or moving merge afterward
+does not cause it to be re-enabled on restart. New users can enable it separately (it docks by default).
+
+It shows items you hold more than once at different `+N` ranks, grouped by name without the
   `+N`. Each copy shows its rank, quantity and exact location, for example
   `Worn Wrist, equipment slot 9`, `Inventory slot 4 (Spacious Rucksack), bag slot 6`,
   `Bank slot 10 (Storage Trunk), bag slot 8`, `Shared bank slot 1`, `Dragon's Hoard slot 12` or

@@ -449,13 +449,18 @@ public partial class MainWindow
                 result = $"{school}  /  {observed.DisplayText}";
                 evidence =
                 [
-                    ("Full/near-full", $"{observed.Landed:N0}"),
+                    ("Confirmed landings", $"{observed.Landed:N0}"),
                     ("Full resists", $"{counts.FullResists:N0}"),
-                    ("Estimated partial", $"{observed.EstimatedPartial:N0}"),
+                    ("Reduced damage", $"{observed.EstimatedPartial:N0}"),
                 ];
                 explanation = observed.UnassessedDamage > 0
-                    ? $"{observed.UnassessedDamage:N0} hits need a reliable normal-damage baseline for this character/loadout/rank."
+                    ? $"{observed.UnassessedDamage:N0} landed hits need at least 3 damage samples for a typical-damage baseline for this character/loadout/rank."
                     : observed.Landed + observed.Resisted == 0 ? "No assessed damage outcomes yet." : "";
+                if (observed.EstimatedPartial > 0)
+                {
+                    explanation += (explanation.Length > 0 ? "\n" : "") +
+                        "Reduced-damage hits are below 90% of the sample-weighted median; cause unknown. They count as landed, not resisted.";
+                }
                 if (counts.LegacyLandings > 0)
                 {
                     explanation += (explanation.Length > 0 ? "\n" : "") +
@@ -485,11 +490,11 @@ public partial class MainWindow
                 Details: explanation.Length > 0 ? explanation : null, Stacked: true));
         }
         rows.Add(new("About damage ratings", Details:
-            "Only verified single-target instant damage (including lifetaps) receives a full/partial rating. " +
+            "Only explicit resists enter the resist percentage for verified single-target instant damage (including lifetaps). " +
             "Single-target DoTs count once per cast: landed when its first tick hits, or resisted; ticks from a DoT already running are not counted. " +
             "Area waves are not reliable cast-success denominators. " +
-            "Reduced-damage ratings are estimates; critical/modified and recent finishing hits are excluded. " +
-            "Missing school, insufficient baseline, and unsupported spell shape are not NPC immunity.", Stacked: true));
+            "Reduced damage is shown separately using 90% of the sample-weighted median; critical/modified and recent finishing hits are excluded. " +
+            "Missing school, reduced damage, and unsupported spell shape are not NPC immunity.", Stacked: true));
         if (!string.IsNullOrEmpty(_npcWikiStatus))
         {
             rows.Add(new(_npcWikiStatus, Wrap: true, Scale: 0.85));

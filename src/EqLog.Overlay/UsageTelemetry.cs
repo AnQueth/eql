@@ -32,6 +32,7 @@ internal enum UsageFeature
     NpcCompendiumPanel,
     WikiActivityPanel,
     InventoryPanel,
+    MergePanel,
     ItemUpgradesPanel,
     MoteUpgradePlannerPanel,
     ExaltationsPanel,
@@ -48,6 +49,7 @@ internal enum UsageErrorSource
     Updates,
     Wiki,
     InventoryImport,
+    ResistanceReset,
 }
 
 internal static class UsageTelemetry
@@ -176,6 +178,7 @@ internal static class UsageTelemetry
             "npcs" => UsageFeature.NpcCompendiumPanel,
             "wiki" => UsageFeature.WikiActivityPanel,
             "inventory" => UsageFeature.InventoryPanel,
+            "merge" => UsageFeature.MergePanel,
             "itemupgrades" => UsageFeature.ItemUpgradesPanel,
             "moteplan" => UsageFeature.MoteUpgradePlannerPanel,
             "exaltations" => UsageFeature.ExaltationsPanel,

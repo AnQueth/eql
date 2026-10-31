@@ -10,8 +10,8 @@ public class PartialResistanceTests
     [Theory]
     [InlineData(1000, 4, 0)]
     [InlineData(900, 4, 0)]
-    [InlineData(899, 3, 1)]
-    [InlineData(100, 3, 1)]
+    [InlineData(899, 4, 1)]
+    [InlineData(100, 4, 1)]
     public void LearnedDamage_UsesExactNinetyPercentCutoff(long hit, long landed, long partial)
     {
         var store = CreateStore();
@@ -20,21 +20,23 @@ public class PartialResistanceTests
         var fire = Fire(store);
         Assert.Equal(landed, fire.Landed);
         Assert.Equal(partial, fire.EstimatedPartial);
-        Assert.Equal(partial, fire.Resisted);
+        Assert.Equal(0, fire.Resisted);
+        Assert.Equal("Not Resistant", fire.Status);
     }
 
     [Fact]
-    public void LearnedDamage_RequiresThreeNearPeakHits_ThenReclassifiesPriorLowHits()
+    public void LearnedDamage_RequiresThreeHits_ThenAssessesLowDamageSeparately()
     {
         var store = CreateStore();
         store.Record("trial", 1, "Sky", "Target", "Conflagration X", false, T0, "Tester", 100);
         store.Record("trial", 2, "Sky", "Target", "Conflagration X", false, T0, "Tester", 1000);
+        Assert.Equal(2, Fire(store).UnassessedDamage);
+        Assert.Equal(2, Fire(store).Landed);
+        Assert.Equal("Not Resistant", Fire(store).Status);
         store.Record("trial", 3, "Sky", "Target", "Conflagration X", false, T0, "Tester", 1000);
-        Assert.Equal(3, Fire(store).UnassessedDamage);
-        Assert.Equal("Unknown", Fire(store).Status);
-        store.Record("trial", 4, "Sky", "Target", "Conflagration X", false, T0, "Tester", 1000);
+        Assert.Equal(0, Fire(store).UnassessedDamage);
         Assert.Equal(1, Fire(store).EstimatedPartial);
-        Assert.Equal("Partially Resistant", Fire(store).Status);
+        Assert.Equal("Not Resistant", Fire(store).Status);
     }
 
     [Fact]
@@ -43,11 +45,77 @@ public class PartialResistanceTests
         var store = CreateStore();
         store.Record("trial", 1, "Sky", "Target", "Conflagration X", true, T0);
         store.Record("trial", 2, "Sky", "Target", "Conflagration X", false, T0, "Tester", 500);
-        Assert.Equal("Unknown", Fire(store).Status);
+        Assert.Equal("Partially Resistant", Fire(store).Status);
+        Assert.Equal(1, Fire(store).Landed);
+        Assert.Equal(1, Fire(store).Resisted);
         Learn(store, "Tester", "Conflagration X", 1000);
         Assert.Equal(0, Fire(store).UnassessedDamage);
         Assert.Equal(1, Fire(store).EstimatedPartial);
         Assert.Equal("Partially Resistant", Fire(store).Status);
+    }
+
+    [Fact]
+    public void LearnedDamage_ThunderSpiritNormalHits_AreNotResistsDespiteHigherHistoricalPeaks()
+    {
+        var store = CreateStore();
+        for (int line = 1; line <= 11; line++)
+        {
+            store.Record("training", line, "Castle", "Training mob", "Conflagration X", false, T0,
+                "Tester", line <= 8 ? 1694 : 2080);
+        }
+        var tracker = new MobResistanceTracker(store, "fight") { CharacterName = "Tester" };
+        tracker.OnEvent(new ZoneEvent(T0, "Sky"), 1);
+        tracker.OnEvent(new CastBeginEvent(T0, "Conflagration X"), 2);
+        tracker.OnEvent(Hit(T0.AddSeconds(2), 4836) with
+        {
+            Modifier = "Critical"
+        }, 3);
+        int lineNumber = 4;
+        foreach (var (second, damage) in new[] { (5, 1755), (8, 1555), (12, 1708) })
+        {
+            tracker.OnEvent(new CastBeginEvent(T0.AddSeconds(second - 2), "Conflagration X"), lineNumber++);
+            tracker.OnEvent(Hit(T0.AddSeconds(second), damage), lineNumber++);
+        }
+        tracker.OnEvent(new CastBeginEvent(T0.AddSeconds(13), "Conflagration X"), lineNumber++);
+        tracker.OnEvent(Hit(T0.AddSeconds(15), 4683) with
+        {
+            Modifier = "Critical"
+        }, lineNumber++);
+        tracker.OnEvent(new KillEvent(T0.AddSeconds(16), Names.You, "Target"), lineNumber);
+        tracker.Advance(T0.AddSeconds(20));
+
+        var fire = Fire(store);
+        Assert.Equal(3, fire.Landed);
+        Assert.Equal(0, fire.Resisted);
+        Assert.Equal(0, fire.EstimatedPartial);
+        Assert.Equal("Not Resistant \u2014 0% (0/3)", fire.DisplayText);
+    }
+
+    [Fact]
+    public void LearnedDamage_EvenSampleCount_AveragesMiddleValuesWithoutRounding()
+    {
+        var store = CreateStore();
+        long[] damage = [900, 1000, 1000, 1001, 1001, 2000];
+        for (int index = 0; index < damage.Length; index++)
+        {
+            store.Record("trial", index + 1, "Sky", "Target", "Conflagration X", false, T0, "Tester", damage[index]);
+        }
+
+        Assert.Equal(1, Fire(store).EstimatedPartial);
+        Assert.Equal(6, Fire(store).Landed);
+        Assert.Equal(0, Fire(store).Resisted);
+    }
+
+    [Fact]
+    public void LearnedDamage_SingleHighOutlier_DoesNotPreventLearningTypicalDamage()
+    {
+        var store = CreateStore();
+        Learn(store, "Tester", "Conflagration X", 1800);
+        store.Record("outlier", 1, "Sky", "Target", "Conflagration X", false, T0, "Tester", 9000);
+
+        Assert.Equal(0, Fire(store).UnassessedDamage);
+        Assert.Equal(0, Fire(store).EstimatedPartial);
+        Assert.Equal(4, Fire(store).Landed);
     }
 
     [Fact]
@@ -148,9 +216,9 @@ public class PartialResistanceTests
             engine.Process(new(T0.AddSeconds(11), "You hit Target for 500 points of fire damage by Conflagration X."));
             engine.Snapshot(T0.AddSeconds(15));
         }
-        Assert.Equal(3, Fire(store).Landed);
+        Assert.Equal(4, Fire(store).Landed);
         Assert.Equal(1, Fire(store).EstimatedPartial);
-        Assert.Equal("Partially Resistant", Fire(store).Status);
+        Assert.Equal("Not Resistant", Fire(store).Status);
     }
 
     [Fact]
@@ -168,7 +236,8 @@ public class PartialResistanceTests
             var loaded = await MobResistanceStore.LoadAsync(path);
             loaded.Record("trial", 1, "Sky", "Target", "Conflagration X", false, T0, "Tester", 500);
             Assert.Equal(1, Fire(loaded).EstimatedPartial);
-            Assert.Equal(3, Fire(loaded).Landed);
+            Assert.Equal(4, Fire(loaded).Landed);
+            Assert.Equal(0, Fire(loaded).Resisted);
         }
         finally
         {

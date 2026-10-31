@@ -5,26 +5,27 @@ using EqLog.Core;
 
 namespace EqLog.Overlay;
 
-/// <summary>The "Inventory & loot quests" overlay: the former Loot quests settings tab plus a Ready to merge view.</summary>
+/// <summary>The inventory/quest and Ready to merge overlays share the current character's inventory export.</summary>
 public partial class MainWindow
 {
-    private const int InventoryItemsTab = 0;
-
-    private TabControl? _inventoryTabs;
     private StackPanel? _mergeHost;
     private TextBlock? _mergeSummary;
     private TextBox? _mergeFilter;
-    private OverlayPanel? _inventoryPanel;
+    private OverlayPanel? _mergePanel;
     private IReadOnlyList<InventoryExportItem> _inventoryRows = [];
     private string? _inventoryRowsCharacter;
 
     private void ConfigureInventoryOverlay(OverlayPanel panel)
     {
-        _inventoryPanel = panel;
         // The Loot quests controls (and their XAML event handlers) move here intact; the settings tab goes away.
         LootQuestsTab.Content = null;
         Tabs.Items.Remove(LootQuestsTab);
+        panel.SetBody(LootQuestsContent);
+    }
 
+    private void ConfigureMergeOverlay(OverlayPanel panel)
+    {
+        _mergePanel = panel;
         _mergeFilter = new TextBox
         {
             ToolTip = "Filter by item name or location (case-insensitive). Clear to show all.",
@@ -46,26 +47,70 @@ public partial class MainWindow
         mergeView.Children.Add(mergeTop);
         mergeView.Children.Add(mergeScroll);
 
-        _inventoryTabs = new TabControl
-        {
-            Padding = new Thickness(0),
-            BorderThickness = new Thickness(0),
-            Margin = new Thickness(0, 4, 0, 0),
-        };
-        _inventoryTabs.Items.Add(new TabItem
-        {
-            Header = "Items & quests",
-            Content = LootQuestsContent,
-            ToolTip = "Owned counts, wiki item pages and quest references for every item you have or looted",
-        });
-        _inventoryTabs.Items.Add(new TabItem
-        {
-            Header = "Ready to merge",
-            Content = mergeView,
-            ToolTip = "Copies of the same item at different +N ranks, with where each one is",
-        });
-        panel.SetBody(_inventoryTabs);
+        panel.SetBody(mergeView);
         RefreshMergeView();
+    }
+
+    /// <summary>Adds the split-out merge panel once, preserving existing inventory layouts and visibility.</summary>
+    internal static void InitializeMergeOverlay(AppSettings settings, Rect work)
+    {
+        const string key = "merge";
+        if (settings.Overlays.ContainsKey(key))
+        {
+            return;
+        }
+
+        var definition = OverlayPresenters.All.Single(def => def.Key == key);
+        var placement = DefaultPlacement(definition, OverlayPresenters.All.Count - 1, work);
+        if (settings.Overlays.TryGetValue("inventory", out var inventory))
+        {
+            var activeWorkspace = settings.DockWindow.EnsureActiveWorkspace(settings.Overlays);
+            if (inventory.Docked && !settings.DockWindow.IsPanelInAnyWorkspace("inventory"))
+            {
+                activeWorkspace.Panels["inventory"] = DockPanelSettings.From(inventory);
+            }
+            placement = inventory.Clone();
+            if (inventory.Left + inventory.Width + 8 + placement.Width <= work.Right)
+            {
+                placement.Left = inventory.Left + inventory.Width + 8;
+            }
+            else if (inventory.Top + inventory.Height + 8 + placement.Height <= work.Bottom)
+            {
+                placement.Top = inventory.Top + inventory.Height + 8;
+            }
+            else
+            {
+                placement.Left = work.Left + 40;
+                placement.Top = work.Top + 40;
+            }
+
+            foreach (var workspace in settings.DockWindow.Workspaces)
+            {
+                if (!workspace.Panels.TryGetValue("inventory", out var inventoryTile) ||
+                    workspace.Panels.ContainsKey(key))
+                {
+                    continue;
+                }
+
+                var bounds = workspace.Panels.Select(pair =>
+                {
+                    settings.Overlays.TryGetValue(pair.Key, out var floating);
+                    var tile = pair.Value;
+                    return new Rect(tile.DockLeft ?? 4, tile.DockTop ?? 4,
+                        tile.DockWidth > 0 ? tile.DockWidth : floating?.Width ?? definition.Width,
+                        tile.DockHeight > 0 ? tile.DockHeight : floating?.Height ?? definition.Height);
+                });
+                var position = DockWindow.AppendPosition(bounds);
+                var mergeTile = inventoryTile.Clone();
+                mergeTile.DockLeft = position.X;
+                mergeTile.DockTop = position.Y;
+                workspace.Panels[key] = mergeTile;
+            }
+
+            placement.Docked = settings.DockWindow.IsPanelInAnyWorkspace(key);
+        }
+
+        settings.Overlays[key] = placement;
     }
 
     /// <summary>Keeps the latest export rows so the merge view can show exact locations.</summary>
@@ -107,7 +152,7 @@ public partial class MainWindow
                 " Plain copies count as +0. Two copies that were never upgraded are not listed, because they look like stackable items." +
                 " Collections and installed augments are left out.";
 
-        double fontSize = _inventoryPanel?.FontSize ?? 13;
+        double fontSize = _mergePanel?.FontSize ?? 13;
         foreach (var group in shown)
         {
             var heading = new TextBlock
@@ -148,8 +193,8 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>Shows the inventory overlay (docked or floating) on the given tab.</summary>
-    private void ShowInventoryOverlay(int tab)
+    /// <summary>Shows the inventory overlay (docked or floating) for item and quest references.</summary>
+    private void ShowInventoryOverlay()
     {
         const string key = "inventory";
         if (!_settings.Overlays[key].Visible)
@@ -166,10 +211,6 @@ public partial class MainWindow
         {
             EnsureOnScreen(_overlays[key]);
             _overlays[key].ReassertTopmost();
-        }
-        if (_inventoryTabs is not null)
-        {
-            _inventoryTabs.SelectedIndex = tab;
         }
     }
 }

@@ -548,7 +548,7 @@ public partial class MainWindow
     private async Task LookupLootItemAsync(string item)
     {
         UsageTelemetry.TrackFeature(UsageFeature.LootQuestLookup);
-        ShowInventoryOverlay(InventoryItemsTab);
+        ShowInventoryOverlay();
         var selected = _questInventory.Items.FirstOrDefault(i =>
             i.Character.Equals(_characterName, StringComparison.OrdinalIgnoreCase) && ItemNames.Comparer.Equals(i.Item, item));
         if (selected is null)

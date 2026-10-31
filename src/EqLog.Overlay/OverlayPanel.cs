@@ -404,11 +404,12 @@ public sealed class OverlayPanel : ContentControl
         }
         _frame = new Border
         {
-            CornerRadius = new CornerRadius(4),
+            CornerRadius = new CornerRadius(12),
             Padding = new Thickness(6, 4, 6, 4),
             BorderThickness = new Thickness(1),
             Child = frameContent,
         };
+        _frame.SizeChanged += (_, _) => UpdateFrameClip();
         Content = _frame;
         Focusable = false;
         _title.Text = caption;
@@ -546,7 +547,10 @@ public sealed class OverlayPanel : ContentControl
 
         _backgroundHovered = hovered;
         Apply();
+        BackgroundHoverChanged?.Invoke(hovered);
     }
+
+    internal event Action<bool>? BackgroundHoverChanged;
 
     public void SetLocked(bool locked)
     {
@@ -573,7 +577,7 @@ public sealed class OverlayPanel : ContentControl
 
     private void Apply()
     {
-        double opacity = _backgroundHovered ? _hoverOpacity ?? _opacity : _opacity;
+        double opacity = _backgroundHovered ? Math.Max(_opacity, _hoverOpacity ?? _opacity) : _opacity;
         var color = ((SolidColorBrush)FindResource("NightBackground")).Color;
         var bg = new SolidColorBrush(Color.FromArgb((byte)(opacity * 255), color.R, color.G, color.B));
         bg.Freeze();
@@ -610,7 +614,8 @@ public sealed class OverlayPanel : ContentControl
     {
         _ornaments.Visibility = _docked ? Visibility.Visible : Visibility.Collapsed;
         _frame.Padding = _docked ? new Thickness(2) : new Thickness(6, 4, 6, 4);
-        _frame.CornerRadius = new CornerRadius(_docked ? 8 : 4);
+        _frame.CornerRadius = new CornerRadius(12);
+        UpdateFrameClip();
         _frame.BorderThickness = new Thickness(_docked ? 2 : 1);
         _bevel.BorderThickness = _docked ? new Thickness(1, 1, 2, 2) : new Thickness(0);
         _bevel.CornerRadius = new CornerRadius(5);
@@ -645,6 +650,14 @@ public sealed class OverlayPanel : ContentControl
         _titleFrame.Background = Gradient(
             Blend(raised, accent, 0.12), raised, Blend(raised, Colors.Black, 0.3), _opacity);
         _titleFrame.BorderBrush = Gradient(accent, metal, Blend(metal, Colors.Black, 0.5));
+    }
+
+    private void UpdateFrameClip()
+    {
+        var clip = new RectangleGeometry(new Rect(0, 0, _frame.ActualWidth, _frame.ActualHeight),
+            _frame.CornerRadius.TopLeft, _frame.CornerRadius.TopLeft);
+        clip.Freeze();
+        _frame.Clip = clip;
     }
 
     private static Color Blend(Color from, Color to, double amount)

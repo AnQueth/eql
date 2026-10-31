@@ -23,10 +23,11 @@ public partial class MainWindow
     private ConsiderEvent? _consideredMob;
     private string _consideredZone = "";
     private string? _considerAssessment;
-    private DateTime _mobVisibleUntil;
+    private readonly MobInfoVisibility _mobVisibility = new();
     private CancellationTokenSource? _mobLookupCts;
     private string _mobWikiStatus = "";
     private bool _mobShowing;
+    private bool _mobResetPending;
     private WikiRepository _wikiRepository = null!;
     private readonly HashSet<string> _spawnWikiPending = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _spawnWikiRetry = new(StringComparer.OrdinalIgnoreCase);
@@ -83,7 +84,7 @@ public partial class MainWindow
     {
         get
         {
-            return _consideredMob is not null && DateTime.Now < _mobVisibleUntil;
+            return _consideredMob is not null && (_mobResetPending || _mobVisibility.IsActive(DateTime.Now));
         }
     }
 
@@ -140,12 +141,16 @@ public partial class MainWindow
         }
         if (MobInfoActive)
         {
-            _mobVisibleUntil = seconds == 0 ? DateTime.MaxValue : DateTime.Now.AddSeconds(seconds);
+            _mobVisibility.Show(DateTime.Now, seconds);
         }
     }
 
     private void ConfigureMobToolbar(OverlayPanel panel)
     {
+        panel.BackgroundHoverChanged += hovered =>
+        {
+            _mobVisibility.SetHovered(hovered, DateTime.Now, _settings.MobInfoTimeoutSeconds);
+        };
         var bar = new StackPanel { Orientation = Orientation.Horizontal };
         var refresh = new Button { Content = "Refresh wiki", FontSize = 11 };
         refresh.Click += (_, _) =>
@@ -166,7 +171,98 @@ public partial class MainWindow
         };
         bar.Children.Add(refresh);
         bar.Children.Add(wiki);
-        panel.SetToolbar(bar);
+        var reset = new Button
+        {
+            Content = "Reset resistances",
+            FontSize = 11,
+            IsEnabled = _mobSaveEnabled,
+            ToolTip = "Clear this mob's observed resistances in this zone only. Wiki data and other mobs are kept.",
+        };
+        ConsiderEvent? resetTarget = null;
+        string resetZone = "";
+        var confirmationText = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        var confirm = new Button { Content = "Confirm reset", FontSize = 11 };
+        var cancel = new Button { Content = "Cancel", FontSize = 11 };
+        var confirmation = new StackPanel
+        {
+            Visibility = Visibility.Collapsed,
+            Margin = new Thickness(0, 6, 0, 0),
+            Children =
+            {
+                confirmationText,
+                new StackPanel { Orientation = Orientation.Horizontal, Children = { confirm, cancel } },
+            },
+        };
+        var result = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            Visibility = Visibility.Collapsed,
+            Margin = new Thickness(0, 6, 0, 0),
+        };
+        reset.Click += (_, _) =>
+        {
+            if (_consideredMob is not { } considered)
+            {
+                return;
+            }
+            resetTarget = considered;
+            resetZone = _consideredZone;
+            confirmationText.Text = $"Reset resistance observations for {considered.Mob} in {resetZone}?\n" +
+                "Spell outcomes and damage samples will be cleared. Wiki data, NPC encounters, and other mobs " +
+                "are kept. Old log events stay excluded; new events resume learning.";
+            confirmation.Visibility = Visibility.Visible;
+            result.Visibility = Visibility.Collapsed;
+            _mobResetPending = true;
+            reset.IsEnabled = false;
+        };
+        cancel.Click += (_, _) => FinishReset();
+        confirm.Click += async (_, _) =>
+        {
+            if (resetTarget is not { } considered)
+            {
+                return;
+            }
+            string mob = considered.Mob;
+            string zone = resetZone;
+            confirm.IsEnabled = false;
+            cancel.IsEnabled = false;
+            result.Text = $"Resetting resistances for {mob} in {zone}...";
+            result.Visibility = Visibility.Visible;
+            try
+            {
+                _mobResistances.ResetResistances(zone, mob, DateTime.Now);
+                await _mobResistances.SaveAsync(MobResistancePath);
+                result.Text = $"Resistance history reset for {mob} in {zone}. Learning from new events only.";
+                MobInfoStatusText.Text = result.Text;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+            {
+                UsageTelemetry.TrackError(ex, UsageErrorSource.ResistanceReset);
+                MobInfoStatusText.Text = $"Resistances cleared in memory for {mob} in {zone}, but saving failed: " +
+                    $"{ex.Message}. Use Reset resistances to retry.";
+                result.Text = MobInfoStatusText.Text;
+            }
+            finally
+            {
+                FinishReset();
+            }
+        };
+        bar.Children.Add(reset);
+        panel.SetToolbar(new StackPanel { Children = { bar, confirmation, result } });
+
+        void FinishReset()
+        {
+            _mobResetPending = false;
+            if (_consideredMob == resetTarget && _consideredZone == resetZone)
+            {
+                _mobVisibility.Show(DateTime.Now, _settings.MobInfoTimeoutSeconds);
+            }
+            resetTarget = null;
+            confirmation.Visibility = Visibility.Collapsed;
+            confirm.IsEnabled = true;
+            cancel.IsEnabled = true;
+            reset.IsEnabled = _mobSaveEnabled;
+        }
     }
 
     private void OpenMobWiki(string mob, string zone, Action<string> report)
@@ -192,8 +288,7 @@ public partial class MainWindow
                 _consideredMob = con;
                 _consideredZone = entry.Zone;
                 _considerAssessment = null;
-                _mobVisibleUntil = _settings.MobInfoTimeoutSeconds == 0
-                    ? DateTime.MaxValue : DateTime.Now.AddSeconds(_settings.MobInfoTimeoutSeconds);
+                _mobVisibility.Show(DateTime.Now, _settings.MobInfoTimeoutSeconds);
                 newConsider = true;
             }
             else if (entry.Event is ConsiderAssessmentEvent assessment && _consideredMob is not null &&
@@ -239,7 +334,7 @@ public partial class MainWindow
         _mobLookupCts?.Cancel();
         _mobEvents.Clear();
         _consideredMob = null;
-        _mobVisibleUntil = default;
+        _mobVisibility.Reset();
         _mobShowing = false;
         ApplyMode("mobinfo");
     }
@@ -392,8 +487,9 @@ public partial class MainWindow
         }
         foreach (var observation in info.Observations.Where(o => o.EstimatedPartial > 0 || o.UnassessedDamage > 0))
         {
-            rows.Add(new($"{observation.Type}: {observation.EstimatedPartial} estimated reduced-damage resists; " +
-                $"{observation.UnassessedDamage} hits awaiting a reliable damage baseline", Wrap: true, Scale: 0.8));
+            rows.Add(new($"{observation.Type}: {observation.EstimatedPartial} reduced-damage hits (cause unknown); " +
+                $"{observation.UnassessedDamage} hits awaiting a typical-damage baseline. " +
+                "These hits count as landed, not resisted.", Wrap: true, Scale: 0.8));
         }
         if (info.Unclassified > 0)
         {
@@ -417,7 +513,8 @@ public partial class MainWindow
         if (!compact)
         {
             rows.Add(new("Labels describe observed single-target direct spells and DoT casts (first tick = landed), not guaranteed immunity. " +
-                "Hits below 90% of learned normal damage count as estimated partial resists. " +
+                "Only explicit resists enter the resist percentage. Hits below 90% of the sample-weighted median damage " +
+                "are shown separately as reduced damage, not proof of resistance. The baseline requires at least 3 hits per character/loadout/rank. " +
                 "Critical/modified hits and hits followed by a logged death within 3 seconds are excluded. " +
                 "Buffs and other mitigation can affect estimates. Same-name mobs in this zone are combined.",
                 Wrap: true, Scale: 0.8));
@@ -429,5 +526,49 @@ public partial class MainWindow
                 Wrap: true, Foreground: Brushes.Coral, Scale: 0.85));
         }
         return new(mob, zone, rows, QuestLookup.SearchUrl(mob));
+    }
+}
+
+/// <summary>Holds an active consider display while hovered and restarts its timeout on departure.</summary>
+internal sealed class MobInfoVisibility
+{
+    private DateTime _visibleUntil;
+    private bool _hovered;
+    private bool _heldOpen;
+
+    internal bool IsActive(DateTime now)
+    {
+        return _heldOpen || now < _visibleUntil;
+    }
+
+    internal void Show(DateTime now, double seconds)
+    {
+        _visibleUntil = seconds == 0 ? DateTime.MaxValue : now.AddSeconds(seconds);
+        _heldOpen = _hovered;
+    }
+
+    internal void SetHovered(bool hovered, DateTime now, double seconds)
+    {
+        if (_hovered == hovered)
+        {
+            return;
+        }
+
+        bool active = IsActive(now);
+        _hovered = hovered;
+        if (hovered)
+        {
+            _heldOpen = active;
+        }
+        else if (_heldOpen)
+        {
+            Show(now, seconds);
+        }
+    }
+
+    internal void Reset()
+    {
+        _visibleUntil = default;
+        _heldOpen = false;
     }
 }
