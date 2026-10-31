@@ -257,9 +257,11 @@ public partial class MainWindow : Window
             var p = _settings.Overlays[def.Key];
             p.FontSize ??= _settings.FontSize;
             p.BackgroundOpacity ??= _settings.BackgroundOpacity;
+            p.HoverBackgroundOpacity ??= p.BackgroundOpacity;
             p.Locked ??= _settings.Locked;
             var panel = new OverlayPanel(def.Key, def.Caption, def.AutoScroll) { FontSize = p.FontSize.Value };
             panel.SetBackgroundOpacity(p.BackgroundOpacity.Value);
+            panel.SetHoverBackgroundOpacity(p.HoverBackgroundOpacity.Value);
             if (def.Key == "quests")
             {
                 ConfigureQuestToolbar(panel);
@@ -456,13 +458,18 @@ public partial class MainWindow : Window
             placement.BackgroundOpacity = value;
             backgroundSlider.Value = value;
         };
+        AddSlider("Mouse-over background", 0, 1, placement.HoverBackgroundOpacity!.Value, 0.05, value =>
+        {
+            placement.HoverBackgroundOpacity = value;
+            window.Panel.SetHoverBackgroundOpacity(value);
+        }, value => $"{value:P0}");
         return new Expander { Header = window.Panel.Caption, Content = controls };
 
         Slider AddSlider(string caption, double minimum, double maximum, double value, double tick,
             Action<double> changed, Func<double, string> format)
         {
             var row = new Grid { Margin = new Thickness(0, 4, 0, 4) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(88) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(54) });
             row.Children.Add(new TextBlock { Text = caption, VerticalAlignment = VerticalAlignment.Center });

@@ -9,13 +9,14 @@ namespace EqLog.Overlay;
 
 /// <summary>
 /// Borderless, transparent, always-on-top window hosting one <see cref="OverlayPanel"/>.
-/// Unlocked: drag to move, drag edges to resize. Locked: clicks pass through to the game.
+/// Unlocked: drag the header grip to move, drag edges to resize. Locked: clicks pass through to the game.
 /// </summary>
 public sealed class OverlayWindow : Window
 {
     private bool _locked;
     private bool _hoverOnlyChrome;
     private bool _sliderInteraction;
+    private bool _dragInteraction;
 
     public OverlayWindow(OverlayPanel panel)
     {
@@ -39,13 +40,28 @@ public sealed class OverlayWindow : Window
             UseAeroCaptionButtons = false,
         });
 
-        MouseLeftButtonDown += (_, e) =>
+        panel.DragHandle.DragStarted += (_, _) =>
         {
-            if (!_locked && e.ButtonState == MouseButtonState.Pressed &&
-                !OverlayPanel.IsInteractive(e.OriginalSource as DependencyObject))
+            if (!_locked && Content == Panel)
             {
-                DragMove();
+                _dragInteraction = true;
+                ApplyExStyle();
+                Activate();
             }
+        };
+        panel.DragHandle.DragDelta += (_, e) =>
+        {
+            if (!_locked && Content == Panel)
+            {
+                Left += e.HorizontalChange;
+                Top += e.VerticalChange;
+                e.Handled = true;
+            }
+        };
+        panel.DragHandle.DragCompleted += (_, _) =>
+        {
+            _dragInteraction = false;
+            ApplyExStyle();
         };
 
         SourceInitialized += (_, _) => ApplyExStyle();
@@ -67,7 +83,14 @@ public sealed class OverlayWindow : Window
                 EndSliderInteraction();
             }
         }), true);
-        Deactivated += (_, _) => EndSliderInteraction();
+        Deactivated += (_, _) =>
+        {
+            EndSliderInteraction();
+            if (Content == Panel)
+            {
+                Panel.DragHandle.CancelDrag();
+            }
+        };
         MouseEnter += (_, _) => UpdateChrome();
         MouseLeave += (_, _) => UpdateChrome();
         SetLocked(false);
@@ -101,8 +124,14 @@ public sealed class OverlayWindow : Window
 
     private void UpdateChrome()
     {
-        if (!_hoverOnlyChrome || !IsVisible || Content != Panel)
+        if (Content != Panel)
         {
+            Panel.SetChromeHidden(false);
+            return;
+        }
+        if (!IsVisible)
+        {
+            Panel.SetBackgroundHovered(false);
             Panel.SetChromeHidden(false);
             return;
         }
@@ -114,7 +143,8 @@ public sealed class OverlayWindow : Window
         }
         var position = PointFromScreen(new Point(cursor.X, cursor.Y));
         bool hovered = new Rect(0, 0, ActualWidth, ActualHeight).Contains(position);
-        Panel.SetChromeHidden(!hovered);
+        Panel.SetBackgroundHovered(hovered);
+        Panel.SetChromeHidden(_hoverOnlyChrome && !hovered);
     }
 
     public void SetLocked(bool locked)
@@ -122,6 +152,8 @@ public sealed class OverlayWindow : Window
         _locked = locked;
         if (locked)
         {
+            Panel.DragHandle.CancelDrag();
+            _dragInteraction = false;
             EndSliderInteraction();
         }
         Panel.SetLocked(locked);
@@ -161,7 +193,7 @@ public sealed class OverlayWindow : Window
         }
 
         int always = NativeMethods.WS_EX_TOOLWINDOW | NativeMethods.WS_EX_LAYERED;
-        bool typing = Panel.Key is "npcs" or "inventory" or "moteplan" || _sliderInteraction;
+        bool typing = Panel.Key is "npcs" or "inventory" or "moteplan" || _sliderInteraction || _dragInteraction;
         if (_locked || !typing)
         {
             always |= NativeMethods.WS_EX_NOACTIVATE;

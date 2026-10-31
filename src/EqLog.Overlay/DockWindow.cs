@@ -11,7 +11,7 @@ namespace EqLog.Overlay;
 /// <summary>
 /// The app's main window (e.g. for a second monitor): settings in a collapsible side panel on the left and
 /// user-selected dock workspaces on a scrollable freeform canvas on the right.
-/// Drag a tile to move it; drag its bottom-right corner to resize it. Closing this window exits the app.
+/// Drag a tile's header grip to move it; drag its bottom-right corner to resize it. Closing this window exits the app.
 /// </summary>
 public sealed class DockWindow : Window
 {
@@ -681,18 +681,31 @@ public sealed class DockWindow : Window
         grip.DragCompleted += (_, _) => CompactLayout();
         tile.Children.Add(grip);
 
-        tile.PreviewMouseLeftButtonDown += (_, e) =>
+        tile.AddHandler(Thumb.DragStartedEvent, new DragStartedEventHandler((_, e) =>
         {
-            _dragStart = e.OriginalSource is DependencyObject d && (IsInside<Thumb>(d) || OverlayPanel.IsInteractive(d)) ? null : e.GetPosition(this);
-        };
-        tile.PreviewMouseMove += (_, e) =>
+            if (e.OriginalSource == panel.DragHandle)
+            {
+                _dragStart = Mouse.GetPosition(this);
+                e.Handled = true;
+            }
+        }));
+        tile.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler((_, e) =>
         {
-            if (_dragStart is not Point start || e.LeftButton != MouseButtonState.Pressed)
+            if (e.OriginalSource == panel.DragHandle)
+            {
+                _dragStart = null;
+                e.Handled = true;
+            }
+        }));
+        tile.AddHandler(Thumb.DragDeltaEvent, new DragDeltaEventHandler((_, e) =>
+        {
+            if (e.OriginalSource != panel.DragHandle || _dragStart is not Point start)
             {
                 return;
             }
 
-            var delta = e.GetPosition(this) - start;
+            e.Handled = true;
+            var delta = Mouse.GetPosition(this) - start;
             if (Math.Abs(delta.X) > SystemParameters.MinimumHorizontalDragDistance || Math.Abs(delta.Y) > SystemParameters.MinimumVerticalDragDistance)
             {
                 _dragStart = null;
@@ -731,6 +744,7 @@ public sealed class DockWindow : Window
                 tile.Opacity = 0.3;
                 try
                 {
+                    panel.DragHandle.CancelDrag();
                     DragDrop.DoDragDrop(tile, new DataObject(PanelDragFormat, panel.Key), DragDropEffects.Move);
                 }
                 finally
@@ -738,7 +752,7 @@ public sealed class DockWindow : Window
                     FinishPanelDrag(tile);
                 }
             }
-        };
+        }));
 
         _byKey[panel.Key] = tile;
         _placements[panel.Key] = dockPlacement;
@@ -1094,8 +1108,8 @@ public sealed class DockWindow : Window
     private static string DragHintText(bool autoArrange)
     {
         return autoArrange
-            ? "Drag panels to reorder them; panels reflow to fill empty space."
-            : "Drag panels to move them; panels stay exactly where you put them.";
+            ? "Drag header grips to reorder panels; panels reflow to fill empty space."
+            : "Drag header grips to move panels; panels stay exactly where you put them.";
     }
 
     private static Thumb MakeGrip()
@@ -1113,20 +1127,6 @@ public sealed class DockWindow : Window
             ToolTip = "Drag to resize",
             Template = new ControlTemplate(typeof(Thumb)) { VisualTree = triangle },
         };
-    }
-
-    private static bool IsInside<T>(DependencyObject d)
-        where T : DependencyObject
-    {
-        for (var e = d; e is not null; e = e is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(e) : LogicalTreeHelper.GetParent(e))
-        {
-            if (e is T)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /// <summary>Remembers position, size and maximized state.</summary>

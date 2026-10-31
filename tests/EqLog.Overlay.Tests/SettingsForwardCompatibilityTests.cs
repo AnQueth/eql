@@ -6,6 +6,28 @@ namespace EqLog.Overlay.Tests;
 
 public sealed class SettingsForwardCompatibilityTests
 {
+    [Fact]
+    public void Snapshot_PreservesIndependentHoverOpacityAcrossSerialization()
+    {
+        var settings = new AppSettings
+        {
+            Overlays = new()
+            {
+                ["dps"] = new OverlayPlacement { BackgroundOpacity = 0.2, HoverBackgroundOpacity = 0.9 },
+                ["loot"] = new OverlayPlacement { BackgroundOpacity = 0.4, HoverBackgroundOpacity = 0.6 },
+            },
+        };
+
+        var loaded = JsonSerializer.Deserialize<AppSettings>(
+            JsonSerializer.Serialize(settings.Snapshot(), AppSettings.Json), AppSettings.Json)!;
+
+        Assert.Equal(0.2, loaded.Overlays["dps"].BackgroundOpacity);
+        Assert.Equal(0.9, loaded.Overlays["dps"].HoverBackgroundOpacity);
+        Assert.Equal(0.4, loaded.Overlays["loot"].BackgroundOpacity);
+        Assert.Equal(0.6, loaded.Overlays["loot"].HoverBackgroundOpacity);
+        Assert.Null(JsonSerializer.Deserialize<OverlayPlacement>("{}")!.HoverBackgroundOpacity);
+    }
+
     private const string NewerVersionSettings = """
         {
           "FontSize": 15,

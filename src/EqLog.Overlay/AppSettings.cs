@@ -48,6 +48,12 @@ public sealed class OverlayPlacement
         get; set;
     }
 
+    /// <summary>Individual mouse-over background opacity; null uses the normal background opacity.</summary>
+    public double? HoverBackgroundOpacity
+    {
+        get; set;
+    }
+
     /// <summary>Individual floating-window click-through lock; null inherits the previous global lock.</summary>
     public bool? Locked
     {

@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Media;
 using EqLog.Core.Tracking;
@@ -146,7 +147,7 @@ public sealed class OverlayPanel : ContentControl
     private readonly ObservableCollection<OverlayRow> _virtualRows = [];
     private readonly VirtualRowList? _virtualList;
     private readonly TextBlock _hint;
-    private readonly TextBlock _dockDragHandle;
+    private readonly Thumb _dragHandle;
     private readonly Button _dockButton;
     private readonly Button _workspaceButton;
     private readonly Slider _backgroundSlider;
@@ -165,6 +166,8 @@ public sealed class OverlayPanel : ContentControl
     private string? _titleLink;
     private bool _invalidateRows;
     private double _opacity = 0.55;
+    private double? _hoverOpacity;
+    private bool _backgroundHovered;
     private bool _locked;
     private bool _docked;
     private bool _chromeHidden;
@@ -174,6 +177,8 @@ public sealed class OverlayPanel : ContentControl
         Key = key;
         Caption = caption;
         AutoScrollToEnd = autoScrollToEnd;
+        MouseEnter += (_, _) => SetBackgroundHovered(true);
+        MouseLeave += (_, _) => SetBackgroundHovered(false);
         _title.SetResourceReference(TextBlock.ForegroundProperty, "Pumpkin");
         _subtitle.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
         _title.HorizontalAlignment = HorizontalAlignment.Left;
@@ -198,7 +203,7 @@ public sealed class OverlayPanel : ContentControl
         _hint = new TextBlock
         {
             Text = "\u2725",
-            ToolTip = "Unlocked: drag to move, drag edges to resize. Lock with Ctrl+Shift+L.",
+            ToolTip = "Unlocked: use the boxed header grip to move, drag edges to resize. Lock with Ctrl+Shift+L.",
             Foreground = Brushes.Gray,
             FontSize = 10,
             Margin = new Thickness(4, 0, 0, 0),
@@ -246,19 +251,31 @@ public sealed class OverlayPanel : ContentControl
         };
 
         var header = new DockPanel();
-        _dockDragHandle = new TextBlock
+        var dragBox = new FrameworkElementFactory(typeof(Border));
+        dragBox.SetResourceReference(Border.BackgroundProperty, "NightRaised");
+        dragBox.SetResourceReference(Border.BorderBrushProperty, "Pumpkin");
+        dragBox.SetValue(Border.BorderThicknessProperty, new Thickness(1));
+        dragBox.SetValue(Border.CornerRadiusProperty, new CornerRadius(3));
+        var dragIcon = new FrameworkElementFactory(typeof(TextBlock));
+        dragIcon.SetValue(TextBlock.TextProperty, "\u2630");
+        dragIcon.SetValue(TextBlock.FontSizeProperty, 12.0);
+        dragIcon.SetValue(TextBlock.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+        dragIcon.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
+        dragIcon.SetResourceReference(TextBlock.ForegroundProperty, "Pumpkin");
+        dragBox.AppendChild(dragIcon);
+        _dragHandle = new Thumb
         {
-            Text = "\u2630",
-            FontSize = 16,
-            Margin = new Thickness(0, 0, 8, 0),
+            Width = 28,
+            Height = 22,
+            Margin = new Thickness(0, 0, 6, 0),
             Cursor = System.Windows.Input.Cursors.SizeAll,
-            ToolTip = "Drag this panel anywhere on the dock canvas. Other panels stay put.",
+            ToolTip = "Drag here to move this overlay. Only this grip moves it.",
             VerticalAlignment = VerticalAlignment.Center,
-            Visibility = Visibility.Collapsed,
+            Focusable = false,
+            Template = new ControlTemplate(typeof(Thumb)) { VisualTree = dragBox },
         };
-        _dockDragHandle.SetResourceReference(TextBlock.ForegroundProperty, "Pumpkin");
-        DockPanel.SetDock(_dockDragHandle, Dock.Left);
-        header.Children.Add(_dockDragHandle);
+        DockPanel.SetDock(_dragHandle, Dock.Left);
+        header.Children.Add(_dragHandle);
         DockPanel.SetDock(_dockButton, Dock.Right);
         DockPanel.SetDock(_workspaceButton, Dock.Right);
         DockPanel.SetDock(_hint, Dock.Right);
@@ -414,6 +431,14 @@ public sealed class OverlayPanel : ContentControl
         get;
     }
 
+    internal Thumb DragHandle
+    {
+        get
+        {
+            return _dragHandle;
+        }
+    }
+
     /// <summary>Raised when the user clicks the panel's dock / pop-out button.</summary>
     public event Action<OverlayPanel>? DockToggleRequested;
     public event Action<OverlayPanel, string>? WorkspaceMoveRequested;
@@ -506,6 +531,23 @@ public sealed class OverlayPanel : ContentControl
         Apply();
     }
 
+    public void SetHoverBackgroundOpacity(double opacity)
+    {
+        _hoverOpacity = Math.Clamp(opacity, 0, 1);
+        Apply();
+    }
+
+    internal void SetBackgroundHovered(bool hovered)
+    {
+        if (_backgroundHovered == hovered)
+        {
+            return;
+        }
+
+        _backgroundHovered = hovered;
+        Apply();
+    }
+
     public void SetLocked(bool locked)
     {
         _locked = locked;
@@ -531,14 +573,15 @@ public sealed class OverlayPanel : ContentControl
 
     private void Apply()
     {
-        double opacity = _opacity;
+        double opacity = _backgroundHovered ? _hoverOpacity ?? _opacity : _opacity;
         var color = ((SolidColorBrush)FindResource("NightBackground")).Color;
         var bg = new SolidColorBrush(Color.FromArgb((byte)(opacity * 255), color.R, color.G, color.B));
         bg.Freeze();
         _frame.Background = bg;
         ApplyDockFrame();
         _hint.Visibility = _locked || _docked ? Visibility.Collapsed : Visibility.Visible;
-        _dockDragHandle.Visibility = _docked ? Visibility.Visible : Visibility.Collapsed;
+        _dragHandle.Visibility = _docked || !_locked ? Visibility.Visible : Visibility.Collapsed;
+        _dragHandle.IsEnabled = _docked || !_locked;
         _workspaceButton.Visibility = _docked ? Visibility.Visible : Visibility.Collapsed;
 
         // Floating overlays are click-through when locked, so the button only shows while unlocked.

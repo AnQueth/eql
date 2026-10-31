@@ -1,8 +1,61 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.26" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.27" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.27
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 30, 2026 at 11:19 PM CT.
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Move overlays with a dedicated grip and choose a separate background opacity when hovered.
+        This release history ships with your installed version and works offline.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Move overlays only from the boxed header grip
+        </Paragraph>
+        <Paragraph>
+            Drag the small boxed grip at the top of a floating overlay or docked panel to move it.
+            The grip captures the mouse until you release it. Titles, rows, and empty panel space
+            no longer start a move, so you can interact with content without accidentally dragging
+            the overlay.
+        </Paragraph>
+        <Paragraph>
+            Unlock floating overlays with Ctrl+Shift+L to show the grip. Floating edges and docked
+            bottom-right grips still resize panels; buttons, links, filters, and sliders keep their
+            normal behavior. Docked panels remain interactive when floating overlays are locked.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Separate mouse-over background opacity for each overlay
+        </Paragraph>
+        <Paragraph>
+            Open Settings &gt; General &gt; Overlays &gt; Individual overlay appearance and locks,
+            expand an overlay's name, and adjust Mouse-over background. It changes only that
+            overlay's background while the pointer is over it; moving away restores Background.
+            Text does not fade.
+        </Paragraph>
+        <Paragraph>
+            Each overlay saves its own value. The setting works for docked panels and locked or
+            unlocked floating overlays, even with hover-only titles disabled. Initially it matches
+            the normal background opacity, so existing overlays look the same until you change it.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Item-upgrade history and older builds
+        </Paragraph>
+        <Paragraph>
+            Item upgrades recorded in version 1.0.26 or newer are saved across restarts. Earlier
+            installed or development builds do not preserve the new inventory-history fields when
+            saving shared tracking data. Avoid running those older builds against the same data;
+            missing past rank-ups cannot be rebuilt from a single current inventory export.
+        </Paragraph>
+    </Section>
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,24,0,6">
         What's New in 1.0.26
     </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">

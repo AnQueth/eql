@@ -239,8 +239,8 @@ Enable **Sky quest tracker** under **General → Overlays** for Plane of Sky cla
 separate settings tab). It can be docked or floating. See [Plane of Sky class quests](#plane-of-sky-class-quests).
 The overlay is off by default.
 
-Docked overlays live on a **freeform canvas**, not a wrapping grid. Drag the accent-colored header
-handle (or noninteractive panel space) to place a panel anywhere, including empty space, without
+Docked overlays live on a **freeform canvas**, not a wrapping grid. Drag the boxed header
+grip to place a panel anywhere, including empty space, without
 moving any other panels. A full-size highlighted preview follows the pointer, preserving where
 you grabbed the panel. While you drag, the other panels move live to show the layout you'd get by
 dropping there. Drop to place it; Escape or dropping outside the dock cancels the move and puts
@@ -313,7 +313,8 @@ as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels r
 | Quest opportunities | Searchable item-to-quest references with inventory counts and lookup progress |
 
 - **Lock all overlays** (or **Ctrl+Shift+L**): when locked, overlays are click-through so they don't block the game.
-  When unlocked they have a gold border; drag to move and drag the edges to resize.
+  When unlocked they have a gold border; drag the boxed header grip to move and drag the edges to resize.
+  The grip captures the mouse until you release it. Titles, rows, and empty panel space never move overlays.
   A dash in the checkbox means some overlays are locked; clicking it or pressing the hotkey locks all.
   When all are locked, the same control unlocks all. Docked panels remain interactive.
 - **Only show floating overlays while EverQuest is active** (on by default): floating overlays hide
@@ -325,6 +326,9 @@ as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels r
   to adjust its text size, background opacity, and floating-window lock independently.
   Size and opacity apply to both floating and docked panels, update live, and are saved with positions.
   Existing settings retain the previous global appearance and lock values until individually changed.
+  **Mouse-over background** sets a separate background opacity while the pointer is over that overlay.
+  Moving away restores **Background**; text stays unchanged. This works for docked panels and locked
+  or unlocked floating overlays. Initially the mouse-over value matches the normal background opacity.
 - Unlocked floating overlays also have a compact background-opacity slider just left of **Dock**. Adjust it over
   the game to change that panel's opacity; it stays synchronized with Settings and is saved.
   Unlock with Ctrl+Shift+L first. Hover-only title mode hides the slider until you hover the panel.
@@ -566,6 +570,10 @@ The **Item upgrades** overlay records an item when a later inventory export show
 export for an item establishes its baseline; item quantities are not tracked for upgrade events.
 Each entry includes the export's local date and time. The most recent 100 rank-ups per character
 are saved in the tracking data and remain available after restarting the app.
+History is stored in `%APPDATA%\EqLogOverlay\quest-inventory.json`, starting with version 1.0.26.
+Earlier builds do not preserve the new history fields when they save that file; avoid running
+an older installed or development build against the same tracking data. Past rank-ups cannot be
+reconstructed from a single current inventory export.
 
 ### Exaltations overlay
 

@@ -1,6 +1,7 @@
 using System.Runtime.ExceptionServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -84,6 +85,7 @@ public sealed class OverlayChromeTests
                 {
                     window.AttachPanel();
                     window.Show();
+                    VerifyDragGrip(window, panel, headerContent);
                     var handle = new WindowInteropHelper(window).Handle;
                     Assert.NotEqual(0, NativeMethods.GetWindowLongPtr(handle, NativeMethods.GWL_EXSTYLE).ToInt64() &
                         NativeMethods.WS_EX_NOACTIVATE);
@@ -118,6 +120,7 @@ public sealed class OverlayChromeTests
 
                 VerifyMoteColumns();
                 VerifyAllMoteTiersVisible();
+                VerifyHoverBackgroundOpacity();
             }
             catch (Exception ex)
             {
@@ -131,6 +134,82 @@ public sealed class OverlayChromeTests
         {
             ExceptionDispatchInfo.Capture(failure).Throw();
         }
+    }
+
+    private static void VerifyHoverBackgroundOpacity()
+    {
+        var panel = new OverlayPanel("timers", "Spell Timers", false);
+        var frame = Assert.IsType<Border>(panel.Content);
+        panel.SetBackgroundOpacity(0.2);
+        panel.SetHoverBackgroundOpacity(0.9);
+        Assert.Equal((byte)(0.2 * 255), Assert.IsType<SolidColorBrush>(frame.Background).Color.A);
+
+        foreach (bool docked in new[] { false, true })
+        {
+            panel.SetDocked(docked);
+            panel.SetLocked(true);
+            panel.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = UIElement.MouseEnterEvent });
+            Assert.Equal((byte)(0.9 * 255), Assert.IsType<SolidColorBrush>(frame.Background).Color.A);
+            Assert.Equal(1, panel.Opacity);
+            panel.SetBackgroundOpacity(0.3);
+            Assert.Equal((byte)(0.9 * 255), Assert.IsType<SolidColorBrush>(frame.Background).Color.A);
+            panel.SetHoverBackgroundOpacity(0.8);
+            Assert.Equal((byte)(0.8 * 255), Assert.IsType<SolidColorBrush>(frame.Background).Color.A);
+            panel.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = UIElement.MouseLeaveEvent });
+            Assert.Equal((byte)(0.3 * 255), Assert.IsType<SolidColorBrush>(frame.Background).Color.A);
+            panel.SetBackgroundOpacity(0.2);
+            panel.SetHoverBackgroundOpacity(0.9);
+        }
+    }
+
+    private static void VerifyDragGrip(OverlayWindow window, OverlayPanel panel, DockPanel header)
+    {
+        panel.SetChromeHidden(false);
+        window.UpdateLayout();
+        var grip = Assert.Single(header.Children.OfType<Thumb>());
+        Assert.Same(panel.DragHandle, grip);
+        Assert.Equal(Visibility.Visible, grip.Visibility);
+        Assert.True(OverlayPanel.IsInteractive(grip));
+        grip.ApplyTemplate();
+        var box = Assert.IsType<Border>(VisualTreeHelper.GetChild(grip, 0));
+        Assert.Equal(new Thickness(1), box.BorderThickness);
+
+        var original = new Point(window.Left, window.Top);
+        var title = header.Children.OfType<StackPanel>()
+            .SelectMany(stack => stack.Children.OfType<TextBlock>())
+            .First();
+        title.RaiseEvent(new DragDeltaEventArgs(20, 30));
+        panel.RaiseEvent(new DragDeltaEventArgs(20, 30));
+        Assert.Equal(original, new Point(window.Left, window.Top));
+
+        grip.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
+        {
+            RoutedEvent = UIElement.MouseLeftButtonDownEvent,
+        });
+        Assert.True(grip.IsDragging);
+        Assert.True(grip.IsMouseCaptured);
+        grip.RaiseEvent(new DragDeltaEventArgs(20, 30));
+        Assert.InRange(window.Left - original.X, 19, 21);
+        Assert.InRange(window.Top - original.Y, 29, 31);
+        var moved = new Point(window.Left, window.Top);
+        Assert.True(grip.IsMouseCaptured);
+        grip.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
+        {
+            RoutedEvent = UIElement.MouseLeftButtonUpEvent,
+        });
+        Assert.False(grip.IsDragging);
+        Assert.False(grip.IsMouseCaptured);
+
+        window.SetLocked(true);
+        Assert.Equal(Visibility.Collapsed, grip.Visibility);
+        Assert.False(grip.IsEnabled);
+        grip.RaiseEvent(new DragDeltaEventArgs(20, 30));
+        Assert.Equal(moved, new Point(window.Left, window.Top));
+        panel.SetDocked(true);
+        Assert.Equal(Visibility.Visible, grip.Visibility);
+        Assert.True(grip.IsEnabled);
+        panel.SetDocked(false);
+        window.SetLocked(false);
     }
 
     private static void VerifyMoteColumns()
