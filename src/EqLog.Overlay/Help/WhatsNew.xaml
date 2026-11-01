@@ -1,7 +1,73 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.33" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.34" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.34
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released November 1, 2026 at 11:20 AM CT.
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Find items faster, see their best exported rank, and locate every copy with confirmed inventory counts.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Search inventory, loot, and recorded upgrades
+        </Paragraph>
+        <Paragraph>
+            Under Settings &gt; General &gt; Overlays, enable Inventory &amp; loot quests,
+            Loot, or Item upgrades. Type part of an item name in the new filter to narrow
+            the list without case sensitivity. Clear the box to show everything again.
+            Loot filtering works in every grouping mode without changing coin or session totals.
+        </Paragraph>
+        <Paragraph>
+            Unlock floating panels with Ctrl+Shift+L to type. Motes continues to show
+            every tier and its recent drops without a filter. The Mote upgrade planner's
+            existing item-name selector is unchanged.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            See the highest rank and every copy's location
+        </Paragraph>
+        <Paragraph>
+            In Inventory &amp; loot quests, combined item rows now show the highest +N rank
+            in the current export across storage and collections, instead of the first copy found.
+            Click an item name or select its row to open Copy locations beneath the inventory.
+            Every exported copy or stack has its rank, quantity, slot or bag/container location,
+            and loose/worn, collection, or installed status.
+        </Paragraph>
+        <Paragraph>
+            Switch to Quest references for linked quests, or use Look up quests.
+            Item wiki page opens the selected item on EQLWiki. Local locations remain
+            available independently of wiki lookups and refresh when a new export is imported.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Inventory counts are confirmed by exports
+        </Paragraph>
+        <Paragraph>
+            The inventory grid no longer shows the redundant Owned or History columns.
+            Carried, Bank, Hoard, Depot, Other, Collection, and Installed are read-only
+            counts from the same export as Copy locations. Loose/worn storage counts,
+            collections, and installed augment counts together account for the exported copies.
+        </Paragraph>
+        <Paragraph>
+            Loot logs no longer increase confirmed ownership, and old estimated or manually
+            adjusted totals are reconciled to saved storage counts on load. This also applies
+            to ownership used by Sky quest progress, Motes, and the upgrade planner.
+            New loot still contributes to loot tracking and quest lookups, but logs cannot
+            reliably tell when copies were merged, sold, or turned in.
+        </Paragraph>
+        <Paragraph>
+            Run /outputfile inventory in game after looting, merging, moving, spending,
+            selling, or turning in items. Counts and locations reflect the last export,
+            not later inventory changes. Collections and installed augments remain
+            separate from loose items; collection ownership does not guarantee turn-in availability.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.33
     </Paragraph>

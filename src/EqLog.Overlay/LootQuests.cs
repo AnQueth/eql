@@ -67,6 +67,7 @@ public partial class MainWindow
         }
 
         QuestOwnedGrid.ItemsSource = _ownedQuestItems;
+        ConfigureInventoryItemFilter(QuestOwnedGrid, InventoryItemFilter);
     }
 
     private void PumpQuestLoot()
@@ -466,24 +467,6 @@ public partial class MainWindow
         }
     }
 
-    private void QuestOwned_Edit(object sender, System.Windows.Controls.DataGridCellEditEndingEventArgs e)
-    {
-        if (e.EditAction == System.Windows.Controls.DataGridEditAction.Commit &&
-            e.EditingElement is System.Windows.Controls.TextBox box &&
-            (!int.TryParse(box.Text, out int count) || count < 0))
-        {
-            e.Cancel = true;
-            QuestLookupStatus.Text = "Owned count must be a whole number, zero or greater.";
-            return;
-        }
-        _questDirty = true;
-        Dispatcher.BeginInvoke(async () =>
-        {
-            QuestOwnedGrid.CommitEdit();
-            await SaveQuestInventoryAsync();
-        });
-    }
-
     private async void CompleteQuest_Click(object sender, RoutedEventArgs e)
     {
         if (QuestResults.SelectedItem is not QuestReference quest)
@@ -499,7 +482,7 @@ public partial class MainWindow
         }
 
         _questDirty = true;
-        QuestLookupStatus.Text = completed ? "Quest marked completed. Adjust owned counts after turning items in." : "Quest marked incomplete.";
+        QuestLookupStatus.Text = completed ? "Quest marked completed. Run /outputfile inventory after turning items in to refresh counts." : "Quest marked incomplete.";
         await SaveQuestInventoryAsync();
     }
 
@@ -532,8 +515,10 @@ public partial class MainWindow
 
     private async void QuestItem_Selected(object sender, SelectionChangedEventArgs e)
     {
+        RefreshInventoryItemLocations();
         if (QuestOwnedGrid.SelectedItem is QuestInventoryItem selected)
         {
+            InventoryDetailsTabs.SelectedIndex = 0;
             await LookupSelectedQuestItemAsync(selected);
         }
         else
@@ -547,6 +532,7 @@ public partial class MainWindow
     {
         if (QuestOwnedGrid.SelectedItem is QuestInventoryItem selected)
         {
+            InventoryDetailsTabs.SelectedIndex = 1;
             await LookupSelectedQuestItemAsync(selected);
         }
         else
@@ -591,6 +577,7 @@ public partial class MainWindow
 
     private async Task LookupSelectedQuestItemAsync(QuestInventoryItem selected)
     {
+        RefreshInventoryItemLocations();
         if (WikiLookupPaused)
         {
             return;
@@ -664,6 +651,23 @@ public partial class MainWindow
         {
             OpenWiki(QuestLookup.ItemUrl(item));
             e.Handled = true;
+        }
+    }
+
+    private async void InventoryItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Documents.Hyperlink { DataContext: QuestInventoryItem selected })
+        {
+            e.Handled = true;
+            InventoryDetailsTabs.SelectedIndex = 0;
+            if (ReferenceEquals(QuestOwnedGrid.SelectedItem, selected))
+            {
+                await LookupSelectedQuestItemAsync(selected);
+            }
+            else
+            {
+                QuestOwnedGrid.SelectedItem = selected;
+            }
         }
     }
 

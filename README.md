@@ -568,14 +568,13 @@ Its toolbar has a search box (quest name, reward, required items, and droppers),
 Search, class, tab, and watch list are saved. The catalog and item drop sources are cached for one day in
 `sky-quests.json`; **Refresh** forces an update. Network/format errors appear at the top of the list,
 keeping previously loaded data available.
-Counts use the active character's inventory exports, newer loot, and manual owned-count corrections.
+Counts use the active character's confirmed inventory exports; loot logs do not change ownership.
 Upgrade suffixes are ignored when matching. Unconfirmed historical loot and installed augmentations do
 not satisfy requirements. Items may count toward multiple quests (they are not reserved; the hunt list
 compares the combined requirement against what you own), and owning every item does not verify faction or
 other prerequisites. Refresh the inventory export after turn-ins to update counts.
-Collection entries count as owned, with an explicit turn-in-availability warning. The editable
-Owned column in the Inventory & loot quests overlay still represents non-collection counts; Sky adds the separate Collection
-column when evaluating ownership.
+Collection entries count as owned, with an explicit turn-in-availability warning. Sky adds the
+separate Collection count to the loose/worn storage counts when evaluating ownership.
 
 ### Inventory export monitoring
 
@@ -590,10 +589,25 @@ No inventory file is uploaded.
 Turn it on under **Settings > General > Overlays** (it docks by default and can float like any other
 panel; unlock a floating copy to type in it).
 
-It contains an inventory grid (editable Owned plus Carried, Bank, Hoard, Depot, Other,
+It contains an inventory grid (read-only Carried, Bank, Hoard, Depot, Other,
   Collection and Installed counts), quest lookups, item wiki pages, and Complete / reopen.
+  Copies are combined by base item name; the displayed name shows the highest `+N` rank
+  in the current export across all storage and collection sections, not the first copy encountered.
   Drag the horizontal divider to share space between the inventory and quest references.
   The quest heading stays with its results, and both panes retain a minimum height.
+  Type part of an item name in the inventory filter to narrow the grid (case-insensitive).
+  Clear it to show all items. Filtering does not change ownership counts or automatic quest lookups.
+  Click an item name or select its row to see **Copy locations**: every exported copy or stack,
+  with its rank, quantity, exact slot/container location, and loose/worn, collection, or installed status.
+  Switch to **Quest references** for linked quests; use **Item wiki page** to open the item on EQLWiki.
+  Locations reflect the last export, not later moves or loot. Run `/outputfile inventory` to refresh them.
+  Storage, Collection, and Installed counts together match all exported copies.
+  Loot logs and old manual adjustments do not inflate confirmed counts; saved counts are reconciled
+  on load. Refresh the export after looting, merging, sales, or turn-ins.
+  The redundant Owned and History columns are no longer shown.
+
+The **Loot** overlay also has an item-name filter in every grouping mode. Type part of a name
+to narrow drops, or clear it to restore them. Coin and session totals remain unchanged.
 
 ### Ready to merge overlay
 
@@ -620,6 +634,7 @@ The **Item upgrades** overlay records an item when a later inventory export show
 export for an item establishes its baseline; item quantities are not tracked for upgrade events.
 Each entry includes the export's local date and time. The most recent 100 rank-ups per character
 are saved in the tracking data and remain available after restarting the app.
+Use the item-name filter to search recorded rank-ups without case sensitivity; clear it to show all.
 History is stored in `%APPDATA%\EqLogOverlay\quest-inventory.json`, starting with version 1.0.26.
 Earlier builds do not preserve the new history fields when they save that file; avoid running
 an older installed or development build against the same tracking data. Past rank-ups cannot be
@@ -703,9 +718,10 @@ Use its sort selector for **Recent items** (latest recorded loot first, inventor
 all their linked items for context. Clear the box to show everything. Sort and filter persist across restarts.
 These controls work docked or in an unlocked floating panel.
 It docks by default and can also float. Historical loot is imported as **unconfirmed**, not owned.
-In the **Inventory & loot quests** overlay, edit **Owned** to confirm your inventory. Newly observed loot increases
-owned counts; correct them manually after sales, banking, depot transfers or turn-ins. Auto-sold and
-depot loot are excluded. Select a quest reference to mark it complete (or reopen it); completion hides it
+In the **Inventory & loot quests** overlay, storage counts are read-only and use confirmed exports.
+Newly observed loot still triggers lookups but does not increase confirmed counts; run `/outputfile inventory`
+after looting, merging, sales, transfers, or turn-ins. Auto-sold and depot loot are excluded from
+log-triggered lookups. Select a quest reference to mark it complete (or reopen it); completion hides it
 from the opportunities panel without assuming which items were consumed. Counts and completions are
 stored per character in `quest-inventory.json`. Historical lines are deduplicated with one compact
 watermark (latest timestamp and line number) per character and log path; replacing or moving a log can
@@ -852,7 +868,7 @@ The **Motes** overlay counts the Motes of Potential you loot, from corpses and R
 
 - The **Owned** column shows your selected character's current inventory beside the drop
   counts in each tier row and the total row. Owned includes carried/bank counts from the
-  inventory export plus newer loot; collection, installed items and historical drops are
+  last inventory export; collection, installed items and historical drops are
   excluded. `?` means inventory is not loaded. Hover for the export date and freshness
   details. Run `/outputfile inventory` after spending,
   selling, or moving motes to refresh counts; log drops alone cannot detect those changes.
@@ -921,7 +937,7 @@ on spare copies before merging them.
   item sets **Current** to your best exported copy's rank. Every exported item is selectable, including
   Equipment storage, other collections, installed augments/exaltations, and motes; selection does not
   verify that the game permits upgrading that item. Enter **Points** if it already has progress toward the next rank.
-- **Use owned motes** spends the motes you own (inventory export plus newer loot). For equipment, each rank uses
+- **Use owned motes** spends the motes confirmed by your last inventory export. For equipment, each rank uses
   only its matching mote tier; higher tiers are reserved for later ranks rather than spent to reach a lower rank.
 - **Use inventory copies** (equipment only) then merges spare copies of the same item from your inventory export,
   lowest first. A +N copy counts as exactly +N (2^N points), with no partial progress. One copy at the current rank

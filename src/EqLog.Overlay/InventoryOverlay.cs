@@ -1,9 +1,13 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Data;
 using EqLog.Core;
 
 namespace EqLog.Overlay;
+
+/// <summary>One exported stack or copy of the selected item, including non-loose entries.</summary>
+internal sealed record InventoryItemLocation(string Item, int Rank, int Quantity, string Location, string Kind);
 
 /// <summary>The inventory/quest and Ready to merge overlays share the current character's inventory export.</summary>
 public partial class MainWindow
@@ -14,6 +18,36 @@ public partial class MainWindow
     private OverlayPanel? _mergePanel;
     private IReadOnlyList<InventoryExportItem> _inventoryRows = [];
     private string? _inventoryRowsCharacter;
+    private readonly Dictionary<string, string> _itemFilters = [];
+
+    /// <summary>Adds an item-name filter above any existing options in an item overlay's toolbar.</summary>
+    internal static TextBox ConfigureItemFilterToolbar(OverlayPanel panel, Action<string> filterChanged, UIElement? options = null)
+    {
+        var filter = new TextBox
+        {
+            Margin = new Thickness(0, 5, 0, 5),
+            VerticalContentAlignment = VerticalAlignment.Center,
+            ToolTip = "Filter by item name (case-insensitive). Clear to show all. Unlock floating panels to type.",
+        };
+        System.Windows.Automation.AutomationProperties.SetName(filter, "Item name filter");
+        filter.TextChanged += (_, _) => filterChanged(filter.Text);
+        var toolbar = new StackPanel { Children = { filter } };
+        if (options is not null)
+        {
+            toolbar.Children.Add(options);
+        }
+        panel.SetToolbar(toolbar);
+        return filter;
+    }
+
+    /// <summary>Filters only the displayed inventory rows, preserving ownership data and automatic lookups.</summary>
+    internal static void ConfigureInventoryItemFilter(DataGrid grid, TextBox filter)
+    {
+        var view = CollectionViewSource.GetDefaultView(grid.ItemsSource);
+        view.Filter = item => item is QuestInventoryItem inventoryItem &&
+            OverlayPresenters.MatchesItemName(inventoryItem.Item, filter.Text);
+        filter.TextChanged += (_, _) => view.Refresh();
+    }
 
     private void ConfigureInventoryOverlay(OverlayPanel panel)
     {
@@ -121,6 +155,45 @@ public partial class MainWindow
         _exaltationLocations = Exaltations.Locate(items).Concat(Exaltations.WikiDefaults(items)).ToArray();
         RefreshMergeView();
         RefreshMotePlan();
+        RefreshInventoryItemLocations();
+    }
+
+    /// <summary>Finds all ranks of an item while retaining container names from the complete export.</summary>
+    internal static IReadOnlyList<InventoryItemLocation> ItemCopyLocations(
+        IReadOnlyList<InventoryExportItem> items, string item)
+    {
+        var locations = InventoryExport.DescribeAll(items);
+        return items.Select((row, index) => (Row: row, Location: locations[index]))
+            .Where(copy => ItemNames.Comparer.Equals(copy.Row.Name, item))
+            .Select(copy => new InventoryItemLocation(copy.Row.Name, InventoryExport.SplitRank(copy.Row.Name).Rank,
+                copy.Row.Count, copy.Location, copy.Row.Installed ? "Installed" : copy.Row.Collection ? "Collection" : "Loose / worn"))
+            .OrderByDescending(copy => copy.Rank)
+            .ThenBy(copy => copy.Location, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private void RefreshInventoryItemLocations()
+    {
+        if (QuestOwnedGrid.SelectedItem is not QuestInventoryItem selected)
+        {
+            InventoryCopiesGrid.ItemsSource = null;
+            InventoryCopiesStatus.Text = "Select an inventory item to see every exported copy and its location.";
+            return;
+        }
+        bool current = _inventoryRowsCharacter is not null &&
+            _inventoryRowsCharacter.Equals(_characterName, StringComparison.OrdinalIgnoreCase);
+        if (!current || _inventoryLoaded is null)
+        {
+            InventoryCopiesGrid.ItemsSource = null;
+            InventoryCopiesStatus.Text = "Waiting for this character's inventory export. Run /outputfile inventory to locate copies.";
+            return;
+        }
+        var copies = ItemCopyLocations(_inventoryRows, selected.Item);
+        InventoryCopiesGrid.ItemsSource = copies;
+        string freshness = $"Last export: {_inventoryLoaded.Value.Written.ToLocalTime():g}. Counts and locations use this export only. Run /outputfile inventory after looting, merging, or moving items.";
+        InventoryCopiesStatus.Text = copies.Count == 0
+            ? $"No copies of {ItemNames.Normalize(selected.Item)} in the last export. {freshness}"
+            : $"{ItemNames.Normalize(selected.Item)}: {copies.Sum(copy => copy.Quantity):N0} copies across {copies.Count:N0} exported entries, including collections and installed augments. {freshness}";
     }
 
     private void RefreshMergeView()

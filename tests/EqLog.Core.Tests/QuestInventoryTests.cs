@@ -62,7 +62,7 @@ public class QuestInventoryTests
     }
 
     [Fact]
-    public void LiveLootAddsOwnedCountsPerCharacterAndSurvivesSerialization()
+    public void LiveLootTracksItemsAndRecencyWithoutClaimingOwnershipBeforeAnExport()
     {
         var inventory = new QuestInventory();
         inventory.NoteLoot("Que", "log", 1, "Gnoll Fang", 1, false);
@@ -71,8 +71,9 @@ public class QuestInventoryTests
         var loaded = System.Text.Json.JsonSerializer.Deserialize<QuestInventory>(
             System.Text.Json.JsonSerializer.Serialize(inventory))!;
         loaded.NoteLoot("Que", "log", 2, "Gnoll Fang", 3, true);
-        Assert.Equal(3, loaded.Items.Single(i => i.Character == "Que").Owned);
-        Assert.Equal(1, loaded.Items.Single(i => i.Character == "Other").Owned);
+        Assert.Equal(0, loaded.Items.Single(i => i.Character == "Que").Owned);
+        Assert.Equal(0, loaded.Items.Single(i => i.Character == "Other").Owned);
+        Assert.Empty(loaded.RecentLoot);
     }
 
     [Fact]
@@ -109,7 +110,7 @@ public class QuestInventoryTests
     }
 
     [Fact]
-    public void ApplyExport_ReusesNormalizedItemsAndKeepsNewerLootAndOtherCharacters()
+    public void ApplyExport_ReusesNormalizedItemsAndKeepsConfirmedCountsAndOtherCharacters()
     {
         var written = new DateTime(2026, 10, 29, 12, 0, 0, DateTimeKind.Utc);
         var item = new QuestInventoryItem
@@ -138,8 +139,9 @@ public class QuestInventoryTests
         ], written);
 
         Assert.Same(item, inventory.Items[0]);
+        Assert.Equal("GNOLL FANG +5", item.Item);
         Assert.Equal(4, inventory.Items.Count);
-        Assert.Equal(33, item.Owned);
+        Assert.Equal(30, item.Owned);
         Assert.Equal(2, item.Carried);
         Assert.Equal(4, item.Bank);
         Assert.Equal(6, item.Hoard);
@@ -152,12 +154,107 @@ public class QuestInventoryTests
         Assert.Equal(0, absent.Bank);
         Assert.Equal(42, other.Owned);
         Assert.Equal(42, other.Bank);
-        Assert.Equal(3, Assert.Single(inventory.RecentLoot).Quantity);
+        Assert.Empty(inventory.RecentLoot);
         Assert.Equal(written, inventory.ExportTimes["QUE"]);
 
         inventory.ApplyExport("QUE", [], written.AddMinutes(2));
         Assert.Equal(0, item.Owned);
         Assert.Empty(inventory.RecentLoot);
+    }
+
+    [Fact]
+    public void SavedEstimatedOwnedCountsAreReconciledToExportedStorageCountsOnLoad()
+    {
+        string json = """
+            {"Items":[
+              {"Character":"Que","Item":"Umbral Platemail Bracer +10","Owned":3,"Carried":2},
+              {"Character":"Que","Item":"Umbral Platemail Gauntlets +9","Owned":2,"Collection":1},
+              {"Character":"Other","Item":"Sword","Owned":99,"Carried":1,"Bank":2,"Hoard":3,"Depot":4,"OtherStorage":5,"Installed":6}
+            ],"RecentLoot":[{"Character":"Que","Item":"Umbral Platemail Bracer","Quantity":1,"TimeUtc":"2026-11-01T18:00:00Z"}]}
+            """;
+
+        var loaded = System.Text.Json.JsonSerializer.Deserialize<QuestInventory>(json)!;
+
+        Assert.Equal(2, loaded.Items[0].Owned);
+        Assert.Equal(0, loaded.Items[1].Owned);
+        Assert.Equal(1, loaded.Items[1].Collection);
+        Assert.Equal(15, loaded.Items[2].Owned);
+        var reloaded = System.Text.Json.JsonSerializer.Deserialize<QuestInventory>(
+            System.Text.Json.JsonSerializer.Serialize(loaded))!;
+        Assert.Equal([2, 0, 15], reloaded.Items.Select(item => item.Owned));
+    }
+
+    [Fact]
+    public void ConfirmedOwnedMatchesLocationsDespiteLaterLootMergesAndLegacyDeltas()
+    {
+        var at = new DateTime(2026, 11, 1, 15, 20, 0, DateTimeKind.Utc);
+        var inventory = new QuestInventory
+        {
+            RecentLoot = [new("Que", "Bracer", 1, at.AddHours(1))],
+        };
+        inventory.ApplyExport("Que",
+        [
+            new("Wrist", "Bracer +9", 1, 1, InventoryStorage.Carried, WornSlot: 9),
+            new("Wrist", "Bracer +10", 1, 1, InventoryStorage.Carried, WornSlot: 10),
+        ], at);
+        var bracer = Assert.Single(inventory.Items);
+        Assert.Equal(2, bracer.Owned);
+        Assert.Empty(inventory.RecentLoot);
+        inventory.NoteLoot("Que", "log", 1, "Bracer", 1, true, at.AddHours(1));
+        inventory.NoteLoot("Que", "log", 2, "Bracer", 1, false, at.AddHours(2));
+        inventory.NoteLoot("Que", "log", 3, "Bracer", 1, true);
+        Assert.Equal(2, bracer.Owned);
+        Assert.Equal(at.AddHours(2), bracer.LastLootUtc);
+        Assert.Empty(inventory.RecentLoot);
+        inventory.ApplyExport("Que",
+            [new("Wrist", "Bracer +10", 1, 1, InventoryStorage.Carried, WornSlot: 10)], at.AddHours(3));
+        Assert.Equal(1, bracer.Owned);
+        inventory.ApplyExport("Que", [], at.AddHours(4));
+        Assert.Equal(0, bracer.Owned);
+    }
+
+    [Fact]
+    public void ApplyExport_DisplaysHighestCurrentRankAcrossStorageAndCollectionsAndPersistsIt()
+    {
+        var written = new DateTime(2026, 11, 1, 12, 0, 0, DateTimeKind.Utc);
+        var inventory = new QuestInventory();
+        InventoryExportItem[] rows =
+        [
+            new("Held", "Umbral Platemail Bracer +3", 1, 2, InventoryStorage.Carried),
+            new("Bank1", "Umbral Platemail Bracer +10", 1, 1, InventoryStorage.Bank),
+            new("Equipment", "Umbral Platemail Bracer +9", 1, 1, InventoryStorage.Other, Collection: true),
+            new("Held", "Umbral Platemail Bracer", 1, 1, InventoryStorage.Carried),
+            new("Held", "Umbral Platemail Bracer (Exaltation) +2", 2, 1, InventoryStorage.Carried),
+        ];
+
+        inventory.ApplyExport("Que", rows, written);
+
+        var item = Assert.Single(inventory.Items, entry => ItemNames.Comparer.Equals(entry.Item, "Umbral Platemail Bracer"));
+        Assert.Equal("Umbral Platemail Bracer +10", item.Item);
+        Assert.Equal(4, item.Owned);
+        Assert.Equal(3, item.Carried);
+        Assert.Equal(1, item.Bank);
+        Assert.Equal(1, item.Collection);
+        Assert.Equal(2, inventory.Items.Count);
+        Assert.Empty(inventory.RecentUpgrades);
+        inventory.ApplyExport("Que", rows.Reverse().ToArray(), written.AddMinutes(1));
+        Assert.Equal("Umbral Platemail Bracer +10", item.Item);
+
+        var loaded = System.Text.Json.JsonSerializer.Deserialize<QuestInventory>(
+            System.Text.Json.JsonSerializer.Serialize(inventory))!;
+        Assert.Equal("Umbral Platemail Bracer +10", loaded.Items[0].Item);
+        loaded.ApplyExport("Que",
+        [
+            new("Held", "Umbral Platemail Bracer +3", 1, 1, InventoryStorage.Carried),
+            new("Equipment", "Umbral Platemail Bracer +7", 1, 1, InventoryStorage.Other, Collection: true),
+        ], written.AddMinutes(2));
+        Assert.Equal("Umbral Platemail Bracer +7", loaded.Items[0].Item);
+        Assert.Equal(1, loaded.Items[0].Owned);
+        Assert.Equal(1, loaded.Items[0].Collection);
+        Assert.Empty(loaded.RecentUpgrades);
+        loaded.ApplyExport("Que",
+            [new("Held", "Umbral Platemail Bracer", 1, 1, InventoryStorage.Carried)], written.AddMinutes(3));
+        Assert.Equal("Umbral Platemail Bracer", loaded.Items[0].Item);
     }
 
     [Fact]

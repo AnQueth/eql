@@ -294,7 +294,7 @@
                     <StackPanel DockPanel.Dock="Top">
                         <Expander Header="How inventory and ownership work" Foreground="{DynamicResource NightMuted}" Margin="0,0,0,8">
                             <TextBlock Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap" Margin="4,8"
-                                       Text="All inventory sections and loot are looked up automatically on EQLWiki (only item names are sent). A [Quest] marker appears when cached quest references exist; click it to view them. No marker may mean the lookup is still pending. The export above Logs replaces counts when updated; run /outputfile inventory after sales or turn-ins. Collection and installed augment counts are shown separately, not assumed available for turn-ins. Newer loot adds to Owned; historical loot is unconfirmed. Quest references may include rewards." />
+                                       Text="All inventory sections and loot are looked up automatically on EQLWiki (only item names are sent). A [Quest] marker appears when cached quest references exist; click it to view them. No marker may mean the lookup is still pending. Owned is the confirmed sum of Carried, Bank, Hoard, Depot, and Other from the last export. Collections and installed augments are counted separately. Loot logs do not change Owned. Run /outputfile inventory after looting, merging, sales, or turn-ins to refresh counts and locations. Quest references may include rewards." />
                         </Expander>
                         <local:FixedLineTextBlock x:Name="InventoryStatus" Lines="3" Margin="0,4"
                                    Foreground="{DynamicResource NightText}"
@@ -314,10 +314,16 @@
                             <RowDefinition Height="10" />
                             <RowDefinition Height="3*" MinHeight="90" />
                         </Grid.RowDefinitions>
-                        <TextBlock Text="YOUR INVENTORY" Foreground="{DynamicResource NightMuted}" FontSize="11" FontWeight="SemiBold" Margin="0,6" />
+                        <StackPanel>
+                            <TextBlock Text="YOUR INVENTORY" Foreground="{DynamicResource NightMuted}" FontSize="11" FontWeight="SemiBold" Margin="0,6" />
+                            <TextBox x:Name="InventoryItemFilter" Margin="0,0,0,6" VerticalContentAlignment="Center"
+                                     AutomationProperties.Name="Item name filter"
+                                     ToolTip="Filter inventory by item name (case-insensitive). Clear to show all. Unlock floating panels to type." />
+                        </StackPanel>
                         <DataGrid x:Name="QuestOwnedGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                                  IsReadOnly="True"
                                   SelectionMode="Single" SelectionUnit="FullRow" SelectionChanged="QuestItem_Selected"
-                                  Grid.Row="1" CellEditEnding="QuestOwned_Edit" MinColumnWidth="70">
+                                  Grid.Row="1" MinColumnWidth="70">
                             <DataGrid.Columns>
                                 <DataGridTemplateColumn Header="Item" IsReadOnly="True" Width="*" MinWidth="190" SortMemberPath="Item">
                                     <DataGridTemplateColumn.CellTemplate>
@@ -340,8 +346,8 @@
                                                     </Hyperlink>
                                                 </TextBlock>
                                                 <TextBlock TextTrimming="CharacterEllipsis" VerticalAlignment="Center">
-                                                    <Hyperlink Tag="{Binding Item}" Click="ItemWikiLink_Click"
-                                                               Foreground="{DynamicResource Pumpkin}" ToolTip="Open item on EQLWiki">
+                                                    <Hyperlink Tag="{Binding Item}" Click="InventoryItem_Click"
+                                                               Foreground="{DynamicResource Pumpkin}" ToolTip="Show all copy locations and quest references. Use Item wiki page to open EQLWiki.">
                                                         <Run Text="{Binding Item}" />
                                                     </Hyperlink>
                                                 </TextBlock>
@@ -349,8 +355,6 @@
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTextColumn Header="History" Binding="{Binding Historical}" IsReadOnly="True" />
-                                <DataGridTextColumn Header="Owned" Binding="{Binding Owned}" Width="60" />
                                 <DataGridTextColumn Header="Carried" Binding="{Binding Carried}" IsReadOnly="True" />
                                 <DataGridTextColumn Header="Bank" Binding="{Binding Bank}" IsReadOnly="True" />
                                 <DataGridTextColumn Header="Hoard" Binding="{Binding Hoard}" IsReadOnly="True" />
@@ -363,27 +367,49 @@
                         <GridSplitter Grid.Row="2" Height="4" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                                       Background="{DynamicResource NightBorder}" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
                                       ToolTip="Drag to resize the inventory and quest lists" />
-                        <DockPanel Grid.Row="3">
-                            <StackPanel DockPanel.Dock="Top">
-                                <TextBlock Text="QUEST REFERENCES" Foreground="{DynamicResource NightMuted}" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,4" />
-                                <local:FixedLineTextBlock x:Name="QuestLookupStatus" Lines="2" Margin="0,0,0,6"
-                                           Foreground="{DynamicResource Pumpkin}"
-                                           Text="Lookups are cached for seven days. Enable the Quest opportunities panel to see all matching quests." />
-                            </StackPanel>
-                            <ListBox x:Name="QuestResults" HorizontalContentAlignment="Stretch"
-                                     ToolTip="Click a quest name to open it on EQLWiki, or select a row for Complete / reopen. History is unconfirmed loot; Owned is editable. Carried includes equipped items.">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock TextTrimming="CharacterEllipsis">
-                                            <Hyperlink Tag="{Binding Url}" Click="UrlWikiLink_Click"
-                                                       Foreground="{DynamicResource Pumpkin}" ToolTip="Open quest on EQLWiki">
-                                                <Run Text="{Binding Title, Mode=OneWay}" />
-                                            </Hyperlink>
-                                        </TextBlock>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                        </DockPanel>
+                        <TabControl x:Name="InventoryDetailsTabs" Grid.Row="3">
+                            <TabItem Header="Copy locations">
+                                <DockPanel>
+                                    <TextBlock x:Name="InventoryCopiesStatus" DockPanel.Dock="Top" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource NightMuted}" Margin="0,4,0,6"
+                                               Text="Select an inventory item to see every exported copy and its location." />
+                                    <DataGrid x:Name="InventoryCopiesGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                                              CanUserAddRows="False" CanUserDeleteRows="False" SelectionMode="Single"
+                                              AutomationProperties.Name="Selected item copy locations">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Item" Binding="{Binding Item}" Width="*" MinWidth="170" />
+                                            <DataGridTextColumn Header="Rank" Binding="{Binding Rank, StringFormat=+{0}}" Width="55" />
+                                            <DataGridTextColumn Header="Qty" Binding="{Binding Quantity}" Width="55" />
+                                            <DataGridTextColumn Header="Location" Binding="{Binding Location}" Width="2*" MinWidth="240" />
+                                            <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="110" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </DockPanel>
+                            </TabItem>
+                            <TabItem Header="Quest references">
+                                <DockPanel>
+                                    <StackPanel DockPanel.Dock="Top">
+                                        <TextBlock Text="QUEST REFERENCES" Foreground="{DynamicResource NightMuted}" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,4" />
+                                        <local:FixedLineTextBlock x:Name="QuestLookupStatus" Lines="2" Margin="0,0,0,6"
+                                                   Foreground="{DynamicResource Pumpkin}"
+                                                   Text="Lookups are cached for seven days. Enable the Quest opportunities panel to see all matching quests." />
+                                    </StackPanel>
+                                    <ListBox x:Name="QuestResults" HorizontalContentAlignment="Stretch"
+                                             ToolTip="Click a quest name to open it on EQLWiki, or select a row for Complete / reopen. Owned is confirmed by the last inventory export. Carried includes equipped items.">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock TextTrimming="CharacterEllipsis">
+                                                    <Hyperlink Tag="{Binding Url}" Click="UrlWikiLink_Click"
+                                                               Foreground="{DynamicResource Pumpkin}" ToolTip="Open quest on EQLWiki">
+                                                        <Run Text="{Binding Title, Mode=OneWay}" />
+                                                    </Hyperlink>
+                                                </TextBlock>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </DockPanel>
+                            </TabItem>
+                        </TabControl>
                     </Grid>
                 </DockPanel>
             </TabItem>

@@ -19,6 +19,7 @@ public sealed class QuestInventory : IJsonOnDeserialized
 
     public HashSet<string> Completed { get; set; } = [];
     public Dictionary<string, DateTime> ExportTimes { get; set; } = [];
+    /// <summary>Legacy unconfirmed loot deltas, retained for saved-data compatibility but not applied to Owned.</summary>
     public List<InventoryLootDelta> RecentLoot { get; set; } = [];
     public List<InventoryItemRank> ItemRanks { get; set; } = [];
     public List<InventoryUpgradeEvent> RecentUpgrades { get; set; } = [];
@@ -43,6 +44,10 @@ public sealed class QuestInventory : IJsonOnDeserialized
         LootWatermarks ??= [];
         ItemRanks ??= [];
         RecentUpgrades ??= [];
+        foreach (var item in Items)
+        {
+            item.Owned = item.Carried + item.Bank + item.Hoard + item.Depot + item.OtherStorage;
+        }
         if (ImportedLines is null)
         {
             return;
@@ -108,19 +113,7 @@ public sealed class QuestInventory : IJsonOnDeserialized
 
         string key = character.ToUpperInvariant();
         bool afterExport = timeUtc is DateTime time && ExportTimes.TryGetValue(key, out var exported) && time > exported;
-        if (live || afterExport)
-        {
-            if (timeUtc is DateTime at)
-            {
-                RecentLoot.Add(new(character, item, quantity, at));
-            }
-
-            if (!ExportTimes.TryGetValue(key, out var cutoff) || timeUtc is null || timeUtc > cutoff)
-            {
-                entry.Owned += quantity;
-            }
-        }
-        else
+        if (!live && !afterExport)
         {
             entry.Historical += quantity;
         }
@@ -145,16 +138,18 @@ public sealed class QuestInventory : IJsonOnDeserialized
         }
         foreach (var group in rows.GroupBy(r => r.Name, ItemNames.Comparer))
         {
+            string highestRankName = group.MaxBy(row => InventoryExport.SplitRank(row.Name).Rank)!.Name;
             if (!byName.TryGetValue(group.Key, out var item))
             {
                 item = new()
                 {
                     Character = character,
-                    Item = group.Key
+                    Item = highestRankName
                 };
                 Items.Add(item);
                 byName.Add(group.Key, item);
             }
+            item.Item = highestRankName;
             var loose = group.Where(r => !r.Collection && !r.Installed).ToArray();
             item.Carried = loose.Where(r => r.Storage == InventoryStorage.Carried).Sum(r => r.Count);
             item.Bank = loose.Where(r => r.Storage == InventoryStorage.Bank).Sum(r => r.Count);
@@ -165,11 +160,7 @@ public sealed class QuestInventory : IJsonOnDeserialized
             item.Installed = group.Where(r => r.Installed).Sum(r => r.Count);
             item.Owned = item.Carried + item.Bank + item.Hoard + item.Depot + item.OtherStorage;
         }
-        RecentLoot.RemoveAll(d => d.Character.Equals(character, StringComparison.OrdinalIgnoreCase) && d.TimeUtc <= writtenUtc);
-        foreach (var delta in RecentLoot.Where(d => d.Character.Equals(character, StringComparison.OrdinalIgnoreCase)))
-        {
-            byName[delta.Item].Owned += delta.Quantity;
-        }
+        RecentLoot.RemoveAll(d => d.Character.Equals(character, StringComparison.OrdinalIgnoreCase));
 
         ExportTimes[key] = writtenUtc;
     }
@@ -265,6 +256,7 @@ public sealed class QuestInventoryItem : INotifyPropertyChanged
 
     public string Character { get; set; } = "";
     public string Item { get; set; } = "";
+    /// <summary>Confirmed loose/worn count from the last export, excluding collections and installed augments.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public int Owned
     {

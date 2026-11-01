@@ -25,9 +25,9 @@ public class ItemNamesTests
             new("Equipment", "Mask +5", 1, 4, InventoryStorage.Carried, Collection: true),
         ], at);
         var item = Assert.Single(inventory.Items);
-        Assert.Equal(6, item.Owned);
+        Assert.Equal(5, item.Owned);
         Assert.Equal(2, item.Historical);
         Assert.Equal(4, item.Collection);
-        Assert.Equal("Mask +1", item.Item);
+        Assert.Equal("Mask +5", item.Item);
     }
 }

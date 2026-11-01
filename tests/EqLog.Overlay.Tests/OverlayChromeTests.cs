@@ -122,6 +122,7 @@ public sealed class OverlayChromeTests
                 VerifyMoteColumns();
                 VerifyAllMoteTiersVisible();
                 VerifyHoverBackgroundOpacity();
+                VerifyItemFilterToolbars();
             }
             catch (Exception ex)
             {
@@ -134,6 +135,34 @@ public sealed class OverlayChromeTests
         if (failure is not null)
         {
             ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+    }
+
+    private static void VerifyItemFilterToolbars()
+    {
+        foreach (string key in new[] { "loot", "itemupgrades" })
+        {
+            var panel = new OverlayPanel(key, key, false);
+            var options = key == "loot" ? new ComboBox { ItemsSource = new[] { "Recent", "Grouped" } } : null;
+            string value = "";
+            var filter = MainWindow.ConfigureItemFilterToolbar(panel, text => value = text, options);
+
+            Assert.Equal("Item name filter", System.Windows.Automation.AutomationProperties.GetName(filter));
+            Assert.IsType<StackPanel>(filter.Parent);
+            Assert.True(OverlayPanel.IsInteractive(filter));
+            if (options is not null)
+            {
+                Assert.Same(filter.Parent, options.Parent);
+                options.SelectedIndex = 1;
+            }
+            foreach (bool docked in new[] { false, true })
+            {
+                panel.SetDocked(docked);
+                filter.Text = "Sword";
+                Assert.Equal("Sword", value);
+                filter.Clear();
+                Assert.Equal("", value);
+            }
         }
     }
 

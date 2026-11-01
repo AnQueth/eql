@@ -331,7 +331,11 @@ public partial class MainWindow : Window
                     ToolTip = "Grouped views count all loot observed this session, separately per looter. Upgrade variants are combined.",
                 };
                 grouping.SelectionChanged += (_, _) => _settings.LootGrouping = grouping.SelectedIndex;
-                panel.SetToolbar(grouping);
+                ConfigureItemFilterToolbar(panel, filter => _itemFilters[def.Key] = filter, grouping);
+            }
+            else if (def.Key == "itemupgrades")
+            {
+                ConfigureItemFilterToolbar(panel, filter => _itemFilters[def.Key] = filter);
             }
             panel.LootLookupRequested += async item => await LookupLootItemAsync(item);
             panel.ItemWikiRequested += item => OpenWiki(QuestLookup.PageUrl(QuestLookup.ItemTitle(item)));
@@ -1196,7 +1200,7 @@ public partial class MainWindow : Window
                 "merge" => new("Ready to merge", _characterName, []),
                 "moteplan" => new("Mote upgrade planner", _characterName, []),
                 "exaltations" => ExaltationsContent(),
-                _ => def.Render(snap, _engine, view),
+                _ => def.Render(snap, _engine, view with { ItemFilter = _itemFilters.GetValueOrDefault(def.Key, "") }),
             };
             var rows = def.Key is "loot" or "wiki"
                 ? content.Rows.Select(row => row.LootItem is { } item

@@ -43,6 +43,8 @@ public sealed class InventoryLayoutTests
         var document = XDocument.Load(Path.Combine(AppContext.BaseDirectory, "MainWindow.xaml"));
         var inventory = document.Descendants(presentation + "DataGrid")
             .Single(element => (string?)element.Attribute(xaml + "Name") == "QuestOwnedGrid");
+        Assert.Contains(inventory.Descendants(presentation + "Hyperlink"),
+            link => (string?)link.Attribute("Click") == "InventoryItem_Click");
         var layout = new XElement(Assert.IsType<XElement>(inventory.Parent));
         XNamespace local = "clr-namespace:EqLog.Overlay;assembly=EqLogOverlay";
         foreach (var element in layout.Descendants()
@@ -62,16 +64,29 @@ public sealed class InventoryLayoutTests
         var grid = Assert.IsType<Grid>(XamlReader.Parse(layout.ToString()));
         var splitter = Assert.Single(grid.Children.OfType<GridSplitter>());
         var owned = Assert.IsType<DataGrid>(grid.FindName("QuestOwnedGrid"));
+        Assert.True(owned.IsReadOnly);
+        Assert.DoesNotContain(owned.Columns, column => Equals(column.Header, "History"));
+        Assert.Equal(["Item", "Carried", "Bank", "Hoard", "Depot", "Other", "Collection", "Installed"],
+            owned.Columns.Select(column => column.Header));
+        var filter = Assert.IsType<TextBox>(grid.FindName("InventoryItemFilter"));
+        Assert.True(grid.Children.Contains(Assert.IsType<StackPanel>(filter.Parent)));
+        var details = Assert.IsType<TabControl>(grid.FindName("InventoryDetailsTabs"));
+        Assert.Equal(["Copy locations", "Quest references"], details.Items.Cast<TabItem>().Select(tab => tab.Header));
+        var copies = Assert.IsType<DataGrid>(grid.FindName("InventoryCopiesGrid"));
+        Assert.True(copies.IsReadOnly);
+        Assert.Equal(["Item", "Rank", "Qty", "Location", "Kind"], copies.Columns.Select(column => column.Header));
+        details.SelectedIndex = 1;
         var results = Assert.IsType<ListBox>(grid.FindName("QuestResults"));
         var status = Assert.IsAssignableFrom<FrameworkElement>(grid.FindName("QuestLookupStatus"));
         int upperRow = Grid.GetRow(splitter) - 1;
         int lowerRow = Grid.GetRow(splitter) + 1;
-        var lowerPane = Assert.Single(grid.Children.OfType<DockPanel>(),
-            pane => Grid.GetRow(pane) == lowerRow);
+        var lowerPane = details;
+        Assert.Equal(lowerRow, Grid.GetRow(lowerPane));
+        var questPane = Assert.IsType<DockPanel>(((TabItem)details.SelectedItem).Content);
         Assert.True(grid.RowDefinitions[upperRow].Height.IsStar);
         Assert.True(grid.RowDefinitions[lowerRow].Height.IsStar);
-        Assert.True(lowerPane.Children.Contains(results));
-        Assert.True(lowerPane.Children.OfType<StackPanel>().Single().Children.Contains(status));
+        Assert.True(questPane.Children.Contains(results));
+        Assert.True(questPane.Children.OfType<StackPanel>().Single().Children.Contains(status));
 
         Layout(grid);
         double initialUpper = owned.ActualHeight;
@@ -102,6 +117,17 @@ public sealed class InventoryLayoutTests
         Layout(grid);
         Assert.Equal(grid.RowDefinitions[upperRow].MinHeight, owned.ActualHeight, 3);
         Assert.True(results.ActualHeight > initialResults);
+
+        details.SelectedIndex = 0;
+        copies.ItemsSource = Enumerable.Range(1, 100)
+            .Select(index => new { Item = "Sword", Rank = 3, Quantity = 1, Location = $"Bank slot {index}", Kind = "Loose / worn" })
+            .ToArray();
+        Layout(grid);
+        Assert.True(copies.ActualHeight > 0);
+        copies.ScrollIntoView(copies.Items[99]);
+        Layout(grid);
+        Assert.Equal(100, copies.Items.Count);
+        Assert.IsType<DataGridRow>(copies.ItemContainerGenerator.ContainerFromIndex(99));
     }
 
     private static void Layout(Grid grid)

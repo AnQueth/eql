@@ -98,7 +98,7 @@ public partial class MainWindow
             IsChecked = true,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 10, 0),
-            ToolTip = "Spend the motes you own (from your inventory export plus newer loot) before listing missing ones",
+            ToolTip = "Spend the motes confirmed by your last inventory export before listing missing ones. Run /outputfile inventory after looting or spending motes.",
         };
         _planUseCopies = new CheckBox
         {

@@ -76,8 +76,10 @@ and drop-source notes without including them in URLs. Older catalogs refresh to 
 optional fields; failed refreshes retain previously loaded content.
 
 Historical loot is deduplicated by log path and line number. Moving or replacing a log may
-reimport history as unconfirmed loot. New loot after the inventory export time is added without
-double-counting loot represented in the export.
+reimport history as unconfirmed loot. New loot updates recency and quest lookups, but does not
+increase confirmed ownership. Owned is the sum of exported loose/worn storage counts, with
+collections and installed augments separate. Legacy estimated Owned values are reconciled to
+saved storage counts on load.
 
 The former Loot quests settings tab is hosted in the `inventory` overlay: at startup
 `ConfigureInventoryOverlay` moves the XAML content (`LootQuestsContent`, with its event handlers)
@@ -85,6 +87,10 @@ into the overlay through `OverlayPanel.SetBody`. Ready to merge has its own inde
 The last parsed export rows are kept in memory. `InventoryExport.MergeGroups` groups loose rows by name without `+N`, and
 location text is built from the export path. Worn slot numbers are assigned in `Parse` before empty
 rows are skipped, because repeated roots (Ear, Wrist, Fingers, Any Slot) are only distinguished by order.
+The inventory grid displays the highest exported rank per combined item, with read-only storage
+counts and no Owned or History column. Selection opens Copy locations with all exported ranks,
+quantities, and readable locations; quest references remain in a separate tab. Inventory, Loot,
+and Item upgrades have item-name filters, while Motes remains unfiltered.
 
 The `exaltations` overlay searches effects before item names. `Exaltations.Locate` maps each
 physical `(Exaltation)` row to its nearest preceding host using both the full export path and

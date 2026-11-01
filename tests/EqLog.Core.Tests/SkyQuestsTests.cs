@@ -257,6 +257,13 @@ public class SkyQuestsTests
         Assert.Equal(5, progress[1].Historical);
 
         inventory.NoteLoot("Que", "log", 1, "Rune", 1, true);
+        Assert.False(SkyQuests.Progress(quest, inventory, "Que")[1].Satisfied);
+        inventory.ApplyExport("Que",
+        [
+            new("General 1", "Mask +1", 1, 1, InventoryStorage.Carried),
+            new("Bank1", "Mask +2", 1, 1, InventoryStorage.Bank),
+            new("General 2", "Rune", 2, 1, InventoryStorage.Carried),
+        ], DateTime.UtcNow);
         Assert.All(SkyQuests.Progress(quest, inventory, "Que"), p => Assert.True(p.Satisfied));
         inventory.ApplyExport("Que", [], DateTime.UtcNow);
         Assert.All(SkyQuests.Progress(quest, inventory, "Que"), p => Assert.False(p.Satisfied));

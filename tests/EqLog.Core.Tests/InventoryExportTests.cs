@@ -193,7 +193,7 @@ public class InventoryExportTests
     }
 
     [Fact]
-    public void ExportReplacesCountsAndPreservesOnlyLootNewerThanSnapshot()
+    public void ExportReplacesCountsWithoutAddingUnconfirmedLoot()
     {
         var at = new DateTime(2026, 10, 27, 19, 0, 0, DateTimeKind.Utc);
         var inventory = new QuestInventory();
@@ -202,22 +202,22 @@ public class InventoryExportTests
         inventory.NoteLoot("Other", "log2", 1, "Gnoll Fang", 8, true, at);
         inventory.ApplyExport("Que", [new("General 1", "Gnoll Fang", 1, 4, InventoryStorage.Carried), new("Bank1", "Gnoll Fang", 1, 5, InventoryStorage.Bank)], at);
         var item = inventory.Items.Single(i => i.Character == "Que");
-        Assert.Equal(12, item.Owned);
+        Assert.Equal(9, item.Owned);
         Assert.Equal(4, item.Carried);
         Assert.Equal(5, item.Bank);
         inventory.ApplyExport("Que", [], at.AddMinutes(2));
         Assert.Equal(0, item.Owned);
-        Assert.Equal(8, inventory.Items.Single(i => i.Character == "Other").Owned);
+        Assert.Equal(0, inventory.Items.Single(i => i.Character == "Other").Owned);
     }
 
     [Fact]
-    public void ReadingHistoryDoesNotDoubleCountExportButNewerHistoryRestoresUnexportedLoot()
+    public void ReadingHistoryBeforeOrAfterExportDoesNotChangeConfirmedOwnedCounts()
     {
         var at = DateTime.UtcNow;
         var inventory = new QuestInventory();
         inventory.ApplyExport("Que", [new("General 1", "Fang", 1, 2, InventoryStorage.Carried)], at);
         inventory.NoteLoot("Que", "log", 1, "Fang", 2, false, at.AddSeconds(-1));
         inventory.NoteLoot("Que", "log", 2, "Fang", 1, false, at.AddSeconds(1));
-        Assert.Equal(3, Assert.Single(inventory.Items).Owned);
+        Assert.Equal(2, Assert.Single(inventory.Items).Owned);
     }
 }

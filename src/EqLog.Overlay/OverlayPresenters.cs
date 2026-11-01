@@ -16,7 +16,8 @@ public sealed record ActiveAlert(string Text, Brush Color, DateTime Expires, Ale
 /// <summary>Per-render options the presenters need from the app.</summary>
 public sealed record OverlayView(ISet<ChatChannel> ChatChannels, IReadOnlyList<ActiveAlert> Alerts, int LootGrouping = 0,
     QuestInventory? Inventory = null, WikiActivitySnapshot? WikiActivity = null, QuestWikiActivity? QuestWiki = null,
-    IReadOnlyList<ChatEvent>? RecentChat = null, DpsFightKey? DpsFight = null, string? CharacterName = null);
+    IReadOnlyList<ChatEvent>? RecentChat = null, DpsFightKey? DpsFight = null, string? CharacterName = null,
+    string ItemFilter = "");
 
 /// <summary>Identifies one fight chosen in the DPS overlay picker.</summary>
 public sealed record DpsFightKey(string Target, DateTime Start)
@@ -119,12 +120,19 @@ public static class OverlayPresenters
     private const int MaxRequestRows = 15;
     private const int MaxQueuedTooltipItems = 40;
 
+    /// <summary>Matches a typed item-name fragment without case sensitivity or surrounding whitespace.</summary>
+    internal static bool MatchesItemName(string item, string filter)
+    {
+        return item.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
     private static OverlayContent ItemUpgrades(EngineSnapshot _, LogEngine __, OverlayView view)
     {
         string? character = view.CharacterName;
         var upgrades = view.Inventory?.RecentUpgrades
             .Where(entry => character is not null &&
-                entry.Character.Equals(character, StringComparison.OrdinalIgnoreCase))
+                entry.Character.Equals(character, StringComparison.OrdinalIgnoreCase) &&
+                MatchesItemName(entry.Item, view.ItemFilter))
             .OrderByDescending(entry => entry.TimeUtc)
             .Take(100)
             .ToArray() ?? [];
@@ -135,7 +143,9 @@ public static class OverlayPresenters
         }
         else if (upgrades.Length == 0)
         {
-            rows.Add(new("No item rank-ups recorded. A new export showing a higher +rank will appear here.",
+            rows.Add(new(string.IsNullOrWhiteSpace(view.ItemFilter)
+                ? "No item rank-ups recorded. A new export showing a higher +rank will appear here."
+                : "No item rank-ups match the item filter.",
                 Wrap: true, Foreground: Dim));
         }
         else
@@ -244,10 +254,10 @@ public static class OverlayPresenters
         bool hasExport = inventory is not null &&
             inventory.ExportTimes.ContainsKey(s.CharacterName.ToUpperInvariant());
         string inventoryTip = (hasExport
-            ? $"Export {inventory!.ExportTimes[s.CharacterName.ToUpperInvariant()].ToLocalTime():g}; owned includes newer loot."
-            : "No inventory export: owned counts only reflect tracked loot/manual adjustments.") +
+            ? $"Export {inventory!.ExportTimes[s.CharacterName.ToUpperInvariant()].ToLocalTime():g}; owned counts are confirmed by this export."
+            : "No inventory export: export inventory to confirm owned counts.") +
             "\nOwned excludes collection, installed items and historical drops." +
-            "\nRun /outputfile inventory after spending or moving motes to refresh.";
+            "\nLoot logs do not change Owned. Run /outputfile inventory after looting, spending, or moving motes to refresh.";
         var ownedByTier = held?.ToDictionary(g => g.Key, g => g.Sum(i => i.Item.Owned), StringComparer.OrdinalIgnoreCase)
             ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         rows.Add(new("Tier", "session (all)", Foreground: Header, Bold: true,
@@ -675,7 +685,8 @@ public static class OverlayPresenters
 
         if (view.LootGrouping is 1 or 2)
         {
-            foreach (var group in l.OrderedGroups(view.LootGrouping == 1))
+            foreach (var group in l.OrderedGroups(view.LootGrouping == 1)
+                .Where(group => MatchesItemName(group.Item, view.ItemFilter)))
             {
                 string who = group.Looter == Names.You ? "" : $"[{group.Looter}] ";
                 rows.Add(new($"{who}{ItemNames.Normalize(group.Item)}", $"x{group.Quantity:N0}  {group.LastLoot:HH:mm}",
@@ -684,13 +695,18 @@ public static class OverlayPresenters
         }
         else
         {
-            foreach (var r in l.Recent.Take(12))
+            foreach (var r in l.Recent.Where(drop => MatchesItemName(drop.Item, view.ItemFilter)).Take(12))
             {
                 string qty = r.Quantity > 1 ? $"{r.Quantity} x " : "";
                 string who = r.Looter == Names.You ? "" : $"[{r.Looter}] ";
                 string note = r.SoldFor is { } c ? $"sold {c}" : r.Stored ? "depot" : r.Time.ToString("HH:mm");
                 rows.Add(new($"{who}{qty}{r.Item}", note, Foreground: r.Looter == Names.You ? null : Dim, LootItem: r.Item));
             }
+        }
+
+        if (!string.IsNullOrWhiteSpace(view.ItemFilter) && rows.All(row => row.LootItem is null))
+        {
+            rows.Add(new("No loot matches the item filter.", Wrap: true, Foreground: Dim));
         }
 
         return new("Loot", $"{l.ItemsLooted} items this session", rows);
