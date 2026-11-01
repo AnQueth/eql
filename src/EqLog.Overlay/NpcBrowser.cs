@@ -8,8 +8,6 @@ namespace EqLog.Overlay;
 
 public partial class MainWindow
 {
-    private static readonly string NpcCompendiumFolder = Path.Combine(AppSettings.Folder, "npc-compendium");
-    private static readonly string LegacyNpcCompendiumPath = Path.Combine(AppSettings.Folder, "npc-compendium.json");
     private NpcCompendium _npcCompendium = new();
     private bool _npcSaveEnabled = true;
     private string? _npcStorageError;
@@ -189,7 +187,7 @@ public partial class MainWindow
         string key = mob + "\n" + zone;
         if (_npcEntryLoad is null || _npcEntryLoad.IsCompleted)
         {
-            var load = _npcCompendium.GetAsync(mob, zone);
+            var load = _tracking.GetNpcAsync(_npcCompendium, mob, zone);
             if (load.IsCompletedSuccessfully)
             {
                 _npcEntry = load.Result;
@@ -521,7 +519,7 @@ public partial class MainWindow
         }
         try
         {
-            await _npcCompendium.SaveAsync(NpcCompendiumFolder);
+            await _tracking.SaveNpcsAsync(_npcCompendium);
             _npcStorageError = null;
         }
         catch (Exception ex) when (!throwOnError && (ex is IOException or UnauthorizedAccessException))

@@ -34,9 +34,9 @@ public sealed class AutomaticUpdateCheckTests
     {
         var settings = JsonSerializer.Deserialize<AppSettings>(
             $$"""{"CheckForUpdatesOnStartup": {{enabled.ToString().ToLowerInvariant()}}}""",
-            AppSettings.Json)!;
+            SettingsRepository.Json)!;
         var saved = JsonSerializer.Deserialize<AppSettings>(
-            JsonSerializer.Serialize(settings.Snapshot(), AppSettings.Json), AppSettings.Json)!;
+            JsonSerializer.Serialize(settings.Snapshot(), SettingsRepository.Json), SettingsRepository.Json)!;
 
         Assert.Equal(enabled, saved.CheckForUpdatesOnStartup);
         Assert.Equal(enabled, MainWindow.CanAutomaticallyCheckForUpdates(

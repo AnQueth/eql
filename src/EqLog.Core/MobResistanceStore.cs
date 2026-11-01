@@ -125,6 +125,12 @@ public sealed record RawSpellCounts(long FullResists, long LegacyLandings, long 
     long DotLanded = 0, long DotResisted = 0);
 public sealed record ResistanceWatermark(DateTime Time, long Line);
 
+/// <summary>Detached data captured for ordered persistence by the tracking repository.</summary>
+public sealed record MobResistancePersistenceSnapshot(
+    MobResistanceStore.Data Data,
+    IReadOnlyList<SpellResistanceInfo> PendingSpells,
+    long Version);
+
 /// <summary>Thread-safe persistent observations keyed by zone and mob name, not individual NPC instances.</summary>
 public sealed class MobResistanceStore
 {
@@ -132,42 +138,10 @@ public sealed class MobResistanceStore
     private Data _data = new();
     private long _version;
     private long _savedVersion;
-    private readonly SemaphoreSlim _saveGate = new(1, 1);
     private readonly Dictionary<(string Spell, string Character), decimal?> _damageBaselines = [];
 
     /// <summary>Spell metadata set since the last save, waiting to be appended to the spell cache file.</summary>
     private readonly List<SpellResistanceInfo> _pendingSpells = [];
-
-    /// <summary>
-    /// The spell wiki cache is "spell-info.jsonl" beside the observations file and only ever appended to,
-    /// so caching a spell doesn't rewrite every mob.
-    /// </summary>
-    public static string SpellCachePath(string path)
-    {
-        string folder = Path.GetDirectoryName(Path.GetFullPath(path))!;
-        return Path.Combine(folder, "spell-info.jsonl");
-    }
-
-    /// <summary>The name an earlier build used for the spell cache ("mob-resistances.spells.jsonl").</summary>
-    private static string LegacySpellCachePath(string path)
-    {
-        string folder = Path.GetDirectoryName(Path.GetFullPath(path))!;
-        return Path.Combine(folder, Path.GetFileNameWithoutExtension(path) + ".spells.jsonl");
-    }
-
-    /// <summary>Renames a spell cache written under the earlier name, unless the new file already exists.</summary>
-    private static Task MoveLegacySpellCacheAsync(string path, CancellationToken ct)
-    {
-        string legacy = LegacySpellCachePath(path);
-        string current = SpellCachePath(path);
-        return Task.Run(() =>
-        {
-            if (File.Exists(legacy) && !File.Exists(current))
-            {
-                File.Move(legacy, current);
-            }
-        }, ct);
-    }
 
     public static string MobKey(string name)
     {
@@ -394,119 +368,78 @@ public sealed class MobResistanceStore
         }
     }
 
-    /// <summary>Clears NPC and spell wiki metadata without removing recorded outcomes or reset cutoffs.</summary>
-    /// <param name="path">The resistance observations file.</param>
-    /// <returns>A task completing after the cleared cache is persisted.</returns>
-    public async Task ResetWikiCachesAsync(string path)
+    /// <summary>Clears NPC and spell wiki metadata without removing observations or reset cutoffs.</summary>
+    public void ResetWikiCaches()
     {
-        await _saveGate.WaitAsync().ConfigureAwait(false);
-        try
+        lock (_gate)
         {
-            Data snapshot;
-            long version;
-            lock (_gate)
-            {
-                _data.Wiki.Clear();
-                _data.Spells.Clear();
-                _pendingSpells.Clear();
-                _damageBaselines.Clear();
-                version = ++_version;
-                snapshot = _data.Snapshot();
-            }
-            File.Delete(SpellCachePath(path));
-            File.Delete(LegacySpellCachePath(path));
-            await AtomicFile.WriteJsonAsync(path, snapshot).ConfigureAwait(false);
-            lock (_gate)
-            {
-                _savedVersion = version;
-            }
-        }
-        finally
-        {
-            _saveGate.Release();
+            _data.Wiki.Clear();
+            _data.Spells.Clear();
+            _pendingSpells.Clear();
+            _damageBaselines.Clear();
+            _version++;
         }
     }
 
-    public async Task SaveAsync(string path, CancellationToken ct = default)
+    /// <summary>Captures a detached snapshot or null when every current version has been saved.</summary>
+    public MobResistancePersistenceSnapshot? CapturePersistenceSnapshot()
     {
-        // One save at a time, so overlapping periodic/final saves cannot overwrite newer data with an older snapshot.
-        await _saveGate.WaitAsync(ct).ConfigureAwait(false);
-        try
+        lock (_gate)
         {
-            Data snapshot;
-            long version;
-            SpellResistanceInfo[] spells;
-            lock (_gate)
+            if (_savedVersion == _version)
             {
-                if (_savedVersion == _version)
-                {
-                    return;
-                }
-                snapshot = _data.Snapshot();
-                spells = [.. _pendingSpells];
-                version = _version;
+                return null;
             }
-            if (spells.Length > 0)
-            {
-                // Spells go first: if the observations write then fails, the cache already holds them.
-                await JsonLines.AppendAsync(SpellCachePath(path), spells, ct: ct).ConfigureAwait(false);
-                lock (_gate)
-                {
-                    _pendingSpells.RemoveRange(0, spells.Length);
-                }
-            }
-            await AtomicFile.WriteJsonAsync(path, snapshot, ct: ct).ConfigureAwait(false);
-            lock (_gate)
-            {
-                _savedVersion = version;
-            }
-        }
-        finally
-        {
-            _saveGate.Release();
+
+            return new MobResistancePersistenceSnapshot(_data.Snapshot(), [.. _pendingSpells], _version);
         }
     }
 
-    public static async Task<MobResistanceStore> LoadAsync(string path, CancellationToken ct = default)
+    /// <summary>Marks appended spell records as durable before the main file is updated.</summary>
+    public void CompleteSpellCacheAppend(int appendedSpellCount)
     {
-        var store = new MobResistanceStore();
-        if (File.Exists(path))
+        lock (_gate)
         {
-            store._data = await AtomicFile.ReadJsonAsync<Data>(path, ct: ct).ConfigureAwait(false)
-                ?? throw new JsonException("Mob resistance data is empty.");
-            var data = store._data;
-            if (data.Mobs is null || data.Spells is null || data.Wiki is null || data.Watermarks is null ||
-                data.ResistanceResetTimes is null ||
-                data.Mobs.Values.Any(spells => spells is null || spells.Values.Any(s => s is null ||
-                    string.IsNullOrWhiteSpace(s.Spell) || s.Landed < 0 || s.Resisted < 0 ||
-                    s.DamageSamples?.Values.Any(h => h is null || h.Any(pair => pair.Key <= 0 || pair.Value <= 0)) == true)) ||
-                data.Wiki.Values.Any(w => w is null || w.Resistances is null ||
-                    w.Quests?.Any(quest => quest is null || string.IsNullOrWhiteSpace(quest.Title) ||
-                        string.IsNullOrWhiteSpace(quest.Url)) == true) ||
-                data.Spells.Values.Any(s => s is null || string.IsNullOrWhiteSpace(s.Spell)) ||
-                data.Watermarks.Values.Any(w => w is null))
+            if (appendedSpellCount > 0)
             {
-                throw new JsonException("Mob resistance data contains invalid or null entries.");
+                _pendingSpells.RemoveRange(0, Math.Min(appendedSpellCount, _pendingSpells.Count));
             }
-            // Older files held the spell cache inline; queue it so the next save moves it to the spell cache file.
+        }
+    }
+
+    /// <summary>Marks a successfully written observation snapshot as saved.</summary>
+    public void CompletePersistence(long version)
+    {
+        lock (_gate)
+        {
+            _savedVersion = Math.Max(_savedVersion, version);
+        }
+    }
+
+    /// <summary>Imports validated observation data and the latest spell-cache records.</summary>
+    public void ImportData(Data data, IEnumerable<SpellResistanceInfo>? cachedSpells = null)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        lock (_gate)
+        {
+            _data = data;
+            _pendingSpells.Clear();
+            _damageBaselines.Clear();
+            _version = 0;
+            _savedVersion = 0;
             if (data.Spells.Count > 0)
             {
-                store._pendingSpells.AddRange(data.Spells.Values);
-                store._version++;
+                _pendingSpells.AddRange(data.Spells.Values);
+                _version++;
             }
-        }
-
-        await MoveLegacySpellCacheAsync(path, ct).ConfigureAwait(false);
-        var cached = await JsonLines.LoadLatestAsync<SpellResistanceInfo>(SpellCachePath(path), s => MobKey(s.Spell ?? ""),
-            ct: ct).ConfigureAwait(false);
-        foreach (var (key, spell) in cached)
-        {
-            if (!string.IsNullOrWhiteSpace(spell.Spell))
+            foreach (var spell in cachedSpells ?? [])
             {
-                store._data.Spells[key] = spell;
+                if (!string.IsNullOrWhiteSpace(spell.Spell))
+                {
+                    _data.Spells[MobKey(spell.Spell)] = spell;
+                }
             }
         }
-        return store;
     }
 
     public sealed class Data

@@ -10,7 +10,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using EqLog.Core;
-using EqLog.Core.IO;
+using EqLog.Application.Sessions;
 using EqLog.Core.Parsing;
 using EqLog.Core.Tracking;
 using EqLog.Core.Triggers;
@@ -107,10 +107,10 @@ public partial class MainWindow : Window
     private const int LockHotkeyId = 0x4C31;
     private DateTime _alertTestVisibleUntil;
 
-    /// <summary>If the newest log line is older than this, we are viewing an old log and use log time as "now".</summary>
-    private static readonly TimeSpan ReplayThreshold = TimeSpan.FromMinutes(30);
-
     private readonly AppSettings _settings;
+    private readonly EqLog.Application.Settings.SettingsService _settingsPersistence;
+    private readonly TrackingService _tracking;
+    private readonly ApplicationPersistenceService _persistence;
     private readonly SpellDurationStore _durations;
     private readonly Dictionary<string, OverlayWindow> _overlays = [];
     private readonly Dictionary<string, CheckBox> _overlayToggles = [];
@@ -128,10 +128,12 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _renderTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private static readonly TimeSpan WikiRenderInterval = TimeSpan.FromSeconds(1);
     private DateTime _lastWikiRender;
-    private readonly DispatcherTimer _houseTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly HousekeepingService _housekeeping = new();
+    private readonly CancellationTokenSource _housekeepingStop = new();
+    private Task _housekeepingTask = Task.CompletedTask;
+    private bool _housekeepingFailureReported;
     private readonly DispatcherTimer _gameTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private bool _gameVisible = true;
-    private readonly object _progressGate = new();
     private readonly ObservableCollection<AlertTrigger> _triggers;
     private readonly ConcurrentQueue<TriggerAlert> _pendingAlerts = new();
     private readonly List<ActiveAlert> _activeAlerts = [];
@@ -149,18 +151,16 @@ public partial class MainWindow : Window
     private long _rawShownVersion = -1;
 
     private LogEngine _engine = new();
-    private CancellationTokenSource? _cts;
-    private Task? _tailTask;
+    private LogSessionService _logSessions = null!;
     private string? _currentFile;
-    private DateTime _followBaseline;
-    private TailProgress _progress;
     private string _durationsSignature = "";
-    private int _houseTicks;
     private bool _rendering;
 
     public MainWindow(StartupState state)
     {
         _settings = state.Settings;
+        _settingsPersistence = state.SettingsPersistence ?? SettingsComposition.CreateService();
+        _tracking = state.Tracking ?? TrackingComposition.CreateService();
         _durations = state.Durations;
         _engine = new LogEngine(_durations);
         _spawnStore = state.Spawns;
@@ -169,9 +169,43 @@ public partial class MainWindow : Window
         InitializeThemes(state);
         InitializeLootQuests(state);
         InitializeQuestInventory(state);
+        _logSessions = LogSessionComposition.Create(_inventoryService);
+        _logSessions.BatchProcessed += batch =>
+        {
+            RememberRawLines(batch.Lines);
+            if (batch.Live)
+            {
+                foreach (var alert in _matcher.Match(batch.Lines))
+                {
+                    _pendingAlerts.Enqueue(alert);
+                }
+            }
+        };
+        _logSessions.LiveMobConsidered += (consider, zone) => _mobEvents.Enqueue((consider, zone));
+        _logSessions.LiveConsiderAssessment += assessment => _mobEvents.Enqueue((assessment, ""));
         InitializeMobInfo(state);
+        if (state.WikiWarnings.Count > 0)
+        {
+            ResetWikiCacheStatus.Text = string.Join(" ", state.WikiWarnings);
+        }
+        _skyCatalog = state.SkyCatalog;
+        if (_skyCatalog is not null)
+        {
+            _wikiRepository.SeedSky(_skyCatalog);
+        }
+        if (state.SkyError is { } skyError)
+        {
+            _skyStatus = $"Sky cache could not load: {skyError.Message}. The original cache is protected until reset or repair.";
+        }
+        if (state.TrackingFailures.Count > 0)
+        {
+            ResetTrackingDataStatus.Text = string.Join(" ", state.TrackingFailures.Select(failure =>
+                $"{failure.Store} could not load: {failure.Error.Message}. Existing data is protected."));
+        }
+        _logSessions.SpellObserved += _wikiRepository.ObserveSpell;
         InitializeExaltations(state);
         InitializeNpcCompendium(state);
+        _persistence = new(_settingsPersistence, _tracking, _inventoryService, _wikiRepository);
         _chatChannels = [.. _settings.ChatChannels];
         DurationsGrid.ItemsSource = _durationRows;
         SpawnsGrid.ItemsSource = _spawnRows;
@@ -195,7 +229,6 @@ public partial class MainWindow : Window
 
         System.Windows.Application.Current.SessionEnding += (_, _) => SaveAllBlocking();
         _renderTimer.Tick += async (_, _) => await RenderAsync();
-        _houseTimer.Tick += (_, _) => Housekeeping();
         _gameTimer.Tick += (_, _) => CheckGameVisible();
 
         // This window is never shown: its UI lives in the dock window's side panel, and the dock window is the
@@ -218,7 +251,13 @@ public partial class MainWindow : Window
 
         // Started directly rather than from Loaded: Show() can raise Loaded synchronously, before a handler is attached.
         _renderTimer.Start();
-        _houseTimer.Start();
+        _housekeepingTask = _housekeeping.RunAsync(tick => Dispatcher.InvokeAsync(() =>
+        {
+            if (!_shuttingDown)
+            {
+                Housekeeping(tick);
+            }
+        }).Task, _housekeepingStop.Token);
         _gameTimer.Start();
         Dispatcher.BeginInvoke(async () => await OpenInitialLogAsync(), DispatcherPriority.Loaded);
         Dispatcher.BeginInvoke(async () => await InitializeUpdatesAsync(), DispatcherPriority.Loaded);
@@ -279,7 +318,7 @@ public partial class MainWindow : Window
                 {
                     _engine.SetSpawnTracked(change.Zone, change.Mob, change.Tracked);
                     CheckSpawnWiki();
-                    _ = SaveQuietlyAsync(_engine.SaveSpawnsAsync(AppSettings.SpawnsPath));
+                    _ = SaveQuietlyAsync(_tracking.SaveSpawnsAsync(_engine));
                 };
             }
 
@@ -288,7 +327,7 @@ public partial class MainWindow : Window
                 panel.SpellTrackToggleRequested += change =>
                 {
                     _engine.SetSpellTracked(change.Spell, change.Tracked);
-                    _ = SaveQuietlyAsync(_engine.SaveSpellDurationsAsync(AppSettings.DurationsPath));
+                    _ = SaveQuietlyAsync(_tracking.SaveSpellDurationsAsync(_engine));
                 };
             }
 
@@ -892,8 +931,8 @@ public partial class MainWindow : Window
         string? savedPath = _settings.LogPath;
         string? savedDirectory = _settings.LogDirectory;
         bool followNewest = _settings.FollowNewest;
-        // Probing the disk has no async API, so it runs on the thread pool.
-        string? path = await Task.Run(() => FindInitialLog(args, savedPath, savedDirectory, followNewest));
+        var selection = await _logSessions.FindInitialAsync(args, savedPath, savedDirectory, followNewest);
+        string? path = selection.Path;
 
         if (path is not null)
         {
@@ -901,9 +940,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (savedDirectory is not null && await Task.Run(() => Directory.Exists(savedDirectory)))
+        if (selection.WaitingDirectory is { } waiting)
         {
-            ShowWaitingForLogs(savedDirectory);
+            ShowWaitingForLogs(waiting);
             return;
         }
 
@@ -924,7 +963,7 @@ public partial class MainWindow : Window
         var dialog = new OpenFolderDialog
         {
             Title = "Choose your EverQuest Logs folder (or the EverQuest install folder)",
-            InitialDirectory = start is not null && await Task.Run(() => Directory.Exists(start)) ? start : null,
+            InitialDirectory = start is not null && await _logSessions.DirectoryExistsAsync(start) ? start : null,
         };
         if (dialog.ShowDialog(_dock) != true)
         {
@@ -936,13 +975,17 @@ public partial class MainWindow : Window
             return;
         }
 
-        string directory = await Task.Run(() => LogFileLocator.ResolveChosenDirectory(dialog.FolderName));
-        var newest = await Task.Run(() => LogFileLocator.FindNewest(directory));
+        string directory = await _logSessions.ResolveDirectoryAsync(dialog.FolderName);
+        var newest = await _logSessions.FindNewestAsync(directory);
         _settings.LogDirectory = directory;
         if (newest is null)
         {
             await StopTailingAsync();
+            _logSessions.ForgetSource();
             _currentFile = null;
+            _characterName = null;
+            _inventoryService.SelectSession("", "");
+            SynchronizeInventoryView();
             _settings.LogPath = null;
             ShowWaitingForLogs(directory);
             return;
@@ -951,139 +994,46 @@ public partial class MainWindow : Window
         await SwitchToAsync(newest.Path);
     }
 
-    private static string? FindInitialLog(string[] args, string? savedPath, string? savedDirectory, bool followNewest)
-    {
-        string? path = args.Skip(1).FirstOrDefault(File.Exists);
-        if (path is null && savedPath is not null && File.Exists(savedPath))
-        {
-            path = savedPath;
-        }
-
-        // When following the newest log, prefer whatever is newest in the folder at startup.
-        if (path is null || followNewest)
-        {
-            string? dir = (path is not null ? Path.GetDirectoryName(path) : null) ?? savedDirectory ?? LogFileLocator.DetectDirectory();
-            if (args.Length <= 1 && dir is not null && LogFileLocator.FindNewest(dir) is { } newest)
-            {
-                path = newest.Path;
-            }
-        }
-        return path;
-    }
-
     private async Task SwitchToAsync(string path)
     {
         await StopTailingAsync();
         await SaveNpcCompendiumAsync(throwOnError: false);
         ResetMobInfo();
 
-        var info = await Task.Run(() => LogFileLocator.Describe(path));
-        _engine = new LogEngine(_durations, _spawnStore, _moteStore, _mobResistances, Path.GetFullPath(path), _npcCompendium)
+        var info = await _logSessions.DescribeAsync(path);
+        _engine = new LogEngine(_durations, _spawnStore, _moteStore, _mobResistances, info.Path, _npcCompendium)
         {
             CharacterName = info.CharacterName,
             ResetOnLogin = _settings.ResetOnLogin,
         };
         _currentFile = path;
         _characterName = info.CharacterName;
-        _inventoryService.SelectSession(path, _characterName ?? "");
-        _inventoryView.ImportStatus = "Waiting for this character's inventory export. Create/update it in game with /outputfile inventory.";
-        _questSelectionVersion++;
-        SynchronizeInventoryView();
         _matcher = new TriggerMatcher(_triggers, _characterName);
-        _followBaseline = DateTime.Now;
         _settings.LogPath = path;
         _settings.LogDirectory = Path.GetDirectoryName(path);
         LogPathBox.Text = path;
-        lock (_progressGate)
-        {
-            _progress = default;
-        }
-
         lock (_rawGate)
         {
             _rawLines.Clear();
             _rawVersion++;
         }
 
-        var engine = _engine;
-        var cts = new CancellationTokenSource();
-        _cts = cts;
-        var tailer = new LogTailer(path);
-
-        // Both callbacks run on the tailer thread. Lines delivered after the first catch-up are new, so only those fire alerts.
-        bool live = false;
-        engine.SpellObserved += _wikiRepository.ObserveSpell;
-        engine.MobConsidered += (con, zone) =>
-        {
-            if (live)
-            {
-                _mobEvents.Enqueue((con, zone));
-            }
-        };
-        engine.ConsiderAssessment += assessment =>
-        {
-            if (live)
-            {
-                _mobEvents.Enqueue((assessment, ""));
-            }
-        };
-        string questCharacter = _characterName ?? "";
-        engine.LootObserved += (loot, lineNumber) =>
-        {
-            if (loot.Looter == Names.You && loot.SoldFor is null && !loot.Stored)
-            {
-                bool newLoot = live;
-                _inventoryService.ObserveLoot(new(questCharacter, path, lineNumber, loot.Item, loot.Quantity, newLoot, loot.Time.ToUniversalTime()));
-            }
-        };
-        _tailTask = Task.Run(() => tailer.RunAsync(
-            fromStart: true,
-            onLines: lines =>
-            {
-                engine.ProcessLines(lines);
-                RememberRawLines(lines);
-                if (live)
-                {
-                    foreach (var alert in _matcher.Match(lines))
-                    {
-                        _pendingAlerts.Enqueue(alert);
-                    }
-                }
-            },
-            onProgress: p =>
-            {
-                live |= p.CaughtUp;
-                lock (_progressGate)
-                {
-                    _progress = p;
-                }
-            },
-            cts.Token));
+        _logSessions.Start(info, _engine);
+        _inventoryView.ImportStatus = "Waiting for this character's inventory export. Create/update it in game with /outputfile inventory.";
+        _questSelectionVersion++;
+        SynchronizeInventoryView();
     }
 
     private async Task StopTailingAsync()
     {
-        if (_cts is null || _tailTask is null)
-        {
-            return;
-        }
-
-        await _cts.CancelAsync();
         try
         {
-            await _tailTask;
-        }
-        catch (OperationCanceledException)
-        {
+            await _logSessions.StopAsync();
         }
         catch (Exception ex)
         {
             StatusText.Text = $"Log reader stopped: {ex.Message}";
         }
-
-        _cts.Dispose();
-        _cts = null;
-        _tailTask = null;
     }
 
     private async Task RenderAsync()
@@ -1106,12 +1056,15 @@ public partial class MainWindow : Window
 
     private async Task RenderFrameAsync()
     {
-        PumpMobInfo();
-        TailProgress p;
-        lock (_progressGate)
+        if (_housekeepingTask.IsFaulted && !_housekeepingFailureReported)
         {
-            p = _progress;
+            _housekeepingFailureReported = true;
+            var error = _housekeepingTask.Exception!.GetBaseException();
+            UsageTelemetry.TrackError(error, UsageErrorSource.StartupData);
+            ResetTrackingDataStatus.Text = $"Application maintenance stopped: {error.Message}. Restart to resume automatic checks.";
         }
+        PumpMobInfo();
+        var p = _logSessions.Progress;
         HistoryProgress.Value = p.TotalBytes > 0 ? (double)p.BytesRead / p.TotalBytes : 0;
         HistoryProgress.Visibility = p.CaughtUp ? Visibility.Hidden : Visibility.Visible;
         if (!p.CaughtUp && _currentFile is not null)
@@ -1122,18 +1075,8 @@ public partial class MainWindow : Window
         var engine = _engine;
         var channels = new HashSet<ChatChannel>(_chatChannels);
         bool includeChat = IsShowing("chat");
-        var frame = await Task.Run(() =>
-        {
-            // Waiting for the parser and building detached tracker snapshots must not park the dispatcher.
-            var wallTime = DateTime.Now;
-            var lastLogTime = engine.LastLogTime;
-            var snapshotTime = lastLogTime is DateTime time && wallTime - time > ReplayThreshold
-                ? time
-                : wallTime;
-            var snapshot = engine.Snapshot(snapshotTime);
-            IReadOnlyList<ChatEvent> chat = includeChat ? engine.RecentChat(60, channels) : [];
-            return (Snapshot: snapshot, Chat: chat);
-        });
+        var frame = await _logSessions.CaptureFrameAsync(engine, includeChat, channels,
+            includeSpawns: IsShowing("spawns"), includeSpellDurations: IsShowing("timers"));
         if (_shutDown || !ReferenceEquals(engine, _engine))
         {
             return;
@@ -1142,7 +1085,7 @@ public partial class MainWindow : Window
         var snap = frame.Snapshot;
         var real = DateTime.Now;
         var last = snap.LastLogTime;
-        bool replay = last is DateTime l && real - l > ReplayThreshold;
+        bool replay = frame.Replay;
         RefreshNpcChoices();
         string title = $"EverQuest Log Overlay - v{AppVersion}";
         if (!string.IsNullOrWhiteSpace(snap.CharacterName))
@@ -1204,11 +1147,14 @@ public partial class MainWindow : Window
                 "merge" => new("Ready to merge", _characterName, []),
                 "moteplan" => new("Mote upgrade planner", _characterName, []),
                 "exaltations" => ExaltationsContent(),
-                _ => def.Render(snap, _engine, view with { ItemFilter = _itemFilters.GetValueOrDefault(def.Key, "") }),
+                _ => def.Render(snap, frame.Queries, view with { ItemFilter = _itemFilters.GetValueOrDefault(def.Key, "") }),
             };
             var rows = def.Key is "loot" or "wiki"
                 ? content.Rows.Select(row => row.LootItem is { } item
-                    ? row with { HasQuestReferences = HasQuestReferences(item) }
+                    ? row with
+                    {
+                        HasQuestReferences = HasQuestReferences(item)
+                    }
                     : row).ToArray()
                 : content.Rows;
             _overlays[def.Key].Panel.Update(content.Title, content.Subtitle, rows, content.TitleLink);
@@ -1228,7 +1174,7 @@ public partial class MainWindow : Window
             }
         }
 
-        if (_tailTask is { IsFaulted: true } t)
+        if (_logSessions.Completion is { IsFaulted: true } t)
         {
             StatusText.Text = $"Log reader error: {t.Exception?.GetBaseException().Message}";
             return;
@@ -1248,9 +1194,8 @@ public partial class MainWindow : Window
         StatusText.Text = $"{phase}: {snap.CharacterName}{loadout}{zone} - {snap.LinesProcessed:N0} lines, {when}{replayNote}";
     }
 
-    private void Housekeeping()
+    private void Housekeeping(HousekeepingTick tick)
     {
-        _houseTicks++;
         foreach (var w in _overlays.Values)
         {
             if (w.IsVisible)
@@ -1259,17 +1204,14 @@ public partial class MainWindow : Window
             }
         }
 
-        if (_houseTicks % 3 == 0)
+        if (tick.RefreshDue)
         {
             CheckForNewerLog();
         }
 
-        lock (_progressGate)
+        if (_logSessions.Completion is { IsCompleted: false } && !_logSessions.Progress.CaughtUp)
         {
-            if (_tailTask is { IsCompleted: false } && !_progress.CaughtUp)
-            {
-                return;
-            }
+            return;
         }
 
         _ = CheckInventoryAsync();
@@ -1281,12 +1223,12 @@ public partial class MainWindow : Window
             RefreshSpawns();
         }
 
-        if (_houseTicks % 3 == 0)
+        if (tick.RefreshDue)
         {
             RefreshDurations();
         }
 
-        if (_houseTicks % 5 == 0)
+        if (tick.SaveDue)
         {
             SaveAllInBackground();
         }
@@ -1312,7 +1254,7 @@ public partial class MainWindow : Window
         _checkingNewerLog = true;
         try
         {
-            var newest = await Task.Run(() => LogFileLocator.FindNewest(dir));
+            var newest = await _logSessions.FindNewerAsync(dir, _settings.FollowNewest);
             if (waiting)
             {
                 if (newest is not null && _currentFile is null)
@@ -1321,9 +1263,7 @@ public partial class MainWindow : Window
                 }
             }
             // Another character's log was written after we started reading this one: they logged in.
-            else if (newest is not null && _settings.FollowNewest && _currentFile is not null &&
-                !string.Equals(newest.Path, _currentFile, StringComparison.OrdinalIgnoreCase) &&
-                newest.LastWriteTime > _followBaseline)
+            else if (newest is not null && _settings.FollowNewest && _currentFile is not null)
             {
                 await SwitchToAsync(newest.Path);
             }
@@ -1388,7 +1328,7 @@ public partial class MainWindow : Window
         RefreshDurations(force: true);
         NewDurationSpellBox.Clear();
         NewDurationSecondsBox.Clear();
-        _ = SaveQuietlyAsync(_engine.SaveSpellDurationsAsync(AppSettings.DurationsPath));
+        _ = SaveQuietlyAsync(_tracking.SaveSpellDurationsAsync(_engine));
     }
 
     private void RemoveDuration_Click(object sender, RoutedEventArgs e)
@@ -1412,7 +1352,7 @@ public partial class MainWindow : Window
         _engine.RemoveSpellDuration(row.Spell);
         _durationsSignature = "";
         RefreshDurations(force: true);
-        _ = SaveQuietlyAsync(_engine.SaveSpellDurationsAsync(AppSettings.DurationsPath));
+        _ = SaveQuietlyAsync(_tracking.SaveSpellDurationsAsync(_engine));
     }
 
     private void RelearnDuration_Click(object sender, RoutedEventArgs e)
@@ -1436,7 +1376,7 @@ public partial class MainWindow : Window
         _engine.RelearnSpellDuration(row.Spell);
         _durationsSignature = "";
         RefreshDurations(force: true);
-        _ = SaveQuietlyAsync(_engine.SaveSpellDurationsAsync(AppSettings.DurationsPath));
+        _ = SaveQuietlyAsync(_tracking.SaveSpellDurationsAsync(_engine));
     }
 
     private static bool TryReadSpellDuration(string text, out double seconds)
@@ -1451,7 +1391,7 @@ public partial class MainWindow : Window
         {
             _engine.SetSpellTracked(row.Spell, box.IsChecked == true);
             _durationsSignature = "";
-            _ = SaveQuietlyAsync(_engine.SaveSpellDurationsAsync(AppSettings.DurationsPath));
+            _ = SaveQuietlyAsync(_tracking.SaveSpellDurationsAsync(_engine));
         }
     }
 
@@ -1479,7 +1419,7 @@ public partial class MainWindow : Window
         }
 
         _durationsSignature = "";
-        _ = SaveQuietlyAsync(_engine.SaveSpellDurationsAsync(AppSettings.DurationsPath));
+        _ = SaveQuietlyAsync(_tracking.SaveSpellDurationsAsync(_engine));
     }
 
     private Task _periodicSave = Task.CompletedTask;
@@ -1506,49 +1446,11 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Starts every save. Thread-safe tracker stores prepare and write on workers; UI-owned state is captured
-    /// on the caller's thread. Stores order writes so older saves cannot win. <c>Report</c> runs on the UI thread
-    /// with the error message, or null on success.
+    /// Captures UI-owned state and delegates independent ordered saves to the application coordinator.
     /// </summary>
-    private List<(Task Task, Action<string?>? Report)> StartSaves()
+    private Task<PersistenceResult> StartSaves()
     {
-        var engine = _engine;
-        var saves = new List<(Task Task, Action<string?>? Report)>
-        {
-            (_settings.SaveAsync(), null),
-            (Task.Run(() => engine.SaveSpellDurationsAsync(AppSettings.DurationsPath)), null),
-            (Task.Run(() => engine.SaveSpawnsAsync(AppSettings.SpawnsPath)), null),
-            (Task.Run(() => engine.SaveMotesAsync(AppSettings.MotesPath)), null),
-            (StartQuestInventorySave(), error =>
-            {
-                if (error is not null)
-                {
-                    QuestLookupStatus.Text = $"Could not save quest inventory: {error}";
-                }
-            }),
-        };
-        if (_mobSaveEnabled)
-        {
-            saves.Add((Task.Run(() => _mobResistances.SaveAsync(MobResistancePath)), error =>
-            {
-                if (error is not null)
-                {
-                    MobInfoStatusText.Text = $"Could not save mob resistances: {error}";
-                }
-            }));
-        }
-        if (_npcSaveEnabled)
-        {
-            saves.Add((Task.Run(() => _npcCompendium.SaveAsync(NpcCompendiumFolder)), error =>
-            {
-                _npcStorageError = error is null ? null : $"NPC compendium save failed: {error}";
-                if (_npcStorageError is not null)
-                {
-                    MobInfoStatusText.Text = _npcStorageError;
-                }
-            }));
-        }
-        return saves;
+        return _persistence.SaveAsync(_settings, _engine, _mobResistances, _npcCompendium, _mobSaveEnabled, _npcSaveEnabled);
     }
 
     /// <summary>Saves window layout, settings and everything learned. Runs every few seconds, on close and before updating.</summary>
@@ -1556,29 +1458,47 @@ public partial class MainWindow : Window
     private async Task SaveAllAsync(bool throwOnError = false)
     {
         CaptureLayout();
-        foreach (var (task, report) in StartSaves())
+        var result = await StartSaves();
+        var generalErrors = new List<string>();
+        foreach (var outcome in result.Outcomes)
         {
-            try
+            if (outcome.Error is not { } error)
             {
-                await task;
-                report?.Invoke(null);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                report?.Invoke(ex.Message);
-                if (throwOnError)
+                if (outcome.Feature == PersistedFeature.Npcs && _npcSaveEnabled)
                 {
-                    throw;
+                    _npcStorageError = null;
                 }
+                continue;
+            }
+            UsageTelemetry.TrackError(error, outcome.Feature == PersistedFeature.Wiki ? UsageErrorSource.Wiki : UsageErrorSource.StartupData);
+            string message = $"Could not save {outcome.Feature}: {error.Message}. Changes remain retryable; protected files are unchanged.";
+            switch (outcome.Feature)
+            {
+                case PersistedFeature.Inventory:
+                    QuestLookupStatus.Text = message;
+                    break;
+                case PersistedFeature.Wiki:
+                    ResetWikiCacheStatus.Text = message;
+                    break;
+                case PersistedFeature.Npcs:
+                    _npcStorageError = message;
+                    MobInfoStatusText.Text = message;
+                    break;
+                case PersistedFeature.Mobs:
+                    MobInfoStatusText.Text = message;
+                    break;
+                default:
+                    generalErrors.Add(message);
+                    break;
             }
         }
-        if (throwOnError && !_mobSaveEnabled)
+        if (generalErrors.Count > 0)
         {
-            throw new IOException("Mob data was not loaded successfully. The original file is protected from overwrites.");
+            ResetTrackingDataStatus.Text = string.Join(" ", generalErrors);
         }
-        if (throwOnError && !_npcSaveEnabled)
+        if (throwOnError && result.Failures.FirstOrDefault() is { } failure)
         {
-            throw new IOException(_npcStorageError);
+            throw new IOException($"Saving {failure.Feature} failed: {failure.Error!.Message}", failure.Error);
         }
     }
 
@@ -1602,11 +1522,22 @@ public partial class MainWindow : Window
         CaptureLayout();
         try
         {
-            Task.Run(() => Task.WhenAll(StartSaves().Select(s => s.Task))).Wait(TimeSpan.FromSeconds(15));
+            var saving = Task.Run(StartSaves);
+            if (!saving.Wait(TimeSpan.FromSeconds(15)))
+            {
+                UsageTelemetry.TrackError(new TimeoutException("Session-ending save exceeded 15 seconds."), UsageErrorSource.StartupData);
+            }
+            else
+            {
+                foreach (var failure in saving.Result.Failures)
+                {
+                    UsageTelemetry.TrackError(failure.Error!, UsageErrorSource.StartupData);
+                }
+            }
         }
-        catch (AggregateException)
+        catch (AggregateException ex)
         {
-            // The session is ending; there is nowhere left to report a failed save.
+            UsageTelemetry.TrackError(ex.GetBaseException(), UsageErrorSource.StartupData);
         }
     }
     private void SetLocked(bool locked)
@@ -1687,25 +1618,26 @@ public partial class MainWindow : Window
         _npcWikiCts?.Cancel();
         await disposingWiki;
         _renderTimer.Stop();
-        _houseTimer.Stop();
+        _housekeepingStop.Cancel();
+        try
+        {
+            await _housekeepingTask;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            UsageTelemetry.TrackError(ex, UsageErrorSource.StartupData);
+            ResetTrackingDataStatus.Text = $"Maintenance stopped: {ex.Message}";
+        }
         _gameTimer.Stop();
         NativeMethods.UnregisterHotKey(new WindowInteropHelper(this).Handle, LockHotkeyId);
 
-        _cts?.Cancel();
-        if (_tailTask is { } tail)
+        try
         {
-            try
-            {
-                // Finish the current batch before the final save.
-                await tail;
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            catch (Exception ex)
-            {
-                StatusText.Text = $"Log reader stopped during shutdown: {ex.Message}";
-            }
+            await _logSessions.StopAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Log reader stopped during shutdown: {ex.Message}";
         }
         await SaveAllAsync();
         foreach (var w in _overlays.Values)
@@ -1715,12 +1647,12 @@ public partial class MainWindow : Window
     }
     private async void Browse_Click(object sender, RoutedEventArgs e)
     {
-        string dir = _currentFile is not null ? Path.GetDirectoryName(_currentFile)! : _settings.LogDirectory ?? LogFileLocator.DefaultDirectory;
+        string dir = _currentFile is not null ? Path.GetDirectoryName(_currentFile)! : _settings.LogDirectory ?? LogSessionComposition.DefaultDirectory;
         var dlg = new OpenFileDialog
         {
             Title = "Choose an EverQuest log file",
             Filter = "EverQuest logs (eqlog*.txt)|eqlog*.txt|All files (*.*)|*.*",
-            InitialDirectory = await Task.Run(() => Directory.Exists(dir)) ? dir : null,
+            InitialDirectory = await _logSessions.DirectoryExistsAsync(dir) ? dir : null,
         };
         if (dlg.ShowDialog(_dock) == true)
         {
@@ -1736,7 +1668,7 @@ public partial class MainWindow : Window
     private void FollowNewest_Click(object sender, RoutedEventArgs e)
     {
         _settings.FollowNewest = FollowNewestBox.IsChecked == true;
-        _followBaseline = DateTime.Now;
+        _logSessions.ResetFollowBaseline();
     }
 
     private void Lock_Click(object sender, RoutedEventArgs e)
@@ -2240,7 +2172,7 @@ public partial class MainWindow : Window
         {
             _engine.SetSpawnTracked(row.Zone, row.Mob, box.IsChecked == true);
             CheckSpawnWiki();
-            _ = SaveQuietlyAsync(_engine.SaveSpawnsAsync(AppSettings.SpawnsPath));
+            _ = SaveQuietlyAsync(_tracking.SaveSpawnsAsync(_engine));
         }
     }
 
@@ -2265,7 +2197,7 @@ public partial class MainWindow : Window
         _engine.RelearnSpawn(row.Zone, row.Mob);
         CheckSpawnWiki();
         RefreshSpawns(force: true);
-        _ = SaveQuietlyAsync(_engine.SaveSpawnsAsync(AppSettings.SpawnsPath));
+        _ = SaveQuietlyAsync(_tracking.SaveSpawnsAsync(_engine));
     }
 
     private void Spawns_CellEditEnding(object? sender, DataGridCellEditEndingEventArgs e)
@@ -2292,7 +2224,7 @@ public partial class MainWindow : Window
         }
 
         _spawnsSignature = "";
-        _ = SaveQuietlyAsync(_engine.SaveSpawnsAsync(AppSettings.SpawnsPath));
+        _ = SaveQuietlyAsync(_tracking.SaveSpawnsAsync(_engine));
     }
 
     /// <summary>Settings save for UI handlers that can't await; <paramref name="onError"/> receives the failure message.</summary>
@@ -2300,23 +2232,30 @@ public partial class MainWindow : Window
     {
         try
         {
-            await _settings.SaveAsync();
+            await _settingsPersistence.SaveAsync(_settings);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.Text.Json.JsonException)
         {
+            UsageTelemetry.TrackError(ex, UsageErrorSource.StartupData);
             onError?.Invoke(ex.Message);
+            if (onError is null)
+            {
+                ResetTrackingDataStatus.Text = $"Could not save settings: {ex.Message}";
+            }
         }
     }
 
     /// <summary>For small learned-data saves; a failed write stays dirty and the periodic save retries it.</summary>
-    private static async Task SaveQuietlyAsync(Task save)
+    private async Task SaveQuietlyAsync(Task save)
     {
         try
         {
             await save;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.Text.Json.JsonException)
         {
+            UsageTelemetry.TrackError(ex, UsageErrorSource.StartupData);
+            ResetTrackingDataStatus.Text = $"Could not save tracking data: {ex.Message}. Changes remain dirty; periodic saves retry.";
         }
     }
 }

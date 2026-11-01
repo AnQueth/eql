@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace EqLog.Core.Tracking;
 
 public sealed record MoteCount(string Tier, int Count);
@@ -22,7 +20,7 @@ public sealed record MoteMobRate(string Mob, int Kills, int Drops, IReadOnlyList
 /// so reading the same log again on the next launch doesn't count anything twice.
 /// Not thread-safe; the engine serializes access.
 /// </summary>
-public sealed class MoteStore : ISnapshotStore<MoteStore.Data>
+public sealed class MoteStore
 {
     private Data _data = new();
 
@@ -125,114 +123,91 @@ public sealed class MoteStore : ISnapshotStore<MoteStore.Data>
         return m;
     }
 
-    public static async Task<MoteStore> LoadAsync(string path, CancellationToken ct = default)
+    /// <summary>Imports saved totals and replay watermarks into this in-memory store.</summary>
+    public void ImportData(Data? data)
     {
-        var store = new MoteStore();
-        try
-        {
-            if (File.Exists(path))
-            {
-                var data = await AtomicFile.ReadJsonAsync<Data>(path, ct: ct).ConfigureAwait(false);
-                if (data is not null)
-                {
-                    store._data = Normalize(data);
-                }
-            }
-        }
-        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
-        {
-            // Start fresh rather than fail to launch.
-        }
-
-        return store;
+        _data = Normalize(data ?? new Data());
+        IsDirty = false;
     }
 
-    /// <summary>Saves without locking; use only when nothing else is changing the store.</summary>
-    public Task SaveAsync(string path, CancellationToken ct = default)
-    {
-        return SnapshotStore.SaveAsync(this, null, path, onlyIfDirty: false, ct);
-    }
-
-    SemaphoreSlim ISnapshotStore<Data>.SaveGate { get; } = new(1, 1);
-
-    Data? ISnapshotStore<Data>.TakeSnapshot(bool onlyIfDirty)
+    /// <summary>Creates a detached snapshot and clears dirty state when data is included.</summary>
+    public Data? ExportData(bool onlyIfDirty = true)
     {
         if (onlyIfDirty && !IsDirty)
         {
             return null;
         }
-        var snapshot = Normalize(_data);
+
         IsDirty = false;
-        return snapshot;
+        return Normalize(_data);
     }
 
-    void ISnapshotStore<Data>.MarkDirty()
+    /// <summary>Restores dirty state after a failed persistence attempt.</summary>
+    public void MarkDirty()
     {
         IsDirty = true;
     }
 
-    // Deep copy with case-insensitive dictionaries (System.Text.Json creates case-sensitive ones); also used for save snapshots.
-    private static Data Normalize(Data d)
+    // Deep copy with case-insensitive dictionaries (System.Text.Json creates case-sensitive ones).
+    private static Data Normalize(Data data)
     {
         var result = new Data();
-        foreach (var (name, c) in d.Characters)
+        foreach (var (name, character) in data.Characters)
         {
             result.Characters[name] = new CharacterData
             {
-                Watermark = c.Watermark,
-                WatermarkCount = c.WatermarkCount,
-                Tiers = new(c.Tiers, StringComparer.OrdinalIgnoreCase),
+                Watermark = character.Watermark,
+                WatermarkCount = character.WatermarkCount,
+                Tiers = new(character.Tiers, StringComparer.OrdinalIgnoreCase),
             };
         }
-
-        foreach (var (zone, mobs) in d.Zones)
+        foreach (var (zone, mobs) in data.Zones)
         {
             var copy = new Dictionary<string, MobData>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (mob, m) in mobs)
+            foreach (var (mob, entry) in mobs)
             {
-                copy[mob] = new MobData { Kills = m.Kills, Drops = m.Drops, Tiers = new(m.Tiers, StringComparer.OrdinalIgnoreCase) };
+                copy[mob] = new MobData
+                {
+                    Kills = entry.Kills,
+                    Drops = entry.Drops,
+                    Tiers = new(entry.Tiers, StringComparer.OrdinalIgnoreCase),
+                };
             }
-
             result.Zones[zone] = copy;
         }
 
         return result;
     }
 
-    internal sealed class Data
+    public sealed class Data
     {
         public Dictionary<string, CharacterData> Characters { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-
         public Dictionary<string, Dictionary<string, MobData>> Zones { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
-    internal sealed class CharacterData
+    public sealed class CharacterData
     {
         public DateTime? Watermark
         {
             get; set;
         }
-
         public int WatermarkCount
         {
             get; set;
         }
-
         public Dictionary<string, int> Tiers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
-    internal sealed class MobData
+    public sealed class MobData
     {
         public int Kills
         {
             get; set;
         }
-
         public int Drops
         {
             get; set;
         }
-
         public Dictionary<string, int> Tiers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }
 }

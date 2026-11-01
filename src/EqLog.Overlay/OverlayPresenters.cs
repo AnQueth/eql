@@ -3,12 +3,13 @@ using EqLog.Core;
 using EqLog.Core.Parsing;
 using EqLog.Core.Tracking;
 using EqLog.Core.Triggers;
+using EqLog.Application.Sessions;
 
 namespace EqLog.Overlay;
 
 public sealed record OverlayContent(string Title, string? Subtitle, IReadOnlyList<OverlayRow> Rows, string? TitleLink = null);
 
-public sealed record OverlayDefinition(string Key, string Caption, double Width, double Height, bool AutoScroll, Func<EngineSnapshot, LogEngine, OverlayView, OverlayContent> Render);
+public sealed record OverlayDefinition(string Key, string Caption, double Width, double Height, bool AutoScroll, Func<EngineSnapshot, EngineQuerySnapshot, OverlayView, OverlayContent> Render);
 
 /// <summary>An alert currently on screen.</summary>
 public sealed record ActiveAlert(string Text, Brush Color, DateTime Expires, AlertEffect Effect = AlertEffect.None);
@@ -44,27 +45,42 @@ public static class OverlayPresenters
     private static readonly Brush WornBar = Frozen(Color.FromArgb(170, 200, 40, 40));
     private static Brush Dim
     {
-        get { return ThemeBrush("OverlayDim"); }
+        get
+        {
+            return ThemeBrush("OverlayDim");
+        }
     }
 
     private static Brush Header
     {
-        get { return ThemeBrush("OverlayHeader"); }
+        get
+        {
+            return ThemeBrush("OverlayHeader");
+        }
     }
 
     private static Brush Bad
     {
-        get { return ThemeBrush("OverlayBad"); }
+        get
+        {
+            return ThemeBrush("OverlayBad");
+        }
     }
 
     private static Brush Warn
     {
-        get { return ThemeBrush("OverlayWarn"); }
+        get
+        {
+            return ThemeBrush("OverlayWarn");
+        }
     }
 
     private static Brush Good
     {
-        get { return ThemeBrush("OverlayGood"); }
+        get
+        {
+            return ThemeBrush("OverlayGood");
+        }
     }
 
     /// <summary>The active theme's overlay text brush, falling back to the built-in default color.</summary>
@@ -126,7 +142,7 @@ public static class OverlayPresenters
         return item.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 
-    private static OverlayContent ItemUpgrades(EngineSnapshot _, LogEngine __, OverlayView view)
+    private static OverlayContent ItemUpgrades(EngineSnapshot _, EngineQuerySnapshot __, OverlayView view)
     {
         string? character = view.CharacterName;
         var upgrades = view.Inventory?.RecentUpgrades
@@ -162,7 +178,7 @@ public static class OverlayPresenters
         return new("Item upgrades", character, rows);
     }
 
-    private static OverlayContent WikiActivity(EngineSnapshot _, LogEngine __, OverlayView view)
+    private static OverlayContent WikiActivity(EngineSnapshot _, EngineQuerySnapshot __, OverlayView view)
     {
         var activity = view.WikiActivity;
         var rows = new List<OverlayRow>();
@@ -241,7 +257,7 @@ public static class OverlayPresenters
         "Example: 5/16 ≤+4 means 5 gear points at +4 or lower, or 16 spell points at any rank. " +
         "Values are from the EQLWiki Mote Guide.";
 
-    private static OverlayContent Motes(EngineSnapshot s, LogEngine _, OverlayView view)
+    private static OverlayContent Motes(EngineSnapshot s, EngineQuerySnapshot _, OverlayView view)
     {
         var m = s.Motes;
         var rows = new List<OverlayRow>();
@@ -317,7 +333,7 @@ public static class OverlayPresenters
         return new("Motes", sub, rows);
     }
 
-    private static OverlayContent Spawns(EngineSnapshot s, LogEngine engine, OverlayView __)
+    private static OverlayContent Spawns(EngineSnapshot s, EngineQuerySnapshot queries, OverlayView __)
     {
         var sp = s.Spawns;
         var rows = new List<OverlayRow>();
@@ -353,9 +369,9 @@ public static class OverlayPresenters
             }
         }
 
-        if (sp.Zone is { } zone && string.Equals(engine.SpawnZone, zone, StringComparison.OrdinalIgnoreCase))
+        if (sp.Zone is { } zone && string.Equals(queries.SpawnZone, zone, StringComparison.OrdinalIgnoreCase))
         {
-            var candidates = engine.SpawnCandidates()
+            var candidates = queries.SpawnCandidates
                 .Where(c => c.LikelyNamed && c.Info?.Tracked != true)
                 .OrderBy(c => c.Mob, StringComparer.OrdinalIgnoreCase)
                 .ToList();
@@ -379,7 +395,7 @@ public static class OverlayPresenters
         return new("Spawn Timers", sp.Zone, rows);
     }
 
-    private static OverlayContent Alerts(EngineSnapshot _, LogEngine __, OverlayView view)
+    private static OverlayContent Alerts(EngineSnapshot _, EngineQuerySnapshot __, OverlayView view)
     {
         var rows = view.Alerts.Reverse()
             .Select(a => new OverlayRow(a.Text, Foreground: a.Color, Wrap: true, Bold: true, Scale: 1.6, Effect: a.Effect))
@@ -436,7 +452,7 @@ public static class OverlayPresenters
         return s.CurrentFight;
     }
 
-    private static OverlayContent Dps(EngineSnapshot s, LogEngine _, OverlayView view)
+    private static OverlayContent Dps(EngineSnapshot s, EngineQuerySnapshot _, OverlayView view)
     {
         var rows = new List<OverlayRow>();
         var f = SelectedFight(s, view.DpsFight);
@@ -486,7 +502,7 @@ public static class OverlayPresenters
             fight.Timeline, fight.DurationSeconds, fight.Start, DamageTimeline.Merge(fight.Attackers.SelectMany(a => a.AbilityTimelines)));
     }
 
-    private static OverlayContent Taken(EngineSnapshot s, LogEngine _, OverlayView __)
+    private static OverlayContent Taken(EngineSnapshot s, EngineQuerySnapshot _, OverlayView __)
     {
         var d = s.DamageTaken;
         var rows = new List<OverlayRow>();
@@ -510,7 +526,7 @@ public static class OverlayPresenters
         return new("Damage Taken", sub, rows);
     }
 
-    private static OverlayContent Heals(EngineSnapshot s, LogEngine _, OverlayView __)
+    private static OverlayContent Heals(EngineSnapshot s, EngineQuerySnapshot _, OverlayView __)
     {
         var h = s.Heals;
         var rows = new List<OverlayRow>();
@@ -552,7 +568,7 @@ public static class OverlayPresenters
         return new("Healing", $"out {Short(h.OutgoingRecentHps)} hps  in {Short(h.IncomingRecentHps)} hps", rows);
     }
 
-    private static OverlayContent Timers(EngineSnapshot s, LogEngine engine, OverlayView __)
+    private static OverlayContent Timers(EngineSnapshot s, EngineQuerySnapshot queries, OverlayView __)
     {
         var rows = new List<OverlayRow>();
         foreach (var t in s.Timers)
@@ -601,7 +617,7 @@ public static class OverlayPresenters
         var activeSpells = s.Timers
             .Select(timer => timer.Spell)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var known = engine.SpellDurations(highestRanksOnly: true)
+        var known = queries.SpellDurations
             .Where(duration =>
                 !activeSpells.Contains(duration.Spell) &&
                 (duration.LearnedSeconds is not null || duration.OverrideSeconds is not null || duration.WikiSeconds is not null))
@@ -624,7 +640,7 @@ public static class OverlayPresenters
         return new("Spell Timers", null, rows);
     }
 
-    private static OverlayContent Session(EngineSnapshot s, LogEngine _, OverlayView __)
+    private static OverlayContent Session(EngineSnapshot s, EngineQuerySnapshot _, OverlayView __)
     {
         var x = s.Session;
         var now = s.Now;
@@ -671,7 +687,7 @@ public static class OverlayPresenters
         return new(x.Zone ?? "Session", s.CharacterName.Length > 0 ? s.CharacterName : null, rows);
     }
 
-    private static OverlayContent Loot(EngineSnapshot s, LogEngine _, OverlayView view)
+    private static OverlayContent Loot(EngineSnapshot s, EngineQuerySnapshot _, OverlayView view)
     {
         var l = s.Loot;
         var rows = new List<OverlayRow>
@@ -712,10 +728,10 @@ public static class OverlayPresenters
         return new("Loot", $"{l.ItemsLooted} items this session", rows);
     }
 
-    private static OverlayContent Chat(EngineSnapshot s, LogEngine engine, OverlayView view)
+    private static OverlayContent Chat(EngineSnapshot s, EngineQuerySnapshot queries, OverlayView view)
     {
         var rows = new List<OverlayRow>();
-        foreach (var c in view.RecentChat ?? engine.RecentChat(60, view.ChatChannels))
+        foreach (var c in view.RecentChat ?? queries.Chat)
         {
             string where = c.Channel switch
             {
@@ -729,7 +745,7 @@ public static class OverlayPresenters
         return new("Chat", null, rows);
     }
 
-    private static OverlayContent Spells(EngineSnapshot s, LogEngine _, OverlayView __)
+    private static OverlayContent Spells(EngineSnapshot s, EngineQuerySnapshot _, OverlayView __)
     {
         var sp = s.Spells;
         var rows = new List<OverlayRow>();

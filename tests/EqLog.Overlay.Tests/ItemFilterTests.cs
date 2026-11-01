@@ -73,11 +73,14 @@ public sealed class ItemFilterTests
             tracker.OnLoot(new(now.AddSeconds(3 + i), Names.You, "Apple", 1, null, null, false));
         }
         var engine = new LogEngine { CharacterName = "Que" };
-        var snapshot = engine.Snapshot(now) with { Loot = tracker.Snapshot(60, 10) };
+        var snapshot = engine.Snapshot(now) with
+        {
+            Loot = tracker.Snapshot(60, 10)
+        };
         var view = new OverlayView(new HashSet<ChatChannel>(), [], LootGrouping: grouping, ItemFilter: " sWoRd ");
         var presenter = OverlayPresenters.All.Single(definition => definition.Key == "loot");
 
-        var content = presenter.Render(snapshot, engine, view);
+        var content = presenter.Render(snapshot, EngineQuerySnapshot.Capture(engine), view);
 
         var items = content.Rows.Where(row => row.LootItem is not null).ToArray();
         Assert.Equal(2, items.Length);
@@ -85,9 +88,15 @@ public sealed class ItemFilterTests
         Assert.Contains(items, row => row.Left.Contains("[Other]"));
         Assert.Equal("17 items this session", content.Subtitle);
         Assert.Contains(content.Rows, row => row.Left == "Coin looted");
-        var cleared = presenter.Render(snapshot, engine, view with { ItemFilter = "  " });
+        var cleared = presenter.Render(snapshot, EngineQuerySnapshot.Capture(engine), view with
+        {
+            ItemFilter = "  "
+        });
         Assert.Equal(grouping == 0 ? 12 : 4, cleared.Rows.Count(row => row.LootItem is not null));
-        var unmatched = presenter.Render(snapshot, engine, view with { ItemFilter = "missing" });
+        var unmatched = presenter.Render(snapshot, EngineQuerySnapshot.Capture(engine), view with
+        {
+            ItemFilter = "missing"
+        });
         Assert.DoesNotContain(unmatched.Rows, row => row.LootItem is not null);
         Assert.Contains(unmatched.Rows, row => row.Left == "No loot matches the item filter.");
         Assert.Equal(content.Subtitle, unmatched.Subtitle);
@@ -105,9 +114,12 @@ public sealed class ItemFilterTests
         var snapshot = engine.Snapshot(new DateTime(2026, 10, 21, 19, 0, 0));
         var presenter = OverlayPresenters.All.Single(definition => definition.Key == "motes");
         var view = new OverlayView(new HashSet<ChatChannel>(), [], ItemFilter: " MOTE OF MAJOR ");
-        var baseline = presenter.Render(snapshot, engine, view with { ItemFilter = "" });
+        var baseline = presenter.Render(snapshot, EngineQuerySnapshot.Capture(engine), view with
+        {
+            ItemFilter = ""
+        });
 
-        var content = presenter.Render(snapshot, engine, view);
+        var content = presenter.Render(snapshot, EngineQuerySnapshot.Capture(engine), view);
 
         var items = content.Rows.Where(row => row.LootItem is not null).ToArray();
         Assert.Equal(MoteValues.Tiers.Count + 2, items.Length);
@@ -115,10 +127,16 @@ public sealed class ItemFilterTests
         Assert.Contains(content.Rows, row => row.Left == "Recent");
         Assert.Equal(baseline.Subtitle, content.Subtitle);
         Assert.Equal(baseline.Rows.Single(row => row.Left == "Total"), content.Rows.Single(row => row.Left == "Total"));
-        var cleared = presenter.Render(snapshot, engine, view with { ItemFilter = " " });
+        var cleared = presenter.Render(snapshot, EngineQuerySnapshot.Capture(engine), view with
+        {
+            ItemFilter = " "
+        });
         Assert.Equal(baseline.Rows.Select(row => (row.Left, row.Right, row.LootItem)),
             cleared.Rows.Select(row => (row.Left, row.Right, row.LootItem)));
-        var unmatched = presenter.Render(snapshot, engine, view with { ItemFilter = "missing" });
+        var unmatched = presenter.Render(snapshot, EngineQuerySnapshot.Capture(engine), view with
+        {
+            ItemFilter = "missing"
+        });
         Assert.Equal(baseline.Rows.Select(row => (row.Left, row.Right, row.LootItem)),
             unmatched.Rows.Select(row => (row.Left, row.Right, row.LootItem)));
     }
@@ -144,9 +162,15 @@ public sealed class ItemFilterTests
 
         Assert.Equal("Sword", Assert.Single(content.Rows).Left);
         Assert.Equal("+1 to +2", content.Rows[0].Right);
-        var cleared = presenter.Render(null!, null!, view with { ItemFilter = "" });
+        var cleared = presenter.Render(null!, null!, view with
+        {
+            ItemFilter = ""
+        });
         Assert.Equal(["Shield", "Sword"], cleared.Rows.Select(row => row.Left));
-        var unmatched = presenter.Render(null!, null!, view with { ItemFilter = "missing" });
+        var unmatched = presenter.Render(null!, null!, view with
+        {
+            ItemFilter = "missing"
+        });
         Assert.Equal("No item rank-ups match the item filter.", Assert.Single(unmatched.Rows).Left);
         Assert.Equal(3, inventory.RecentUpgrades.Count);
     }

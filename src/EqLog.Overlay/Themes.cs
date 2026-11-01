@@ -164,7 +164,7 @@ public partial class MainWindow
             var applied = theme ?? ThemeManager.GetSystemTheme(_themes);
             applied.Validate();
             _settings.Theme = theme;
-            await _settings.SaveAsync();
+            await _settingsPersistence.SaveAsync(_settings);
             ApplyTheme(applied);
 
             UsageTelemetry.TrackFeature(UsageFeature.ThemeChanged);
@@ -220,7 +220,7 @@ public partial class MainWindow
 
         try
         {
-            var theme = await ThemeManager.LoadAsync(dialog.FileName);
+            var theme = await ThemeComposition.Service.ImportAsync(dialog.FileName);
             _themes.Add(theme);
             ThemePicker.Items.Refresh();
             ThemePicker.SelectedItem = theme;

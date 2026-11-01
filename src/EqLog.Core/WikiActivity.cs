@@ -1,5 +1,12 @@
 namespace EqLog.Core;
 
+public enum WikiPriority
+{
+    RealTime = 0,
+    Interactive = 100,
+    Background = 200,
+}
+
 /// <summary>A point-in-time view of a wiki HTTP request, including retry backoff.</summary>
 public sealed record WikiRequestActivity(long Id, string Name, string Url, WikiPriority Priority,
     string State, int Attempt, DateTime StartedUtc);

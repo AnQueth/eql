@@ -263,40 +263,25 @@ public class QuestInventoryTests
     }
 
     [Fact]
-    public async Task ApplyExport_UpgradeHistorySurvivesDiskReloadAndRepeatedExports()
+    public void ApplyExport_UpgradeHistorySurvivesJsonReloadAndRepeatedExports()
     {
-        string directory = Path.Combine(Path.GetTempPath(), "eql-inventory-" + Guid.NewGuid().ToString("N"));
-        string path = Path.Combine(directory, "quest-inventory.json");
         var written = new DateTime(2026, 10, 30, 12, 0, 0, DateTimeKind.Utc);
         var inventory = new QuestInventory();
         InventoryExportItem[] upgradedRows =
             [new("Held", "Sword +2", 1, 1, InventoryStorage.Carried)];
-
-        try
+        inventory.ApplyExport("Que",
+            [new("Held", "Sword +1", 1, 1, InventoryStorage.Carried)], written);
+        inventory.ApplyExport("Que", upgradedRows, written.AddMinutes(1));
+        var expected = Assert.Single(inventory.RecentUpgrades);
+        string json = System.Text.Json.JsonSerializer.Serialize(inventory);
+        for (int restart = 0; restart < 3; restart++)
         {
-            inventory.ApplyExport("Que",
-                [new("Held", "Sword +1", 1, 1, InventoryStorage.Carried)], written);
-            inventory.ApplyExport("Que", upgradedRows, written.AddMinutes(1));
-            var expected = Assert.Single(inventory.RecentUpgrades);
-            await AtomicFile.WriteJsonAsync(path, inventory.Clone());
-
-            for (int restart = 0; restart < 3; restart++)
-            {
-                var loaded = Assert.IsType<QuestInventory>(await AtomicFile.ReadJsonAsync<QuestInventory>(path));
-                Assert.Equal(expected, Assert.Single(loaded.RecentUpgrades));
-                Assert.Equal(2, Assert.Single(loaded.ItemRanks).Rank);
-
-                loaded.ApplyExport("QUE", upgradedRows, written.AddMinutes(1));
-                Assert.Equal(expected, Assert.Single(loaded.RecentUpgrades));
-                await AtomicFile.WriteJsonAsync(path, loaded.Clone());
-            }
-        }
-        finally
-        {
-            if (Directory.Exists(directory))
-            {
-                Directory.Delete(directory, recursive: true);
-            }
+            var loaded = Assert.IsType<QuestInventory>(System.Text.Json.JsonSerializer.Deserialize<QuestInventory>(json));
+            Assert.Equal(expected, Assert.Single(loaded.RecentUpgrades));
+            Assert.Equal(2, Assert.Single(loaded.ItemRanks).Rank);
+            loaded.ApplyExport("QUE", upgradedRows, written.AddMinutes(1));
+            Assert.Equal(expected, Assert.Single(loaded.RecentUpgrades));
+            json = System.Text.Json.JsonSerializer.Serialize(loaded);
         }
     }
 

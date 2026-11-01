@@ -1,8 +1,10 @@
 # Refactor Plan: Layered application architecture
 
-Status: Implementation authorized on `refactor/layered-architecture`; inventory
-checkpoint implemented. Automated validation and isolated full-window review are
-recorded below. Remaining migrations await the inventory review gate.
+Status: Implementation on `refactor/layered-architecture`. The inventory checkpoint
+was approved for continuation; log sessions, tracking/settings persistence, wiki
+enrichment, detached presenter queries and boundary enforcement are implemented.
+Automated validation is recorded below; isolated full-window manual review remains
+explicitly separate and has not been performed.
 
 ## Objective
 
@@ -25,8 +27,8 @@ database migration, version bump, or publication is included.
   domain snapshots, while inventory bindings use immutable summaries.
 - Preserved document shape, legacy fields, atomic writes, read-only columns and
   confirmed ownership; corrupt inventory storage disables writes until restart.
-- Kept JSON attributes/shared `AtomicFile` in Core temporarily; the general
-  persistence phase removes these alongside the other stores, not piecemeal.
+- Kept shared `AtomicFile` in Core temporarily, then moved it in the persistence
+  phase. Portable JSON compatibility attributes remain, as documented below.
 - Validation: Release build (0 warnings/errors), 657 tests (514 Core, 12 Application,
   14 Infrastructure, 117 Overlay), plus real XAML bindings, isolated file import/save,
   character-switch races, cancellation, save ordering/retry and legacy normalization.
@@ -35,7 +37,56 @@ database migration, version bump, or publication is included.
   no app startup, installer publication, version change or new release tag was performed.
 - Still required at the gate: manual full-window docked/floating inventory review
   in an isolated account/VM. No normal startup against the user's real data.
-- Phases 3-7 have not started.
+- The user approved continuing Phases 3-7 after checkpoint commit `ce69588`.
+
+## Subsequent implementation
+
+- `LogSessionService` owns reader lifetime, replay/live state, typed observations,
+  progress and follow-newest policy. Concrete discovery/tailing moved to Infrastructure.
+  Stop drains the reader and removes subscriptions; stale callbacks and discovery
+  results cannot affect a replacement session.
+- `TrackingService`, specific repositories and `TrackingPersistenceCoordinator`
+  separate startup, protected writes, lazy NPC history and engine snapshots from
+  JSON/JSONL. Missing documents start fresh; malformed/unreadable documents are
+  reported and protected. Existing formats and dirty retry behavior are preserved.
+- `SettingsService`/`SettingsRepository` preserve settings snapshots, save ordering,
+  unknown JSON fields, dock/workspace compatibility and corruption protection.
+  `ThemeService`/`ThemeRepository` separate palette I/O from WPF previews and dialogs.
+- `ApplicationPersistenceService` starts independent periodic/shutdown/update saves
+  and returns explicit per-feature outcomes. One failed save does not skip the others.
+  Layout capture and user-visible reporting remain on the UI thread.
+- `WikiService` owns enrichment/cache policy and in-flight deduplication.
+  Infrastructure owns `WikiTransport`, scheduled/retrying HTTP and concrete clients;
+  `WikiCacheRepository` owns existing cache files, ordered saves, dirty retry and reset.
+  Parsed results survive failed cache writes with visible error state; cache hits or
+  flushes retry without another HTTP request. Damaged caches cannot be overwritten.
+- Presenters now receive detached `EngineQuerySnapshot` results, not `LogEngine`.
+  Expensive queries are captured only for visible panels. `HousekeepingService`
+  preserves the two-second clock, six-second refresh and ten-second save policy
+  without accumulating dispatcher work. Render/focus timers remain UI-owned.
+- Boundary tests verify actual/project references and forbidden source access.
+  Core is package-free; Polly moved to Infrastructure. Tests follow their layer.
+- Compatibility decision: existing portable snapshot/data records and JSON
+  attributes are retained where needed to preserve document shape; serializers,
+  filesystem access, HTTP and persistence callbacks no longer live in Core.
+- The app version remains 1.0.34. No release tag, publication or real-profile app
+  startup is part of this branch.
+
+## Final automated validation
+
+- Release solution build: zero warnings and errors.
+- All 694 tests passed: 369 Core, 27 Application, 185 Infrastructure and 113 Overlay;
+  none failed or were skipped. This includes dependency/source boundary checks.
+- Repository C# style/whitespace formatting and `git diff --check` passed.
+- Self-contained Windows x64 publish and local Velopack packaging succeeded.
+  The generated full update package contains Core, Application and Infrastructure
+  assemblies, not just the loose publish directory.
+- Isolated update-smoke checks passed discovery, download/staging, same-version
+  rejection and downgrade rejection (five checks). The no-UI install hook exited
+  successfully without starting the app or installing it.
+- No normal app startup, release publication or version bump was performed.
+  Docked/floating interaction, real window lifecycle and final saves still require
+  manual review in a disposable Windows account/VM before release.
 
 ## Baseline state (before this refactor)
 
@@ -161,7 +212,8 @@ Paths below are relative to the repository root. New directories are proposed.
 - [x] Review existing uncommitted changes and preserve them as the baseline.
 - [x] Record successful Release build and existing test results.
 - [x] Characterize import, save, shutdown, character-switch and corruption behavior.
-- [ ] Inventory every storage document/path and its compatibility requirements.
+- [x] Inventory every storage document/path and its compatibility requirements;
+  see the storage compatibility map in the architecture notes.
 - [x] Capture current threading/ownership guarantees and error presentation.
 - [x] Correct architecture documentation that still describes newer loot increasing
   inventory ownership; current confirmed-export behavior is the baseline.
@@ -224,14 +276,14 @@ the new boundaries and the old import/save path is removed.
 
 Dependency: successful inventory gate.
 
-- [ ] Introduce `ILogSource` and a log-discovery boundary.
-- [ ] Move `LogTailer`/`LogFileLocator` concrete file behavior into Infrastructure.
-- [ ] Extract session start/stop, replay/live state, follow-newest and cancellation
+- [x] Introduce `ILogSource` and a log-discovery boundary.
+- [x] Move `LogTailer`/`LogFileLocator` concrete file behavior into Infrastructure.
+- [x] Extract session start/stop, replay/live state, follow-newest and cancellation
   from MainWindow into `LogSessionService`.
-- [ ] Feed line batches to the existing engine; expose detached snapshots/progress.
-- [ ] Preserve watermark identities, replay timing, alert suppression during history,
+- [x] Feed line batches to the existing engine; expose detached snapshots/progress.
+- [x] Preserve watermark identities, replay timing, alert suppression during history,
   complete-line handling, truncation behavior and shutdown cancellation.
-- [ ] Keep game-window focus, hotkeys and window placement in Overlay.
+- [x] Keep game-window focus, hotkeys and window placement in Overlay.
 
 Verify: tailer and engine-concurrency tests plus fake-source session-switch tests.
 Test a slow previous session finishing after a new session starts.
@@ -240,16 +292,16 @@ Test a slow previous session finishing after a new session starts.
 
 Dependency: Phase 3 for session-controlled saves; reuse Phase 2 save contracts.
 
-- [ ] Separate in-memory tracking state from persisted DTOs and serializers.
-- [ ] Remove filesystem paths/save methods from the engine.
-- [ ] Move AtomicFile/JSONL mechanisms into Infrastructure and reuse them.
-- [ ] Add specific repositories for durations, spawns, motes, NPCs and resistances.
-- [ ] Separate settings data from its serializer/path handling without losing
+- [x] Separate in-memory tracking state from persisted DTOs and serializers.
+- [x] Remove filesystem paths/save methods from the engine.
+- [x] Move AtomicFile/JSONL mechanisms into Infrastructure and reuse them.
+- [x] Add specific repositories for durations, spawns, motes, NPCs and resistances.
+- [x] Separate settings data from its serializer/path handling without losing
   unknown-field preservation or dock/workspace compatibility.
-- [ ] Move startup loads, periodic saves, shutdown flush and reset orchestration
+- [x] Move startup loads, periodic saves, shutdown flush and reset orchestration
   into Application services.
-- [ ] Preserve snapshot ordering, dirty-state retry and corruption protection.
-- [ ] Do not consolidate independent stores into one broad lock or rewrite all
+- [x] Preserve snapshot ordering, dirty-state retry and corruption protection.
+- [x] Do not consolidate independent stores into one broad lock or rewrite all
   persisted formats as part of this extraction.
 
 Verify: adapter load/save round trips, legacy document fixtures, malformed files,
@@ -260,15 +312,15 @@ overwrite newer ones; failed saves must remain retryable.
 
 Dependency: repository/save coordination established.
 
-- [ ] Define wiki-client and cache-repository contracts for actual use cases.
-- [ ] Keep HTTP scheduling, throttling and transport in Infrastructure.
-- [ ] Keep enrichment priorities, refresh decisions and workflow cancellation in
+- [x] Define wiki-client and cache-repository contracts for actual use cases.
+- [x] Keep HTTP scheduling, throttling and transport in Infrastructure.
+- [x] Keep enrichment priorities, refresh decisions and workflow cancellation in
   Application; explicitly assign in-flight deduplication to one owner.
-- [ ] Replace persistence callbacks and embedded cache writes with repositories.
-- [ ] Migrate quest, Sky, mob/spell and item-effect callers one feature at a time.
-- [ ] Preserve cache lifetimes, force-refresh behavior, failed-refresh last-good data,
+- [x] Replace persistence callbacks and embedded cache writes with repositories.
+- [x] Migrate quest, Sky, mob/spell and item-effect callers one feature at a time.
+- [x] Preserve cache lifetimes, force-refresh behavior, failed-refresh last-good data,
   shared-request cancellation and corrupt-cache overwrite protection.
-- [ ] Preserve telemetry consent and existing allowlisted labels; do not transmit
+- [x] Preserve telemetry consent and existing allowlisted labels; do not transmit
   inventory locations, source paths, search text or new sensitive data.
 
 Verify: fake HTTP and fake cache tests; retain scheduler/repository regression tests.
@@ -278,15 +330,15 @@ Validation must not depend on live EQLWiki availability.
 
 Dependency: each feature's Application services are available.
 
-- [ ] Introduce feature view models incrementally, not a wholesale XAML rewrite.
-- [ ] Replace live engine/store access in presenters with application query results.
-- [ ] Keep WPF formatting, brushes, links, chrome and visual incremental updates in Overlay.
-- [ ] Move application housekeeping timers out of MainWindow; retain render/focus
+- [x] Introduce feature view models incrementally, not a wholesale XAML rewrite.
+- [x] Replace live engine/store access in presenters with application query results.
+- [x] Keep WPF formatting, brushes, links, chrome and visual incremental updates in Overlay.
+- [x] Move application housekeeping timers out of MainWindow; retain render/focus
   timers where they are explicitly UI concerns.
-- [ ] Ensure view models dispatch UI-bound changes without making Application
+- [x] Ensure view models dispatch UI-bound changes without making Application
   depend on the WPF Dispatcher.
-- [ ] Keep docking/reparenting behavior and existing control interaction intact.
-- [ ] Remove obsolete partial-controller state and transitional bridges.
+- [x] Keep docking/reparenting behavior and existing control interaction intact.
+- [x] Remove obsolete partial-controller state and transitional bridges.
 
 Verify: fake-service view-model tests, presenter tests, dock/floating interaction,
 selection retention, virtualization and long-list scrolling.
@@ -297,16 +349,16 @@ an explicitly approved and measured change replaces them.
 
 Dependency: all migrated slices pass their gates.
 
-- [ ] Add automated reference/architecture checks for forbidden dependencies.
-- [ ] Ensure Core/Application contain no direct filesystem, HTTP or WPF usage.
-- [ ] Ensure view/view-model code contains no direct repositories or file access;
+- [x] Add automated reference/architecture checks for forbidden dependencies.
+- [x] Ensure Core/Application contain no direct filesystem, HTTP or WPF usage.
+- [x] Ensure view/view-model code contains no direct repositories or file access;
   exempt only clearly identified composition code.
-- [ ] Move tests into the layer they verify; retain domain tests in Core.
-- [ ] Remove compatibility bridges that are no longer needed, not persisted legacy
+- [x] Move tests into the layer they verify; retain domain tests in Core.
+- [x] Remove compatibility bridges that are no longer needed, not persisted legacy
   fields still required for document compatibility.
-- [ ] Update architecture/development docs and cross-reference this completed plan.
-- [ ] Inspect packaging/update-smoke references for assemblies moved across projects.
-- [ ] Verify publishing includes new assemblies without a version bump or release.
+- [x] Update architecture/development docs and cross-reference this completed plan.
+- [x] Inspect packaging/update-smoke references for assemblies moved across projects.
+- [x] Verify publishing includes new assemblies without a version bump or release.
 
 ## Validation commands
 
@@ -376,14 +428,19 @@ reset, or app-start integration tests against the user's real tracking data.
 
 ## Completion criteria
 
-- [ ] Inventory, log sessions, persistence and wiki enrichment have explicit owners.
-- [ ] Core/Application can be exercised without WPF, real files or live HTTP.
-- [ ] Views display injected snapshots and invoke Application operations only.
-- [ ] Current item ranks, storage counts, copy locations, filters and quest behavior remain intact.
-- [ ] Existing files, migrations, settings extensions and watermark semantics remain compatible.
-- [ ] Startup, shutdown, saves, cancellation and corruption recovery are verified.
-- [ ] No obsolete direct I/O path remains behind migrated views.
-- [ ] Final build, tests and dependency checks pass.
+- [x] Inventory, log sessions, persistence and wiki enrichment have explicit owners.
+- [x] Core/Application can be exercised without WPF, real files or live HTTP.
+- [x] Views display injected snapshots and invoke Application operations only.
+- [x] Current item ranks, storage counts, copy locations, filters and quest behavior
+  pass automated regressions.
+- [x] Existing files, migrations, settings extensions and watermark semantics
+  pass compatibility regressions.
+- [x] Startup/load, session shutdown, saves, cancellation and corruption recovery
+  pass automated workflow/adapter tests.
+- [x] No obsolete direct I/O path remains behind migrated views.
+- [x] Final build, tests and dependency checks pass.
+- [ ] Manually verify full-window startup/shutdown, docked/floating interactions
+  and final saves in a disposable account/VM before release.
 
 ## Approval checkpoint
 

@@ -14,6 +14,28 @@ public partial class MainWindow
         {
             get; init;
         }
+        public EqLog.Application.Settings.SettingsService? SettingsPersistence
+        {
+            get; init;
+        }
+        public Exception? SettingsError
+        {
+            get; init;
+        }
+        public TrackingService? Tracking
+        {
+            get; init;
+        }
+        public IReadOnlyList<TrackingLoadFailure> TrackingFailures { get; init; } = [];
+        public SkyQuestCatalog? SkyCatalog
+        {
+            get; init;
+        }
+        public Exception? SkyError
+        {
+            get; init;
+        }
+        public IReadOnlyList<string> WikiWarnings { get; init; } = [];
         public required IReadOnlyList<ThemePalette> Themes
         {
             get; init;
@@ -67,42 +89,48 @@ public partial class MainWindow
             get; init;
         }
         public IReadOnlyList<ItemEffectInfo> ItemEffects { get; init; } = [];
-        public Exception? ItemEffectsError { get; init; }
+        public Exception? ItemEffectsError
+        {
+            get; init;
+        }
 
-        public static async Task<StartupState> LoadAsync(AppSettings? initialSettings = null)
+        internal static async Task<StartupState> LoadAsync(SettingsLoadResult? initialSettings = null)
         {
             // Everything starts on the thread pool, so even the File.Exists probes stay off the UI thread.
             var settings = initialSettings is null
-                ? Task.Run(() => AppSettings.LoadAsync())
+                ? Task.Run(SettingsComposition.LoadAsync)
                 : Task.FromResult(initialSettings);
             var themes = Attempt(LoadThemesAsync);
-            var durations = Task.Run(() => SpellDurationStore.LoadAsync(AppSettings.DurationsPath));
-            var spawns = Task.Run(() => SpawnStore.LoadAsync(AppSettings.SpawnsPath));
-            var motes = Task.Run(() => MoteStore.LoadAsync(AppSettings.MotesPath));
-            var mobs = Attempt(() => MobResistanceStore.LoadAsync(MobResistancePath));
-            var npcs = Attempt(() => NpcCompendium.LoadAsync(NpcCompendiumFolder, LegacyNpcCompendiumPath));
+            var trackingService = TrackingComposition.CreateService();
+            var tracking = Task.Run(() => trackingService.LoadAsync());
             var inventory = Attempt(InventoryComposition.LoadAsync);
-            var questCache = Attempt(LoadQuestCacheAsync);
-            var itemEffects = Attempt(LoadItemEffectsAsync);
-            await Task.WhenAll(settings, themes, durations, spawns, motes, mobs, npcs, inventory, questCache, itemEffects);
+            var wiki = Task.Run(WikiComposition.LoadAsync);
+            await Task.WhenAll(settings, themes, tracking, inventory, wiki);
             return new StartupState
             {
-                Settings = settings.Result,
+                Settings = settings.Result.State,
+                SettingsPersistence = settings.Result.Service,
+                SettingsError = settings.Result.Error,
+                Tracking = trackingService,
+                TrackingFailures = tracking.Result.Failures,
                 Themes = themes.Result.Value ?? [],
                 ThemesError = themes.Result.Error,
-                Durations = durations.Result,
-                Spawns = spawns.Result,
-                Motes = motes.Result,
-                MobResistances = mobs.Result.Value,
-                MobResistancesError = mobs.Result.Error,
-                NpcCompendium = npcs.Result.Value,
-                NpcCompendiumError = npcs.Result.Error,
+                Durations = tracking.Result.Durations,
+                Spawns = tracking.Result.Spawns,
+                Motes = tracking.Result.Motes,
+                MobResistances = tracking.Result.Mobs,
+                MobResistancesError = tracking.Result.Failures.FirstOrDefault(failure => failure.Store == "mobs")?.Error,
+                NpcCompendium = tracking.Result.Npcs,
+                NpcCompendiumError = tracking.Result.Failures.FirstOrDefault(failure => failure.Store == "npcs")?.Error,
                 QuestInventory = inventory.Result.Value,
                 QuestInventoryError = inventory.Result.Error,
-                QuestCache = questCache.Result.Value ?? [],
-                QuestCacheError = questCache.Result.Error,
-                ItemEffects = itemEffects.Result.Value ?? [],
-                ItemEffectsError = itemEffects.Result.Error,
+                QuestCache = wiki.Result.Quests.Value ?? [],
+                QuestCacheError = wiki.Result.Quests.Error,
+                ItemEffects = wiki.Result.Effects.Value ?? [],
+                ItemEffectsError = wiki.Result.Effects.Error,
+                SkyCatalog = wiki.Result.Sky.Value,
+                SkyError = wiki.Result.Sky.Error,
+                WikiWarnings = wiki.Result.Warnings,
             };
         }
 
@@ -123,29 +151,10 @@ public partial class MainWindow
             });
         }
 
-        private static async Task<List<ThemePalette>> LoadThemesAsync()
+        private static async Task<IReadOnlyList<ThemePalette>> LoadThemesAsync()
         {
-            var themes = new List<ThemePalette>();
-            foreach (string path in Directory.GetFiles(ThemeManager.BuiltInFolder, "*.json").Order())
-            {
-                themes.Add(await ThemeManager.LoadAsync(path).ConfigureAwait(false));
-            }
-            return themes;
+            return await ThemeComposition.Service.LoadBundledAsync().ConfigureAwait(false);
         }
 
-        private static Task<IReadOnlyList<QuestLookupResult>> LoadQuestCacheAsync()
-        {
-            return QuestLookupStore.LoadAsync(QuestCachePath, LegacyQuestCachePath);
-        }
-
-        private static async Task<IReadOnlyList<ItemEffectInfo>> LoadItemEffectsAsync()
-        {
-            if (!File.Exists(ItemEffectsPath))
-            {
-                return [];
-            }
-            return await AtomicFile.ReadJsonAsync<List<ItemEffectInfo>>(ItemEffectsPath).ConfigureAwait(false)
-                ?? throw new JsonException("Empty item-effect cache.");
-        }
     }
 }

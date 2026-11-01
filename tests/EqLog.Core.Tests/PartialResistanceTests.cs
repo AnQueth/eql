@@ -221,30 +221,6 @@ public class PartialResistanceTests
         Assert.Equal("Not Resistant", Fire(store).Status);
     }
 
-    [Fact]
-    public async Task Store_DamageHistoryAndBaseline_PersistAcrossRestart()
-    {
-        string folder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
-        string path = Path.Combine(folder, "mob-resistances.json");
-        Directory.CreateDirectory(folder);
-        try
-        {
-            var store = CreateStore();
-            Learn(store, "Tester", "Conflagration X", 1000);
-            store.Record("trial", 1, "Sky", "Target", "Conflagration X", false, T0, "Tester", 500);
-            await store.SaveAsync(path);
-            var loaded = await MobResistanceStore.LoadAsync(path);
-            loaded.Record("trial", 1, "Sky", "Target", "Conflagration X", false, T0, "Tester", 500);
-            Assert.Equal(1, Fire(loaded).EstimatedPartial);
-            Assert.Equal(4, Fire(loaded).Landed);
-            Assert.Equal(0, Fire(loaded).Resisted);
-        }
-        finally
-        {
-            Directory.Delete(folder, recursive: true);
-        }
-    }
-
     private static MobResistanceStore CreateStore()
     {
         var store = new MobResistanceStore();

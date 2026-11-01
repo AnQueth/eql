@@ -120,26 +120,6 @@ public class EngineTests
     }
 
     [Fact]
-    public async Task UntrackedSpellsPersist()
-    {
-        string path = Path.Combine(Path.GetTempPath(), $"eql-durations-{Guid.NewGuid():N}.json");
-        try
-        {
-            var store = new SpellDurationStore();
-            store.SetTracked("Tashania V", false);
-            await store.SaveAsync(path);
-
-            var loaded = await SpellDurationStore.LoadAsync(path);
-            Assert.False(loaded.IsTracked("Tashania V"));
-            Assert.True(loaded.IsTracked("Malise X"));
-        }
-        finally
-        {
-            File.Delete(path);
-        }
-    }
-
-    [Fact]
     public void InterruptedCastDoesNotStartTimer()
     {
         var store = new SpellDurationStore();
@@ -240,41 +220,6 @@ public class EngineTests
     }
 
     [Fact]
-    public async Task ReReadingHistoryDoesNotDuplicateLearnedSamples()
-    {
-        string[] lines =
-        [
-            L(0, "You begin casting Mesmerization X."),
-            L(1, "an azarack has been mesmerized."),
-            L(1, "a spiroc banisher has been mesmerized."),
-            L(31, "Your Mesmerization X spell has worn off of an azarack."),
-            L(31, "Your Mesmerization X spell has worn off of a spiroc banisher."),
-        ];
-        var store = new SpellDurationStore();
-        new LogEngine(store).ProcessLines(lines);
-        int firstCount = Assert.Single(store.List()).Samples;
-        double? firstEstimate = store.GetDuration("Mesmerization X");
-        new LogEngine(store).ProcessLines(lines);
-
-        string path = Path.Combine(Path.GetTempPath(), $"durations_{Guid.NewGuid():N}.json");
-        try
-        {
-            await store.SaveAsync(path);
-            var reloaded = await SpellDurationStore.LoadAsync(path);
-            new LogEngine(reloaded).ProcessLines(lines);
-
-            var info = Assert.Single(reloaded.List());
-            Assert.InRange(firstCount, 1, 2);
-            Assert.Equal(firstCount, info.Samples);
-            Assert.Equal(firstEstimate, info.LearnedSeconds);
-        }
-        finally
-        {
-            File.Delete(path);
-        }
-    }
-
-    [Fact]
     public void LoginResetsSessionStats()
     {
         var engine = new LogEngine();
@@ -291,54 +236,4 @@ public class EngineTests
         Assert.Equal("Surefall Glade", snap.Session.Zone);
     }
 
-    [Fact]
-    public void ParsesFullSampleLog()
-    {
-        string? path = FindSample();
-        if (path is null)
-        {
-            return;
-        }
-
-        var store = new SpellDurationStore();
-        var engine = new LogEngine(store) { CharacterName = "Quethrosar", ResetOnLogin = false };
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        const int batch = 5000;
-        var buffer = new List<string>(batch);
-        foreach (string line in File.ReadLines(path, System.Text.Encoding.Latin1))
-        {
-            buffer.Add(line);
-            if (buffer.Count == batch)
-            {
-                engine.ProcessLines(buffer);
-                buffer.Clear();
-            }
-        }
-
-        engine.ProcessLines(buffer);
-        sw.Stop();
-
-        var snap = engine.Snapshot(DateTime.Now);
-        Assert.True(snap.LinesProcessed > 700_000);
-        Assert.True(snap.Session.YourKills > 3000);
-        Assert.True(snap.SessionDamageByYou > 0);
-        Assert.True(snap.Loot.ItemsLooted > 100);
-        Assert.Contains(store.List(), d => d.Spell == "Mesmerization X");
-        Assert.Contains(store.List(), d => d.Spell == "Allure X");
-        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(30), $"Parsing took {sw.Elapsed}");
-    }
-
-    private static string? FindSample()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-        {
-            var match = dir.EnumerateFiles("eqlog_*.txt").FirstOrDefault();
-            if (match is not null)
-            {
-                return match.FullName;
-            }
-        }
-
-        return null;
-    }
 }

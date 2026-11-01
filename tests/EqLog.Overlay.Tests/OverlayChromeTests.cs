@@ -388,7 +388,7 @@ public sealed class OverlayChromeTests
         var inventory = new QuestInventory();
         inventory.ApplyExport("Que", [], DateTime.UtcNow);
         var view = new OverlayView(new HashSet<ChatChannel>(), [], Inventory: inventory);
-        var content = definition.Render(engine.Snapshot(DateTime.UtcNow), engine, view);
+        var content = definition.Render(engine.Snapshot(DateTime.UtcNow), EngineQuerySnapshot.Capture(engine), view);
         var panel = new OverlayPanel(definition.Key, definition.Caption, false) { FontSize = 13 };
         panel.Update(content.Title, content.Subtitle, content.Rows);
 

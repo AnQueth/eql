@@ -30,14 +30,6 @@ public partial class MainWindow
     private OverlayContent? _skyContent;
     private DateTime _skyNextRender;
 
-    private static string SkyCachePath
-    {
-        get
-        {
-            return Path.Combine(AppSettings.Folder, "sky-quests.json");
-        }
-    }
-
     private async Task LoadSkyQuestsAsync(bool refresh, WikiPriority priority = WikiPriority.Interactive)
     {
         if (WikiLookupPaused)
@@ -64,42 +56,16 @@ public partial class MainWindow
         _skyNextRender = default;
         try
         {
-            if (_skyCatalog is null && await Task.Run(() => File.Exists(SkyCachePath)))
-            {
-                try
-                {
-                    _skyCatalog = JsonSerializer.Deserialize<SkyQuestCatalog>(await File.ReadAllTextAsync(SkyCachePath, token))
-                        ?? throw new JsonException("Empty Sky quest cache.");
-                    if (_skyCatalog.Quests.Count == 0)
-                    {
-                        throw new JsonException("Sky cache contains no quests.");
-                    }
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
-                {
-                    _skyStatus = $"Sky cache could not be read: {ex.Message}. Fetching from EQLWiki...";
-                }
-            }
-
-            if (_skyForceRefresh || _skyCatalog is null || _skyCatalog.DropSources is null ||
-                _skyCatalog.Quests.Any(q => q.Requirements is null || q.RuneLinks is null || q.ItemLinks is null) ||
-                DateTime.UtcNow - _skyCatalog.CheckedUtc >= TimeSpan.FromDays(1))
-            {
-                if (_skyCatalog is not null)
-                {
-                    _wikiRepository.SeedSky(_skyCatalog);
-                }
-                _skyCatalog = await _wikiRepository.GetSkyAsync(_skyLoadPriority, _skyForceRefresh, token);
-                token.ThrowIfCancellationRequested();
-                await AtomicFile.WriteJsonAsync(SkyCachePath, _skyCatalog, ct: token);
-            }
-            _skyStatus = "";
+            _skyCatalog = await _wikiRepository.GetSkyAsync(_skyLoadPriority, _skyForceRefresh, token);
+            token.ThrowIfCancellationRequested();
+            _skyStatus = _wikiRepository.GetCacheError("sky") is { } cacheError
+                ? $"Could not save Sky cache: {cacheError}. Showing session data." : "";
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or
-            HttpRequestException or OperationCanceledException or InvalidOperationException or FormatException)
+            WikiTransportException or OperationCanceledException or InvalidOperationException or FormatException)
         {
             UsageTelemetry.TrackError(ex, UsageErrorSource.Wiki);
             _skyStatus = $"Sky quest load failed: {ex.Message}" +
@@ -389,7 +355,10 @@ public partial class MainWindow
             names.Add(name);
             links.TryAdd(name, quest.Url);
         }
-        return OverlayTable.Pairs(OverlayTable.Labeled("Needed for", names)) with { Links = links };
+        return OverlayTable.Pairs(OverlayTable.Labeled("Needed for", names)) with
+        {
+            Links = links
+        };
     }
 
     private string AddSkyDropperRows(List<OverlayRow> rows, SkyQuestCatalog catalog, IReadOnlyList<SkyQuest> classQuests,

@@ -222,7 +222,7 @@ public sealed class ThemeEditor : UserControl
                 return;
             }
 
-            await AtomicFile.WriteJsonAsync(dialog.FileName, palette, new JsonSerializerOptions { WriteIndented = true });
+            await ThemeComposition.Service.ExportAsync(dialog.FileName, palette);
             _status.Text = $"Exported {palette.Name} to {dialog.FileName}. Active theme unchanged.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or FormatException)

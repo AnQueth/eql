@@ -22,12 +22,20 @@ dotnet run --project src\EqLog.Overlay -- "C:\path\to\eqlog_Name_server.txt"
 Running the app normally uses your real `%AppData%\EqLogOverlay` data. Use a disposable
 Windows account or VM for destructive tests, installer tests, and full update/restart tests.
 
-## Layered inventory development
+## Layered development
 
 Inventory uses Core rules, Application-owned state and workflows, Infrastructure
 input/storage adapters, and Overlay view-model bindings. Construct concrete adapters
-only in `InventoryComposition`; views must not open inventory files or save domain
-objects directly. See the [implementation checkpoint](LAYERED-ARCHITECTURE-PLAN.md).
+only in the explicit `*Composition` factories; views must not open files, construct
+HTTP clients or call concrete repositories. Log lifecycle, settings/tracking saves,
+wiki policy and maintenance cadence live in Application; HTTP, storage, migrations
+and game-file adapters live in Infrastructure. Core stays package-free and pure.
+See the [implementation plan](LAYERED-ARCHITECTURE-PLAN.md).
+
+Add fake-port workflow tests to Application, pure rule/tracker tests to Core,
+temporary-file/fake-HTTP tests to Infrastructure and binding/presenter tests to Overlay.
+Presenters receive `EngineQuerySnapshot`, never the live `LogEngine`.
+`LayerBoundaryTests` verify both source access and actual/project references.
 
 Application tests use fake ports to exercise stabilization, superseded sessions,
 cancellation, detached snapshots, ordered saves, retries and confirmed counts.
@@ -46,7 +54,7 @@ dotnet build EqLogOverlay.slnx -c Release --artifacts-path artifacts\layered-bas
 dotnet test EqLogOverlay.slnx -c Release --artifacts-path artifacts\layered-baseline --no-build
 ```
 
-Before approving the next migration, manually check docked/floating inventory,
+The inventory checkpoint was approved for continuation. Still manually check docked/floating inventory,
 character switching and final saves in a disposable account/VM. Automated binding
 tests are not a substitute for this full-window review.
 

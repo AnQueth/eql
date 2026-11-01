@@ -20,14 +20,19 @@ public partial class App : System.Windows.Application
         Overlay.MainWindow.StartupState state;
         try
         {
-            string? resetBackup = await Task.Run(() => TrackingDataReset.ApplyPendingAsync(AppSettings.Folder));
+            string? resetBackup = await Task.Run(() => TrackingComposition.CreateService().ApplyPendingResetAsync());
             if (resetBackup is not null)
             {
                 MessageBox.Show($"Tracking data was reset. A backup was saved to:\n{resetBackup}\n\nThe selected log will be reprocessed. Only history present in available logs can be rebuilt.",
                     "Tracking data reset", MessageBoxButton.OK, MessageBoxImage.Information);
             }
-            var settings = await AppSettings.LoadAsync();
-            UsageTelemetry.SetEnabled(settings.ShareUsageTelemetry);
+            var settings = await SettingsComposition.LoadAsync();
+            UsageTelemetry.SetEnabled(settings.State.ShareUsageTelemetry);
+            if (settings.Error is { } settingsError)
+            {
+                MessageBox.Show($"Settings could not be loaded: {settingsError.Message}\nTemporary defaults will be used. The existing settings file will not be overwritten; repair it and restart to enable saving.",
+                    "Settings error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
             state = await Overlay.MainWindow.StartupState.LoadAsync(settings);
         }
         catch (Exception ex)

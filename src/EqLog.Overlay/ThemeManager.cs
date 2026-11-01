@@ -8,19 +8,6 @@ namespace EqLog.Overlay;
 
 public static class ThemeManager
 {
-    public static string BuiltInFolder
-    {
-        get
-        {
-            return Path.Combine(AppContext.BaseDirectory, "Themes");
-        }
-    }
-
-    public static async Task<ThemePalette> LoadAsync(string path, CancellationToken ct = default)
-    {
-        return ThemePalette.Parse(await File.ReadAllTextAsync(path, ct).ConfigureAwait(false));
-    }
-
     internal static ThemePalette GetSystemTheme(IEnumerable<ThemePalette> themes)
     {
         var preference = Registry.GetValue(

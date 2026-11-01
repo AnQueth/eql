@@ -113,7 +113,7 @@ public sealed class UsageTelemetryTests : IDisposable
     [Fact]
     public void TrackTheme_AllShippedPalettes_AreRecognized()
     {
-        var files = Directory.GetFiles(ThemeManager.BuiltInFolder, "*.json");
+        var files = Directory.GetFiles(ThemeComposition.BuiltInFolder, "*.json");
         Assert.NotEmpty(files);
         foreach (string file in files)
         {

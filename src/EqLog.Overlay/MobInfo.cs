@@ -16,7 +16,6 @@ namespace EqLog.Overlay;
 
 public partial class MainWindow
 {
-    private static readonly string MobResistancePath = Path.Combine(AppSettings.Folder, "mob-resistances.json");
     private MobResistanceStore _mobResistances = new();
     private bool _mobSaveEnabled = true;
     private readonly ConcurrentQueue<(LogEvent Event, string Zone)> _mobEvents = new();
@@ -28,7 +27,7 @@ public partial class MainWindow
     private string _mobWikiStatus = "";
     private bool _mobShowing;
     private bool _mobResetPending;
-    private WikiRepository _wikiRepository = null!;
+    private WikiService _wikiRepository = null!;
     private readonly HashSet<string> _spawnWikiPending = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _spawnWikiRetry = new(StringComparer.OrdinalIgnoreCase);
 
@@ -71,7 +70,7 @@ public partial class MainWindow
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
         }
-        catch (Exception ex) when (ex is HttpRequestException or IOException or UnauthorizedAccessException or
+        catch (Exception ex) when (ex is WikiTransportException or IOException or UnauthorizedAccessException or
             JsonException or InvalidOperationException or OperationCanceledException)
         {
             _spawnWikiRetry[mob] = DateTime.UtcNow.AddMinutes(5);
@@ -110,10 +109,15 @@ public partial class MainWindow
             MobInfoStatusText.Text += " Invalid display timeout reset to 5 seconds.";
         }
         MobTimeoutBox.Text = _settings.MobInfoTimeoutSeconds.ToString(CultureInfo.CurrentCulture);
-        _wikiRepository = new WikiRepository(_wikiHttp, _mobResistances, () =>
+        _wikiRepository = WikiComposition.CreateService(_mobResistances, _mobSaveEnabled);
+        _wikiRepository.CacheWriteFailed += (operation, error) =>
         {
-            return _mobSaveEnabled ? _mobResistances.SaveAsync(MobResistancePath) : Task.CompletedTask;
-        });
+            Dispatcher.BeginInvoke(() =>
+            {
+                UsageTelemetry.TrackError(error, UsageErrorSource.Wiki);
+                ResetWikiCacheStatus.Text = $"Could not save {operation}: {error.Message}. Results are available this session; saves retry.";
+            });
+        };
         foreach (var quest in _questCache.Values)
         {
             _wikiRepository.SeedQuest(quest);
@@ -234,7 +238,7 @@ public partial class MainWindow
             try
             {
                 _mobResistances.ResetResistances(zone, mob, DateTime.Now);
-                await _mobResistances.SaveAsync(MobResistancePath);
+                await _tracking.SaveMobsAsync(_mobResistances);
                 result.Text = $"Resistance history reset for {mob} in {zone}. Learning from new events only.";
                 MobInfoStatusText.Text = result.Text;
             }
@@ -397,7 +401,7 @@ public partial class MainWindow
                 }
                 if (_mobSaveEnabled)
                 {
-                    await _mobResistances.SaveAsync(MobResistancePath, token);
+                    await _tracking.SaveMobsAsync(_mobResistances, token);
                 }
                 var wikiInfo = _mobResistances.Get(zone, mob).Wiki;
                 return wikiInfo?.Found == true
@@ -412,7 +416,7 @@ public partial class MainWindow
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
         }
-        catch (Exception ex) when (ex is HttpRequestException or IOException or UnauthorizedAccessException or
+        catch (Exception ex) when (ex is WikiTransportException or IOException or UnauthorizedAccessException or
             JsonException or InvalidOperationException or OperationCanceledException)
         {
             if (!token.IsCancellationRequested)

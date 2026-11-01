@@ -10,4 +10,8 @@
     <ProjectReference Include="..\EqLog.Application\EqLog.Application.csproj" />
     <ProjectReference Include="..\EqLog.Core\EqLog.Core.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Polly.Core" Version="8.8.1" />
+  </ItemGroup>
 </Project>

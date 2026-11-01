@@ -1,8 +1,6 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using EqLog.Core.Parsing;
 
 namespace EqLog.Core;
@@ -63,43 +61,13 @@ public sealed class NpcCompendium
     public const string HistoryFolderName = "npcs";
     private const int CachedHistories = 8;
 
-    private static readonly JsonSerializerOptions HistoryJson = new()
-    {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
-    };
-
-    /// <summary>Index options that leave out null fields and empty encounter lists; both read back as their defaults.</summary>
-    private static readonly JsonSerializerOptions IndexJson = new()
-    {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver
-        {
-            Modifiers =
-            {
-                info =>
-                {
-                    if (info.Type != typeof(EntryData))
-                    {
-                        return;
-                    }
-                    foreach (var property in info.Properties.Where(p => p.Name == nameof(EntryData.Encounters)))
-                    {
-                        property.ShouldSerialize = (_, value) => value is List<EncounterData> { Count: > 0 };
-                    }
-                },
-            },
-        },
-    };
-
     private readonly object _gate = new();
     private Data _data = new();
-    private long _version;
+    private long _version = 1;
     private long _savedVersion;
-    private string? _folder;
     private readonly Dictionary<string, List<EncounterData>> _active = [];
     private readonly Dictionary<string, Dictionary<string, EncounterData>> _histories = [];
     private readonly LinkedList<string> _historyOrder = new();
-    private readonly SemaphoreSlim _ioGate = new(1, 1);
 
     public IReadOnlyList<NpcCatalogEntry> Search(string name)
     {
@@ -121,14 +89,10 @@ public sealed class NpcCompendium
         }
     }
 
-    /// <summary>
-    /// The NPC with its full encounter history. History is read from that NPC's file on first use (asynchronously)
-    /// and then served from a small in-memory cache.
-    /// </summary>
-    public async Task<NpcEntry?> GetAsync(string mob, string zone, CancellationToken ct = default)
+    /// <summary>Returns the NPC and any history already supplied by its persistence repository.</summary>
+    public NpcEntry? Get(string mob, string zone)
     {
         string key = Key(mob, zone);
-        string? path;
         lock (_gate)
         {
             if (!_data.Entries.TryGetValue(key, out var entry))
@@ -139,33 +103,37 @@ public sealed class NpcCompendium
             {
                 return Snapshot(entry, cached);
             }
-            path = _folder is null ? null : HistoryPath(_folder, entry.File ?? HistoryFileName(key));
+            return Snapshot(entry, new Dictionary<string, EncounterData>());
         }
-        // Appends hold the IO gate too, so the history read here can't miss lines written before it is cached.
-        await _ioGate.WaitAsync(ct).ConfigureAwait(false);
-        try
+    }
+
+    public Task<NpcEntry?> GetAsync(string mob, string zone, CancellationToken ct = default)
+    {
+        return Task.FromResult(Get(mob, zone));
+    }
+
+    /// <summary>Returns the history filename used by the repository for this NPC, if it is known.</summary>
+    public string? HistoryFileFor(string mob, string zone)
+    {
+        lock (_gate)
         {
-            // Task.Run keeps the open/exists probe off the caller's (UI) thread when the gate is uncontended.
-            var records = path is null ? [] : await Task.Run(() => ReadHistoryAsync(path, ct), ct).ConfigureAwait(false);
-            lock (_gate)
+            string key = Key(mob, zone);
+            return _data.Entries.TryGetValue(key, out var entry)
+                ? entry.File ?? HistoryFileName(key)
+                : null;
+        }
+    }
+
+    /// <summary>Imports history records loaded by the repository into the bounded in-memory cache.</summary>
+    public void ImportHistory(string mob, string zone, IEnumerable<EncounterRecord> records)
+    {
+        lock (_gate)
+        {
+            string key = Key(mob, zone);
+            if (_data.Entries.ContainsKey(key))
             {
-                var entry = _data.Entries[key];
-                if (TryCachedHistory(key, out var cached))
-                {
-                    return Snapshot(entry, cached);
-                }
-                var history = ToHistory(records ?? []);
-                if (records is not null)
-                {
-                    // A failed read isn't cached, so the next view retries it.
-                    CacheHistory(key, history);
-                }
-                return Snapshot(entry, history);
+                CacheHistory(key, ToHistory(records));
             }
-        }
-        finally
-        {
-            _ioGate.Release();
         }
     }
 
@@ -417,67 +385,6 @@ public sealed class NpcCompendium
         return history;
     }
 
-    /// <summary>Reads an NPC's history file; returns null when it could not be read.</summary>
-    private static async Task<List<EncounterRecord>?> ReadHistoryAsync(string path, CancellationToken ct)
-    {
-        var records = new List<EncounterRecord>();
-        if (!File.Exists(path))
-        {
-            return records;
-        }
-        try
-        {
-            await using var stream = AtomicFile.OpenRead(path);
-            using var reader = new StreamReader(stream, Encoding.UTF8);
-            while (await reader.ReadLineAsync(ct).ConfigureAwait(false) is string line)
-            {
-                if (string.IsNullOrWhiteSpace(line))
-                {
-                    continue;
-                }
-                try
-                {
-                    if (JsonSerializer.Deserialize<EncounterRecord>(line, HistoryJson) is { } record)
-                    {
-                        records.Add(record);
-                    }
-                }
-                catch (JsonException)
-                {
-                    // A crash mid-append can leave one partial line; the rest of the file is still valid.
-                }
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
-        return records;
-    }
-
-    /// <summary>Streams one JSON line per record onto the end of the history file.</summary>
-    private static async Task AppendHistoryAsync(string path, IReadOnlyList<EncounterRecord> records, CancellationToken ct)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        await using var stream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read,
-            4096, FileOptions.Asynchronous);
-        if (stream.Length > 0)
-        {
-            // Finish a line left partial by a crash, so the new records start on their own lines.
-            stream.Seek(-1, SeekOrigin.End);
-            byte[] last = new byte[1];
-            if (await stream.ReadAsync(last, ct).ConfigureAwait(false) == 1 && last[0] != '\n')
-            {
-                await stream.WriteAsync("\n"u8.ToArray(), ct).ConfigureAwait(false);
-            }
-        }
-        stream.Seek(0, SeekOrigin.End);
-        foreach (var record in records)
-        {
-            await JsonSerializer.SerializeAsync(stream, record, HistoryJson, ct).ConfigureAwait(false);
-            await stream.WriteAsync("\n"u8.ToArray(), ct).ConfigureAwait(false);
-        }
-    }
     private EncounterRecord ToRecord(EncounterData encounter)
     {
         var record = new EncounterRecord
@@ -576,164 +483,159 @@ public sealed class NpcCompendium
         return $"{name.ToString().Trim('-')}-{hash}.jsonl";
     }
 
-    private static string HistoryPath(string folder, string file)
-    {
-        return Path.Combine(folder, HistoryFolderName, Path.GetFileName(file));
-    }
+    public sealed record HistoryAppend(
+        string Key,
+        string FileName,
+        IReadOnlyList<string> EncounterIds,
+        IReadOnlyList<EncounterRecord> Records);
 
-    /// <summary>
-    /// Appends finished encounters to their NPC history files, then atomically rewrites the small index.
-    /// The store is bound to the first folder it is loaded from or saved to.
-    /// </summary>
-    public async Task SaveAsync(string folder, CancellationToken ct = default)
-    {
-        folder = Path.GetFullPath(folder);
-        await _ioGate.WaitAsync(ct).ConfigureAwait(false);
-        try
-        {
-            await SaveCoreAsync(folder, ct).ConfigureAwait(false);
-        }
-        finally
-        {
-            _ioGate.Release();
-        }
-    }
+    public sealed record PersistenceBatch(
+        long Version,
+        Data? SourcesIndex,
+        IReadOnlyList<HistoryAppend> HistoryAppends);
 
-    private async Task SaveCoreAsync(string folder, CancellationToken ct)
+    /// <summary>Creates a detached batch for the infrastructure repository to append and save.</summary>
+    public PersistenceBatch? CapturePersistenceBatch()
     {
-        string index = Path.Combine(folder, IndexFileName);
-        long version;
-        Data? sourcesIndex = null;
-        var appends = new List<(string Key, EntryData Entry, EncounterData[] Closed, string Path, EncounterRecord[] Records)>();
         lock (_gate)
         {
-            if (_folder is not null && !string.Equals(_folder, folder, StringComparison.OrdinalIgnoreCase))
+            if (_savedVersion == _version)
             {
-                throw new InvalidOperationException("The NPC compendium is already stored in another folder.");
+                return null;
             }
-            if (_savedVersion == _version && _folder is not null)
-            {
-                return;
-            }
-            _folder = folder;
-            version = _version;
+
+            long version = _version;
+            int sourceCount = _data.Sources.Count;
+            var appends = new List<HistoryAppend>();
             var closed = _data.Entries
-                .Select(kv => (kv.Key, Entry: kv.Value, Closed: kv.Value.Encounters.Where(e => e.Outcome != "Active").ToArray()))
-                .Where(x => x.Closed.Length > 0)
+                .Select(pair => (
+                    Key: pair.Key,
+                    Entry: pair.Value,
+                    Encounters: pair.Value.Encounters.Where(encounter => encounter.Outcome != "Active").ToArray()))
+                .Where(item => item.Encounters.Length > 0)
                 .ToArray();
-            int sources = _data.Sources.Count;
-            foreach (var encounter in closed.SelectMany(x => x.Closed))
+
+            foreach (var encounter in closed.SelectMany(item => item.Encounters))
             {
                 SourceId(encounter.Source);
             }
-            if (_data.Sources.Count != sources)
-            {
-                // History lines refer to sources by number, so the numbers must be saved before any line uses them.
-                sourcesIndex = _data.Snapshot();
-            }
-            foreach (var (key, entry, finished) in closed)
-            {
-                entry.File ??= HistoryFileName(key);
-                appends.Add((key, entry, finished, HistoryPath(folder, entry.File), [.. finished.Select(ToRecord)]));
-            }
-        }
 
-        if (sourcesIndex is not null)
-        {
-            await AtomicFile.WriteJsonAsync(index, sourcesIndex, IndexJson, ct).ConfigureAwait(false);
-        }
-        foreach (var append in appends)
-        {
-            await AppendHistoryAsync(append.Path, append.Records, ct).ConfigureAwait(false);
-            lock (_gate)
+            Data? sourcesIndex = _data.Sources.Count == sourceCount ? null : _data.Snapshot();
+            foreach (var item in closed)
             {
-                // Only the copies just written leave memory; anything closed since then waits for the next save.
-                append.Entry.Encounters.RemoveAll(e => append.Closed.Contains(e));
-                if (_histories.TryGetValue(append.Key, out var cached))
+                item.Entry.File ??= HistoryFileName(item.Key);
+                appends.Add(new HistoryAppend(
+                    item.Key,
+                    item.Entry.File,
+                    [.. item.Encounters.Select(encounter => encounter.Id)],
+                    [.. item.Encounters.Select(ToRecord)]));
+            }
+
+            return new PersistenceBatch(version, sourcesIndex, appends);
+        }
+    }
+
+    /// <summary>Creates a detached index snapshot after any pending history appends complete.</summary>
+    public Data ExportIndex()
+    {
+        lock (_gate)
+        {
+            return _data.Snapshot();
+        }
+    }
+
+    /// <summary>Removes only encounters successfully appended by the repository.</summary>
+    public void CompleteHistoryAppend(string key, IReadOnlyCollection<string> encounterIds)
+    {
+        lock (_gate)
+        {
+            if (!_data.Entries.TryGetValue(key, out var entry))
+            {
+                return;
+            }
+
+            var appended = entry.Encounters
+                .Where(encounter => encounterIds.Contains(encounter.Id))
+                .ToArray();
+            entry.Encounters.RemoveAll(encounter => encounterIds.Contains(encounter.Id));
+            if (_histories.TryGetValue(key, out var cached))
+            {
+                foreach (var encounter in appended)
                 {
-                    foreach (var encounter in append.Closed)
-                    {
-                        cached[encounter.Id] = encounter;
-                    }
+                    cached[encounter.Id] = encounter;
                 }
             }
         }
+    }
 
-        Data indexSnapshot;
-        lock (_gate)
-        {
-            indexSnapshot = _data.Snapshot();
-        }
-        await AtomicFile.WriteJsonAsync(index, indexSnapshot, IndexJson, ct).ConfigureAwait(false);
+    public void CompletePersistence(long version)
+    {
         lock (_gate)
         {
             _savedVersion = Math.Max(_savedVersion, version);
         }
     }
 
-    /// <summary>
-    /// Loads the index from <paramref name="folder"/>. When there is no index yet but <paramref name="legacyPath"/>
-    /// (the old single-file compendium) exists, it is migrated into the folder and renamed with a ".migrated" suffix.
-    /// </summary>
-    public static async Task<NpcCompendium> LoadAsync(string folder, string? legacyPath = null, CancellationToken ct = default)
+    /// <summary>Imports validated index data, dropping copies already present in history after a crash.</summary>
+    public void ImportData(Data data, IReadOnlyDictionary<string, IReadOnlyCollection<string>>? historyIds = null)
     {
-        folder = Path.GetFullPath(folder);
-        var store = new NpcCompendium();
-        string index = Path.Combine(folder, IndexFileName);
-        string? path = File.Exists(index) ? index : legacyPath is not null && File.Exists(legacyPath) ? legacyPath : null;
-        bool migrate = path is not null && path != index;
-        if (path is not null)
+        ArgumentNullException.ThrowIfNull(data);
+        lock (_gate)
         {
-            var data = await AtomicFile.ReadJsonAsync<Data>(path, ct: ct).ConfigureAwait(false)
-                ?? throw new JsonException("NPC compendium data is empty.");
-            if (data.Entries is null || data.Watermarks is null || data.LastConsiders is null || data.Sources is null ||
-                data.Sources.Any(s => s is null) ||
-                data.Watermarks.Values.Any(w => w is null) ||
-                data.Entries.Values.Any(e => e is null || string.IsNullOrWhiteSpace(e.Mob) || e.Zone is null ||
-                    e.Encounters is null || e.Encounters.Any(c => c is null || c.Spells is null || c.Id is null ||
-                        c.Source is null || c.Character is null || c.Outcome is null ||
-                        c.YourDamage < 0 || c.OtherDamage < 0 || c.IncomingDamage < 0 ||
-                        c.Spells.Values.Any(s => s is null || s.Spell is null || s.Damage < 0 || s.Resists < 0 || s.Landings < 0))))
+            _data = data;
+            _active.Clear();
+            _histories.Clear();
+            _historyOrder.Clear();
+            foreach (var (key, entry) in _data.Entries)
             {
-                throw new JsonException("NPC compendium contains invalid or null entries.");
+                if (historyIds is not null && historyIds.TryGetValue(key, out var savedIds))
+                {
+                    entry.Encounters.RemoveAll(encounter => savedIds.Contains(encounter.Id));
+                }
             }
-            store._data = data;
+
+            foreach (var encounter in _data.Entries.Values.SelectMany(entry => entry.Encounters)
+                .Where(encounter => encounter.Outcome == "Active"))
+            {
+                if (!_active.TryGetValue(encounter.Source, out var active))
+                {
+                    active = [];
+                    _active[encounter.Source] = active;
+                }
+                active.Add(encounter);
+            }
+
+            _version = 0;
+            _savedVersion = 0;
         }
-        store._folder = folder;
-        foreach (var (key, entry) in store._data.Entries.Where(kv => kv.Value.Encounters.Count > 0).ToArray())
-        {
-            // After a crash between appending history and rewriting the index, drop copies already in the history file.
-            string historyPath = HistoryPath(folder, entry.File ?? HistoryFileName(key));
-            if (await ReadHistoryAsync(historyPath, ct).ConfigureAwait(false) is { Count: > 0 } records)
-            {
-                var saved = store.ToHistory(records);
-                entry.Encounters.RemoveAll(e => saved.ContainsKey(e.Id));
-            }
-        }
-        foreach (var encounter in store._data.Entries.Values.SelectMany(e => e.Encounters).Where(e => e.Outcome == "Active"))
-        {
-            if (!store._active.TryGetValue(encounter.Source, out var active))
-            {
-                active = [];
-                store._active[encounter.Source] = active;
-            }
-            active.Add(encounter);
-        }
-        if (migrate)
-        {
-            store._version++;
-            await store.SaveAsync(folder, ct).ConfigureAwait(false);
-            try
-            {
-                File.Move(legacyPath!, legacyPath + ".migrated", overwrite: true);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                // The index now exists and takes precedence; the old file is only left behind.
-            }
-        }
-        return store;
     }
+
+    /// <summary>Marks legacy migration or another in-memory change as requiring persistence.</summary>
+    public void MarkDirty()
+    {
+        lock (_gate)
+        {
+            _version++;
+        }
+    }
+
+    public string? GetHistoryIdentity(EncounterRecord record)
+    {
+        lock (_gate)
+        {
+            if (record.Id is not null)
+            {
+                return record.Id;
+            }
+            if (record.Source < 0 || record.Source >= _data.Sources.Count)
+            {
+                return null;
+            }
+
+            return $"{_data.Sources[record.Source]}\n{record.Start.Ticks.ToString(CultureInfo.InvariantCulture)}\n{record.Line.ToString(CultureInfo.InvariantCulture)}";
+        }
+    }
+
     public sealed class Data
     {
         public Dictionary<string, EntryData> Entries { get; set; } = [];
@@ -744,7 +646,7 @@ public sealed class NpcCompendium
         public List<string> Sources { get; set; } = [];
 
         /// <summary>A detached copy for streaming to disk outside the lock; immutable values are shared.</summary>
-        internal Data Snapshot()
+        public Data Snapshot()
         {
             return new Data
             {

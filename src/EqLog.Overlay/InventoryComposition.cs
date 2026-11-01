@@ -11,7 +11,7 @@ internal static class InventoryComposition
 {
     private static IQuestInventoryRepository CreateRepository()
     {
-        return new QuestInventoryRepository(Path.Combine(AppSettings.Folder, "quest-inventory.json"));
+        return new QuestInventoryRepository(Path.Combine(SettingsComposition.Paths.Folder, "quest-inventory.json"));
     }
 
     internal static Task<QuestInventory> LoadAsync()

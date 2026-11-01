@@ -405,7 +405,7 @@ public sealed class MoteOverlayTests
     {
         var view = new OverlayView(new HashSet<ChatChannel>(), [], Inventory: inventory);
         var presenter = Assert.Single(OverlayPresenters.All, definition => definition.Key == "motes");
-        return presenter.Render(snapshot, engine, view);
+        return presenter.Render(snapshot, EngineQuerySnapshot.Capture(engine), view);
     }
 
     private static OverlayRow[] TierRows(OverlayContent content)

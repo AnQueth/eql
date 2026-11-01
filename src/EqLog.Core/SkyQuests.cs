@@ -1,6 +1,4 @@
 using System.Net;
-using System.Net.Http;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace EqLog.Core;
@@ -53,95 +51,6 @@ public sealed record SkyDropGroup(string Mob, IReadOnlyList<SkyDropItem> Items);
 public static partial class SkyQuests
 {
     public const string SourceUrl = "https://eqlwiki.com/Plane_of_Sky#Plane_of_Sky_Class_Quests";
-
-    public static async Task<SkyQuestCatalog> FetchAsync(HttpClient http, CancellationToken cancellationToken)
-    {
-        using var response = await http.GetAsync(
-            "https://eqlwiki.com/api.php?action=parse&page=Plane_of_Sky&prop=wikitext&format=json&maxlag=5",
-            cancellationToken);
-        response.EnsureSuccessStatusCode();
-        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-        if (json.RootElement.TryGetProperty("error", out var error))
-        {
-            throw new InvalidOperationException("EQLWiki: " + error.GetProperty("info").GetString());
-        }
-
-        var quests = Parse(json.RootElement.GetProperty("parse").GetProperty("wikitext").GetProperty("*").GetString()!);
-        var items = quests.SelectMany(q => q.Requirements ?? []).Select(r => r.Item)
-            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        IReadOnlyDictionary<string, IReadOnlyList<string>> drops;
-        try
-        {
-            drops = await FetchDropSourcesAsync(http, items, cancellationToken);
-        }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException or InvalidOperationException or KeyNotFoundException)
-        {
-            // Drop sources are a nice-to-have; keep the quest list usable when item pages can't be read.
-            drops = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-        }
-
-        return new(DateTime.UtcNow, quests, drops);
-    }
-
-    private static async Task<IReadOnlyDictionary<string, IReadOnlyList<string>>> FetchDropSourcesAsync(HttpClient http,
-        IReadOnlyList<string> items, CancellationToken cancellationToken)
-    {
-        var result = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var batch in items.Chunk(50))
-        {
-            string url = "https://eqlwiki.com/api.php?action=query&prop=revisions&rvprop=content&rvslots=main" +
-                "&redirects=1&format=json&formatversion=2&maxlag=5&titles=" +
-                Uri.EscapeDataString(string.Join("|", batch));
-            using var response = await http.GetAsync(url, cancellationToken);
-            response.EnsureSuccessStatusCode();
-            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-            if (json.RootElement.TryGetProperty("error", out var error))
-            {
-                throw new InvalidOperationException("EQLWiki: " + error.GetProperty("info").GetString());
-            }
-
-            var query = json.RootElement.GetProperty("query");
-            var byTitle = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-            foreach (var page in query.GetProperty("pages").EnumerateArray())
-            {
-                if (page.TryGetProperty("revisions", out var revisions) && revisions.GetArrayLength() > 0)
-                {
-                    string content = revisions[0].GetProperty("slots").GetProperty("main").GetProperty("content").GetString() ?? "";
-                    byTitle[page.GetProperty("title").GetString()!] = ParseDropSources(content);
-                }
-            }
-
-            var renamed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string kind in new[] { "normalized", "redirects" })
-            {
-                if (query.TryGetProperty(kind, out var maps))
-                {
-                    foreach (var map in maps.EnumerateArray())
-                    {
-                        renamed[map.GetProperty("from").GetString()!] = map.GetProperty("to").GetString()!;
-                    }
-                }
-            }
-
-            foreach (string item in batch)
-            {
-                string title = item;
-                for (int hops = 0; hops < 3 && renamed.TryGetValue(title, out var next); hops++)
-                {
-                    title = next;
-                }
-
-                if (byTitle.TryGetValue(title, out var mobs))
-                {
-                    result[item] = mobs;
-                }
-            }
-        }
-
-        return result;
-    }
 
     /// <summary>Reads the mobs listed in an item page's <c>dropsfrom</c> field, ignoring zone-only links.</summary>
     public static IReadOnlyList<string> ParseDropSources(string wikitext)

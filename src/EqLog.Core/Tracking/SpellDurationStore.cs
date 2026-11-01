@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace EqLog.Core.Tracking;
@@ -11,7 +10,7 @@ public sealed record SpellDurationInfo(string Spell, double? LearnedSeconds, int
 /// Spell durations learned by measuring the time between casting a spell and seeing
 /// "Your X spell has worn off of Y.", plus user overrides and wiki fallbacks. Not thread-safe; the engine serializes access.
 /// </summary>
-public sealed class SpellDurationStore : ISnapshotStore<SpellDurationStore.Dto>
+public sealed class SpellDurationStore
 {
     private const int MaxSamples = 25;
     private const double Percentile = 0.8;
@@ -257,59 +256,40 @@ public sealed class SpellDurationStore : ISnapshotStore<SpellDurationStore.Dto>
         return sorted[idx];
     }
 
-    public static async Task<SpellDurationStore> LoadAsync(string path, CancellationToken ct = default)
+    /// <summary>Imports saved data into this in-memory store and leaves it clean.</summary>
+    public void ImportData(Dto dto)
     {
-        var store = new SpellDurationStore();
-        if (!File.Exists(path))
+        ArgumentNullException.ThrowIfNull(dto);
+        _samples.Clear();
+        _overrides.Clear();
+        _untracked.Clear();
+        _removed.Clear();
+        _wikiDurations.Clear();
+        _relearnSince.Clear();
+
+        foreach (var (spell, samples) in dto.Samples ?? [])
         {
-            return store;
+            _samples[spell] = samples.OrderBy(sample => sample.At).TakeLast(MaxSamples).ToList();
         }
-
-        try
+        foreach (var (spell, seconds) in dto.Overrides ?? [])
         {
-            var dto = await AtomicFile.ReadJsonAsync<Dto>(path, ct: ct).ConfigureAwait(false);
-            if (dto is not null)
-            {
-                foreach (var kv in dto.Samples ?? [])
-                {
-                    store._samples[kv.Key] = kv.Value.OrderBy(x => x.At).TakeLast(MaxSamples).ToList();
-                }
-
-                foreach (var kv in dto.Overrides ?? [])
-                {
-                    store._overrides[kv.Key] = kv.Value;
-                }
-
-                store._untracked.UnionWith(dto.Untracked ?? []);
-                store._removed.UnionWith(dto.Removed ?? []);
-                foreach (var kv in dto.WikiDurations ?? [])
-                {
-                    store._wikiDurations[kv.Key] = kv.Value;
-                }
-
-                foreach (var kv in dto.RelearnSince ?? [])
-                {
-                    store._relearnSince[kv.Key] = kv.Value;
-                }
-            }
+            _overrides[spell] = seconds;
         }
-        catch (JsonException)
+        _untracked.UnionWith(dto.Untracked ?? []);
+        _removed.UnionWith(dto.Removed ?? []);
+        foreach (var (spell, seconds) in dto.WikiDurations ?? [])
         {
-            // Corrupt file: start fresh rather than failing to launch.
+            _wikiDurations[spell] = seconds;
         }
-
-        return store;
+        foreach (var (spell, since) in dto.RelearnSince ?? [])
+        {
+            _relearnSince[spell] = since;
+        }
+        IsDirty = false;
     }
 
-    /// <summary>Saves without locking; use only when nothing else is changing the store.</summary>
-    public Task SaveAsync(string path, CancellationToken ct = default)
-    {
-        return SnapshotStore.SaveAsync(this, null, path, onlyIfDirty: false, ct);
-    }
-
-    SemaphoreSlim ISnapshotStore<Dto>.SaveGate { get; } = new(1, 1);
-
-    Dto? ISnapshotStore<Dto>.TakeSnapshot(bool onlyIfDirty)
+    /// <summary>Creates a detached snapshot and clears dirty state when data is included.</summary>
+    public Dto? ExportData(bool onlyIfDirty = true)
     {
         if (onlyIfDirty && !IsDirty)
         {
@@ -329,12 +309,13 @@ public sealed class SpellDurationStore : ISnapshotStore<SpellDurationStore.Dto>
         return dto;
     }
 
-    void ISnapshotStore<Dto>.MarkDirty()
+    /// <summary>Restores dirty state after a failed persistence attempt.</summary>
+    public void MarkDirty()
     {
         IsDirty = true;
     }
 
-    internal sealed class Dto
+    public sealed class Dto
     {
         public Dictionary<string, List<Sample>>? Samples
         {

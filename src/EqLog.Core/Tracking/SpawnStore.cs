@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace EqLog.Core.Tracking;
@@ -20,7 +19,7 @@ public sealed record SpawnInfo(string Zone, string Mob, double? LearnedSeconds, 
 /// Zones are keyed by <see cref="BaseZone"/> so instance versions of a zone share what was learned.
 /// Not thread-safe; the engine serializes access.
 /// </summary>
-public sealed partial class SpawnStore : ISnapshotStore<Dictionary<string, Dictionary<string, SpawnStore.Entry>>>
+public sealed partial class SpawnStore
 {
     private const int MaxSamples = 30;
 
@@ -267,46 +266,26 @@ public sealed partial class SpawnStore : ISnapshotStore<Dictionary<string, Dicti
         return e;
     }
 
-    public static async Task<SpawnStore> LoadAsync(string path, CancellationToken ct = default)
+    /// <summary>Imports saved entries as detached in-memory state and leaves the store clean.</summary>
+    public void ImportData(Dictionary<string, Dictionary<string, Entry>>? data)
     {
-        var store = new SpawnStore();
-        if (!File.Exists(path))
+        _zones.Clear();
+        foreach (var (zone, mobs) in data ?? [])
         {
-            return store;
-        }
-
-        try
-        {
-            var dto = await AtomicFile.ReadJsonAsync<Dictionary<string, Dictionary<string, Entry>>>(path, ct: ct).ConfigureAwait(false);
-            foreach (var (zone, mobs) in dto ?? [])
+            var map = new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (mob, entry) in mobs)
             {
-                var map = new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
-                foreach (var (mob, e) in mobs)
-                {
-                    e.Samples = [.. (e.Samples ?? []).OrderBy(x => x.At).TakeLast(MaxSamples)];
-                    map[mob] = e;
-                }
-
-                store._zones[zone] = map;
+                var copy = entry.Clone();
+                copy.Samples = [.. (copy.Samples ?? []).OrderBy(sample => sample.At).TakeLast(MaxSamples)];
+                map[mob] = copy;
             }
+            _zones[zone] = map;
         }
-        catch (JsonException)
-        {
-            // Corrupt file: start fresh rather than failing to launch.
-        }
-
-        return store;
+        IsDirty = false;
     }
 
-    /// <summary>Saves without locking; use only when nothing else is changing the store.</summary>
-    public Task SaveAsync(string path, CancellationToken ct = default)
-    {
-        return SnapshotStore.SaveAsync(this, null, path, onlyIfDirty: false, ct);
-    }
-
-    SemaphoreSlim ISnapshotStore<Dictionary<string, Dictionary<string, Entry>>>.SaveGate { get; } = new(1, 1);
-
-    Dictionary<string, Dictionary<string, Entry>>? ISnapshotStore<Dictionary<string, Dictionary<string, Entry>>>.TakeSnapshot(bool onlyIfDirty)
+    /// <summary>Creates a detached snapshot and clears dirty state when data is included.</summary>
+    public Dictionary<string, Dictionary<string, Entry>>? ExportData(bool onlyIfDirty = true)
     {
         if (onlyIfDirty && !IsDirty)
         {
@@ -326,7 +305,8 @@ public sealed partial class SpawnStore : ISnapshotStore<Dictionary<string, Dicti
         return snapshot;
     }
 
-    void ISnapshotStore<Dictionary<string, Dictionary<string, Entry>>>.MarkDirty()
+    /// <summary>Restores dirty state after a failed persistence attempt.</summary>
+    public void MarkDirty()
     {
         IsDirty = true;
     }
@@ -365,7 +345,7 @@ public sealed partial class SpawnStore : ISnapshotStore<Dictionary<string, Dicti
         public Entry Clone()
         {
             var copy = (Entry)MemberwiseClone();
-            copy.Samples = [.. Samples];
+            copy.Samples = [.. (Samples ?? [])];
             return copy;
         }
     }

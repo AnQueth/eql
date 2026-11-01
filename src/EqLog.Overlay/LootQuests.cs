@@ -13,26 +13,9 @@ namespace EqLog.Overlay;
 
 public partial class MainWindow
 {
-    private readonly HttpClient _wikiHttp = new() { Timeout = TimeSpan.FromSeconds(30) };
     private readonly Dictionary<string, QuestLookupResult> _questCache = new(StringComparer.OrdinalIgnoreCase);
     private long _questSelectionVersion;
     private readonly CancellationTokenSource _wikiCts = new();
-    private static string QuestCachePath
-    {
-        get
-        {
-            return Path.Combine(AppSettings.Folder, "quest-lookups.jsonl");
-        }
-    }
-
-    private static string LegacyQuestCachePath
-    {
-        get
-        {
-            return Path.Combine(AppSettings.Folder, "quest-lookups.json");
-        }
-    }
-
     private InventoryService _inventoryService = null!;
     private readonly InventoryViewModel _inventoryView = new();
     private QuestInventory _questInventory
@@ -43,7 +26,6 @@ public partial class MainWindow
         }
     }
 
-    private readonly SemaphoreSlim _questSaveGate = new(1, 1);
     private readonly HashSet<string> _questAttempted = new(StringComparer.OrdinalIgnoreCase);
     private int _questCacheCursor;
     private bool _questWorking;
@@ -131,27 +113,16 @@ public partial class MainWindow
         item = QuestLookup.ItemTitle(item);
         var result = await _wikiRepository.GetQuestAsync(item, priority, false, token);
         token.ThrowIfCancellationRequested();
-        await _questSaveGate.WaitAsync(token);
-        try
+        var previous = _questCache.GetValueOrDefault(item);
+        if (previous != result)
         {
-            var previous = _questCache.GetValueOrDefault(item);
-            if (previous == result)
-            {
-                return result;
-            }
-            await QuestLookupStore.AppendAsync(QuestCachePath, result, token);
-            token.ThrowIfCancellationRequested();
             _questCache[item] = result;
             if ((previous?.HasQuestReferences == true) != result.HasQuestReferences)
             {
                 RefreshMergeView();
             }
-            return result;
         }
-        finally
-        {
-            _questSaveGate.Release();
-        }
+        return result;
     }
 
     private bool HasQuestReferences(string item)
@@ -191,7 +162,7 @@ public partial class MainWindow
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
         }
-        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or IOException or
+        catch (Exception ex) when (ex is WikiTransportException or OperationCanceledException or IOException or
             UnauthorizedAccessException or JsonException or InvalidOperationException)
         {
             UsageTelemetry.TrackError(ex, UsageErrorSource.Wiki);
@@ -430,7 +401,6 @@ public partial class MainWindow
 
     private void InitializeLootQuests(StartupState state)
     {
-        _wikiHttp.DefaultRequestHeaders.UserAgent.ParseAdd("EqLogOverlay/1.0");
         if (state.QuestCacheError is { } error)
         {
             QuestLookupStatus.Text = $"Could not load wiki cache: {error.Message}";
@@ -535,7 +505,7 @@ public partial class MainWindow
                 QuestLookupStatus.Text = "Wiki lookup cancelled.";
             }
         }
-        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or IOException or
+        catch (Exception ex) when (ex is WikiTransportException or OperationCanceledException or IOException or
             UnauthorizedAccessException or JsonException or InvalidOperationException)
         {
             UsageTelemetry.TrackError(ex, UsageErrorSource.Wiki);

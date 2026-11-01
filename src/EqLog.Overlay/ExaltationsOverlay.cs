@@ -9,11 +9,9 @@ namespace EqLog.Overlay;
 
 public partial class MainWindow
 {
-    private static readonly string ItemEffectsPath = Path.Combine(AppSettings.Folder, "item-effects.json");
     private readonly Dictionary<string, ItemEffectInfo> _itemEffects = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _itemEffectErrors = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _itemEffectRetries = new(StringComparer.OrdinalIgnoreCase);
-    private bool _itemEffectsSaveEnabled = true;
     private bool _itemEffectsWorking;
     private string? _itemEffectsActive;
     private string? _itemEffectsStorageError;
@@ -32,7 +30,6 @@ public partial class MainWindow
         }
         if (state.ItemEffectsError is { } error)
         {
-            _itemEffectsSaveEnabled = false;
             _itemEffectsStorageError = $"Could not load effect cache: {error.Message}. Session-only lookups; existing cache kept.";
         }
     }
@@ -276,25 +273,14 @@ public partial class MainWindow
                     _itemEffects[item] = result;
                     _itemEffectErrors.Remove(item);
                     _itemEffectRetries.Remove(item);
-                    if (_itemEffectsSaveEnabled)
-                    {
-                        try
-                        {
-                            await AtomicFile.WriteJsonAsync(ItemEffectsPath, _itemEffects.Values.ToArray(), ct: token);
-                            _itemEffectsStorageError = null;
-                        }
-                        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
-                        {
-                            UsageTelemetry.TrackError(ex, UsageErrorSource.Wiki);
-                            _itemEffectsStorageError = $"Could not save effects: {ex.Message}. Results kept for this session.";
-                        }
-                    }
+                    _itemEffectsStorageError = _wikiRepository.GetCacheError("item-effects:" + item) is { } cacheError
+                        ? $"Could not save effects: {cacheError}. Results kept for this session." : null;
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
                     break;
                 }
-                catch (Exception ex) when (ex is HttpRequestException or JsonException or IOException or
+                catch (Exception ex) when (ex is WikiTransportException or JsonException or IOException or
                     InvalidOperationException or OperationCanceledException)
                 {
                     UsageTelemetry.TrackError(ex, UsageErrorSource.Wiki);

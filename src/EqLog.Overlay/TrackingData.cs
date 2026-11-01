@@ -32,8 +32,8 @@ public partial class MainWindow
             CommitTriggerEdits();
             _settings.Triggers = [.. _triggers];
             CaptureLayout();
-            await _settings.SaveAsync();
-            await TrackingDataReset.RequestAsync(AppSettings.Folder);
+            await _settingsPersistence.SaveAsync(_settings);
+            await _tracking.RequestResetAsync();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {

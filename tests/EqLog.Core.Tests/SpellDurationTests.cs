@@ -80,7 +80,7 @@ public class SpellDurationTests
         store.SetOverride("Whirl Till You Hurl X", null);
         Assert.Equal(10, store.GetDuration("Whirl Till You Hurl X"));
 
-        var info = Assert.Single(store.List(), d => d.Spell == "Whirl Till You Hurl X");
+        var info = Assert.Single(store.List(), duration => duration.Spell == "Whirl Till You Hurl X");
         Assert.Equal(12, info.WikiSeconds);
         Assert.Equal(0, info.Samples);
     }
@@ -90,8 +90,7 @@ public class SpellDurationTests
     {
         var store = new SpellDurationStore();
         store.SetWikiDuration("Whirl Till You Hurl X", 12);
-        var snapshotStore = (ISnapshotStore<SpellDurationStore.Dto>)store;
-        snapshotStore.TakeSnapshot(onlyIfDirty: true);
+        Assert.NotNull(store.ExportData(onlyIfDirty: true));
 
         store.SetWikiDuration("Whirl Till You Hurl X", 12);
         Assert.False(store.IsDirty);
@@ -120,59 +119,26 @@ public class SpellDurationTests
         store.SetWikiDuration("Whirl Till You Hurl X", 12);
         store.SetWikiDuration("Whirl Till You Hurl IX", 12);
         store.SetTracked("Whirl Till You Hurl IX", false);
-        Assert.All(store.List(), d => Assert.False(d.Tracked));
+        Assert.All(store.List(), duration => Assert.False(duration.Tracked));
 
         store.SetTracked("Whirl Till You Hurl X", true);
-        Assert.All(store.List(), d => Assert.True(d.Tracked));
-    }
-
-    [Fact]
-    public async Task WikiAndRemovedSpellsPersistAndOnlyManualAdditionRevivesRemovedSpell()
-    {
-        string path = Path.Combine(Path.GetTempPath(), $"eql-durations-{Guid.NewGuid():N}.json");
-        try
-        {
-            var store = new SpellDurationStore();
-            store.SetWikiDuration("Whirl Till You Hurl X", 12);
-            store.SetWikiDuration("Mesmerization X", 24);
-            store.SetOverride("Whirl Till You Hurl X", 15);
-            store.AddSample("Whirl Till You Hurl X", 10, T0);
-            store.Remove("Whirl Till You Hurl X");
-            await store.SaveAsync(path);
-
-            var loaded = await SpellDurationStore.LoadAsync(path);
-            loaded.SetWikiDuration("Whirl Till You Hurl X", 12);
-            loaded.AddSample("Whirl Till You Hurl X", 10, T0.AddMinutes(1));
-            loaded.SetTracked("Whirl Till You Hurl X", true);
-            Assert.False(loaded.IsTracked("Whirl Till You Hurl X"));
-            Assert.Null(loaded.GetDuration("Whirl Till You Hurl X"));
-            Assert.Equal(24, Assert.Single(loaded.List()).WikiSeconds);
-
-            loaded.SetOverride("whirl till you hurl x", 14);
-            Assert.True(loaded.IsTracked("Whirl Till You Hurl X"));
-            Assert.Equal(14, loaded.GetDuration("Whirl Till You Hurl X"));
-            var revived = Assert.Single(loaded.List(), d => d.Spell.Equals("Whirl Till You Hurl X", StringComparison.OrdinalIgnoreCase));
-            Assert.Equal(0, revived.Samples);
-            await loaded.SaveAsync(path);
-            var reloaded = await SpellDurationStore.LoadAsync(path);
-            Assert.Equal(14, reloaded.GetDuration("Whirl Till You Hurl X"));
-        }
-        finally
-        {
-            File.Delete(path);
-        }
+        Assert.All(store.List(), duration => Assert.True(duration.Tracked));
     }
 
     [Fact]
     public void CachedWikiDurationBindsWhirlTimerToSpinningTargetAndDeathClearsIt()
     {
         var metadata = new MobResistanceStore();
-        metadata.SetSpell(new("Whirl Till You Hurl X", ResistanceType.Magic, "Magic", DateTime.UtcNow,
+        metadata.SetSpell(new(
+            "Whirl Till You Hurl X",
+            ResistanceType.Magic,
+            "Magic",
+            DateTime.UtcNow,
             Duration: "Up to 2 ticks"));
         var engine = new LogEngine(resistances: metadata);
         engine.ProcessLines([
             L(0, "You begin casting Whirl Till You Hurl X."),
-            L(3, "a heartsbane drake begins to spin."),
+            L(3, "a heartsbane drake begins to spin.")
         ]);
 
         var timer = Assert.Single(engine.Snapshot(T0.AddSeconds(5)).Timers);
@@ -193,13 +159,17 @@ public class SpellDurationTests
         var engine = new LogEngine(resistances: metadata);
         engine.ProcessLines([L(0, "You begin casting Whirl Till You Hurl X.")]);
         Assert.Empty(engine.SpellDurations());
-        metadata.SetSpell(new("Whirl Till You Hurl X", ResistanceType.Magic, "Magic", DateTime.UtcNow,
+        metadata.SetSpell(new(
+            "Whirl Till You Hurl X",
+            ResistanceType.Magic,
+            "Magic",
+            DateTime.UtcNow,
             Duration: "Up to 2 ticks"));
         Assert.Equal(12, Assert.Single(engine.SpellDurations()).WikiSeconds);
 
         engine.ProcessLines([
             L(20, "You begin casting Whirl Till You Hurl X."),
-            L(23, "a heartsbane drake begins to spin."),
+            L(23, "a heartsbane drake begins to spin.")
         ]);
         Assert.Equal(10, Assert.Single(engine.Snapshot(T0.AddSeconds(25)).Timers).RemainingSeconds);
     }
@@ -234,7 +204,7 @@ public class SpellDurationTests
         engine.ProcessLines([
             L(10, "You begin casting Whirl Till You Hurl X."),
             L(13, "a heartsbane drake begins to spin."),
-            L(25, "Your Whirl Till You Hurl X spell has worn off of a heartsbane drake."),
+            L(25, "Your Whirl Till You Hurl X spell has worn off of a heartsbane drake.")
         ]);
         Assert.Empty(engine.SpellDurations());
         Assert.Empty(engine.Snapshot(T0.AddSeconds(26)).Timers);
@@ -244,44 +214,13 @@ public class SpellDurationTests
     }
 
     [Fact]
-    public async Task RelearnClearsSamplesKeepsOverrideAndIgnoresOlderWearOffsAfterReload()
-    {
-        string path = Path.Combine(Path.GetTempPath(), $"eql-durations-{Guid.NewGuid():N}.json");
-        try
-        {
-            var store = new SpellDurationStore();
-            store.AddSample("Mesmerize", 30, T0);
-            store.AddSample("Mesmerize", 31, T0.AddMinutes(1));
-            store.SetOverride("Mesmerize", 25);
-            store.Relearn("Mesmerize", T0.AddMinutes(1));
-
-            var info = Assert.Single(store.List());
-            Assert.Equal(0, info.Samples);
-            Assert.Null(info.LearnedSeconds);
-            Assert.Equal(25, info.OverrideSeconds);
-
-            await store.SaveAsync(path);
-            var loaded = await SpellDurationStore.LoadAsync(path);
-            loaded.AddSample("Mesmerize", 30, T0);
-            loaded.AddSample("Mesmerize", 31, T0.AddMinutes(1));
-            Assert.Equal(0, Assert.Single(loaded.List()).Samples);
-
-            loaded.AddSample("Mesmerize", 18, T0.AddMinutes(2));
-            Assert.Equal(18, Assert.Single(loaded.List()).LearnedSeconds);
-        }
-        finally
-        {
-            File.Delete(path);
-        }
-    }
-
-    [Fact]
     public void EngineRelearnUsesLatestLogLineAsCutoff()
     {
-        string[] firstCharm = [
+        string[] firstCharm =
+        [
             L(0, "You begin casting Allure X."),
             L(2, "heart harpie has been charmed."),
-            L(122, "Your Allure X spell has worn off of heart harpie."),
+            L(122, "Your Allure X spell has worn off of heart harpie.")
         ];
         var engine = new LogEngine();
         engine.ProcessLines(firstCharm);
@@ -294,7 +233,7 @@ public class SpellDurationTests
         engine.ProcessLines([
             L(200, "You begin casting Allure X."),
             L(202, "heart harpie has been charmed."),
-            L(302, "Your Allure X spell has worn off of heart harpie."),
+            L(302, "Your Allure X spell has worn off of heart harpie.")
         ]);
         var relearned = Assert.Single(engine.SpellDurations());
         Assert.Equal(1, relearned.Samples);

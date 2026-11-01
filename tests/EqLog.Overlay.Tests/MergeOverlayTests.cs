@@ -164,7 +164,7 @@ public sealed class MergeOverlayTests
         merge.FontSize = 19;
         settings.DockWindow.MovePanelToWorkspace("merge", null, new DockPanelSettings());
         var loaded = JsonSerializer.Deserialize<AppSettings>(
-            JsonSerializer.Serialize(settings.Snapshot(), AppSettings.Json), AppSettings.Json)!;
+            JsonSerializer.Serialize(settings.Snapshot(), SettingsRepository.Json), SettingsRepository.Json)!;
 
         MainWindow.InitializeMergeOverlay(loaded, WorkArea);
 

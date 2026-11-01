@@ -2,25 +2,48 @@
 
 ## Projects
 
-- `src\EqLog.Core`: parsing, reconciliation, trackers, and `LogEngine`; non-inventory
-  file/storage/wiki implementations remain here until later migration phases.
-- `src\EqLog.Application`: platform-neutral inventory workflows, state ownership,
-  detached queries, and input/persistence contracts; references Core only.
-- `src\EqLog.Infrastructure`: inventory game-file input and JSON persistence adapters;
-  references Application and Core.
-- `src\EqLog.Overlay`: .NET 10 Windows WPF application, inventory view model and
-  composition root. Only `InventoryComposition` constructs inventory adapters.
+- `src\EqLog.Core`: pure parsing, reconciliation, tracking, wiki parsing and `LogEngine`.
+  No game-file access, persistence, HTTP, WPF or runtime package dependencies.
+- `src\EqLog.Application`: inventory ownership, log sessions, tracking/settings/theme
+  workflows, wiki enrichment/cache policy, housekeeping cadence and detached queries.
+  References Core only; I/O is represented by focused ports.
+- `src\EqLog.Infrastructure`: read-only game inputs, atomic JSON/JSONL storage,
+  migrations, cache repositories and scheduled/retrying HTTP. References Application/Core.
+- `src\EqLog.Overlay`: .NET 10 Windows WPF views, inventory view model, incremental
+  rendering and explicit `*Composition` factories. Views call Application services.
 - `tests\EqLog.Core.Tests`: xUnit regression tests.
-- `tests\EqLog.Application.Tests`: fake-adapter inventory workflow/concurrency tests.
-- `tests\EqLog.Infrastructure.Tests`: isolated inventory input/storage integration tests.
+- `tests\EqLog.Application.Tests`: fake-port workflow, session, settings and wiki tests.
+- `tests\EqLog.Infrastructure.Tests`: temporary-file, fake-HTTP, scheduler and boundary tests.
 - `tests\EqLog.Overlay.Tests`: Windows WPF/xUnit presentation, settings, and telemetry regression tests.
 - `tests\EqLog.UpdateSmoke`: console validation of release discovery, download, staging,
   and version policy using an isolated Velopack locator.
 
 The [layered implementation plan](LAYERED-ARCHITECTURE-PLAN.md) tracks the inventory-first
-checkpoint and remaining migrations. This is not yet a fully layered application:
-tracking storage, log-session lifecycle, wiki enrichment and other presenters still
-use their existing implementations.
+checkpoint and subsequent migrations. `LayerBoundaryTests` enforce the reference graph
+and forbid concrete file/HTTP/WPF access in Core/Application and file/adapter access
+outside Overlay composition. Persisted compatibility attributes and detached data
+records remain portable; they do not perform I/O.
+
+### Application ownership
+
+`LogSessionService` owns source cancellation, progress, replay/live policy and
+follow-newest decisions. Stopped source callbacks cannot update a newer session;
+engine subscriptions are removed on stop. `LogSessionFrame` supplies detached
+`EngineQuerySnapshot` results to every presenter instead of the live engine.
+
+`TrackingService` handles startup, protected writes, lazy NPC history and reset
+requests. `TrackingPersistenceCoordinator` snapshots engine-owned tracking data and
+preserves dirty retries behind ordered saves. `SettingsService` captures the UI-owned
+settings graph before awaiting; `SettingsRepository` preserves extension fields,
+serializer options and atomic replacement. `ThemeService` separates palette
+import/export from native dialogs, previews and WPF resources.
+
+`HousekeepingService` owns the two-second maintenance clock, six-second refresh
+policy and ten-second save policy. Awaited UI dispatch prevents queued tick buildup.
+Render (250 ms), game focus (500 ms), native dialogs/hotkeys/window placement,
+telemetry consent/instrumentation and Velopack's Windows update lifecycle remain
+presentation/host integration concerns. Manual isolated full-window review is still
+distinct from automated XAML/presenter coverage.
 
 ## Windows and presentation
 
@@ -72,7 +95,7 @@ Queued loot retains its observed character/log identity across session changes.
 
 Quest references come from EQLWiki's public MediaWiki API: quest-category pages that link to
 or transclude the item's page, including redirects. References are not verified turn-in requirements.
-Automatic lookups use the shared wiki repository's background priority and are cached for seven days. Wiki response processing
+Automatic lookups use `WikiService`'s background priority and are cached for seven days. Wiki response processing
 and cache serialization/writes run off the UI thread; historical loot is applied through
 the inventory state owner in short batches.
 Selection versioning prevents older lookup responses from replacing the latest selected item's results.
@@ -127,7 +150,8 @@ caches do not rebuild every frame.
 `InventoryViewModel` owns item filters, selection, copy-location summaries and status
 bindings. It updates display rows in place across rank/count changes and refreshes the
 selected item's locations from committed exports. Wiki markers remain presentation-only.
-Wiki lookup orchestration stays in its existing code pending the wiki migration.
+Wiki request deduplication, priorities and cache decisions belong to `WikiService`;
+UI selection versioning and display markers remain presentation state.
 
 `QuestInventoryRepository` retains `%AppData%\EqLogOverlay\quest-inventory.json`,
 the existing compact JSON property names, watermark/rank/upgrade/completion history and
@@ -138,8 +162,8 @@ gate, so earlier requests cannot overwrite a later state; failed/canceled writes
 dirty for retry. If startup loading fails, saving stays disabled until restart after
 repairing the file, rather than overwriting corrupt data with empty state.
 
-Transitional compatibility: inventory JSON attributes and the shared `AtomicFile`
-helper remain in Core until the general persistence migration. They are not new
+Persisted compatibility: inventory JSON attributes remain on portable data records;
+the shared `AtomicFile` and `JsonLines` mechanisms now live in Infrastructure. They are not new
 Application or view dependencies on concrete storage.
 
 The `exaltations` overlay searches effects before item names. `Exaltations.Locate` maps each
@@ -158,7 +182,8 @@ host names, and readable locations. The view uses the shared virtualized row lis
 `ItemEffectLookup` reads the original item page's explicit Focus/Worn/Proc fields and stat-block
 effects, instrument/skill modifiers and haste. Click-only effects and ordinary weapon skill
 types are not inferred to transfer. Linked effect pages provide descriptions and spell-slot
-details. The shared `WikiRepository` schedules, deduplicates, and caches `item-effects:` operations.
+details. Application's shared `WikiService` deduplicates and caches `item-effects:` operations;
+Infrastructure's `WikiTransport` schedules HTTP steps.
 Successful entries persist in `item-effects.json` for seven days, missing pages for one day;
 failures retain prior data, display errors, and retry after five minutes. A corrupt cache is
 not overwritten. Fetches begin only when the panel is shown; UI refresh bypasses completed
@@ -231,13 +256,13 @@ of resistance. Legacy landed counts lack damage amounts and cannot be assessed r
 Automatic enrichment is debounced and cancellable when the selection changes. Network parsing
 and enrichment saves run off the dispatcher; cancelled requests cannot replace the new selection's
 status or reopen an expired panel. NPC/spell caches expire after one/seven days. Errors are visible
-and preserve cached results. The thread-safe store serializes periodic, enrichment and final saves
-through its gate and uses atomic replacement. Invalid saved data disables writes rather than
+and preserve cached results. The shared mob repository serializes periodic, enrichment and final saves
+through its gate and uses atomic replacement of detached store snapshots. Invalid saved data disables writes rather than
 silently replacing the original file.
 
 `LogEngine.SpellObserved` emits named spells from casts, direct/DoT damage, heals, resists and
 wear-offs during both history import and live tailing. Its callback only enqueues work in the
-app-scoped `WikiRepository`; no network or disk operation runs inside log processing.
+app-scoped `WikiService`; no network or disk operation runs inside log processing.
 Every unique pending spell is submitted immediately, rather than hidden behind a separate
 spell FIFO. Fresh disk/memory metadata (including missing-page results) is reused. Successful
 results use the existing thread-safe atomic store save. Expected failures are reported through
@@ -246,7 +271,12 @@ refresh bypasses that suppression. Log switches do not cancel the shared queue.
 
 ### Wiki repository and scheduling
 
-`WikiRepository` owns NPC, spell, item-quest and Sky lookup operations and cache policy.
+`WikiService` owns NPC, spell, item-quest, item-effect and Sky operations and cache policy.
+`IWikiTransport` and `IWikiCacheRepository` separate that workflow from scheduled HTTP
+and persisted documents. `WikiCacheRepository` retains existing files, independently
+orders writes, retries dirty results without refetching and blocks damaged-cache
+overwrites until explicit reset or repair/restart. Cache-write errors remain visible
+while usable parsed results are available for the current session.
 `MobWikiLookup`, `QuestLookup` and `SkyQuests.FetchAsync` remain parsing/API adapters, but
 production callers access them only through the repository. Browser links and app-update
 HTTP access are unrelated and do not enter this queue.
@@ -280,7 +310,7 @@ pacing and allowing live considers to proceed while background requests wait. Ex
 failures follow the existing visible-error and cache-preservation paths. MediaWiki errors
 inside successful HTTP responses continue through the API adapters' explicit error handling.
 
-`WikiRepository.GetActivity` exposes copied request/operation snapshots for the optional
+`WikiService.GetActivity` exposes copied request/operation snapshots for the optional
 Wiki activity overlay. Scheduler-owned request state survives between attempts during
 Polly backoff, reflects context priority promotion, and is removed on completion or
 cancellation. A bounded in-memory history retains the latest 30 HTTP outcomes, transient
@@ -306,9 +336,32 @@ replay. Repository continuations do not wait on the UI dispatcher during shutdow
 
 ## Persistence
 
+### Storage compatibility map
+
+Application-owned documents remain under `%AppData%\EqLogOverlay`; changing project
+ownership does not change their names or require a new schema/data migration.
+
+| Path or document family | Infrastructure owner | Compatibility requirements |
+|---|---|---|
+| `settings.json` | `SettingsRepository` | Existing JSON options, unknown fields, docking/workspace graph, hash deduplication and atomic replacement |
+| `quest-inventory.json` | `QuestInventoryRepository` | Compact fields, confirmed counts, rank/completion/upgrade history, log watermarks and legacy normalization |
+| `spell-durations.json`, `spawn-timers.json`, `motes.json` | Specific tracking repositories | Existing snapshot records, dirty revisions, atomic saves and replay watermarks |
+| `mob-resistances.json` | Shared `MobResistanceRepository` | Resistance samples, wiki metadata, legacy normalization and one save/reset gate |
+| `npc-compendium\index.json`, `npc-compendium\npcs\*.jsonl` | `NpcCompendiumRepository` | Append-before-index ordering, encounter IDs/source indices, lazy history, torn-tail recovery and duplicate handling |
+| Legacy `npc-compendium.json` | `NpcCompendiumRepository` | Existing first-load migration and `.json.migrated` backup |
+| `quest-lookups.jsonl`, legacy `quest-lookups.json` | `WikiCacheRepository`/`QuestLookupStore` | Existing migration, compaction, interrupted-record recovery and strict validation of completed records |
+| `sky-quests.json`, `item-effects.json` | `WikiCacheRepository` | Existing cached result shapes, timestamps/TTLs, aliases/effect details and dirty retries |
+| Tracking-reset markers and backup directories | `TrackingDataReset`, through the reset port | Existing request/apply lifecycle and backup layout; normal load/save does not reset data |
+| User-selected theme JSON; bundled theme documents | `ThemeRepository` | Existing palette validation, optional colors and unknown top-level fields; import/export paths are selected by the host |
+| Selected game log and character inventory export | Game-file sources | Read-only access, existing discovery/encoding/sharing and partial-file stabilization |
+
+Missing app-owned stores initialize fresh state. Malformed/unreadable existing
+documents produce explicit errors and prevent overwrites; the established JSONL
+interrupted-tail recovery remains distinct from completed-record corruption.
+
 ### Spawn wiki fallback
 
-The UI housekeeping pass submits background `WikiRepository.GetMobAsync` lookups for tracked
+The housekeeping UI adapter submits background `WikiService.GetMobAsync` lookups for tracked
 current-zone spawn candidates without an override or learned duration. Fresh cached NPC metadata
 is reused immediately; expected failures are surfaced under General with a five-minute retry
 cooldown. Explicit respawn durations are parsed conservatively; ranges and conditional text are
@@ -360,22 +413,25 @@ duplicate IDs keep the last copy. `GetAsync` reads one NPC's history through a s
 view renders briefly empty until it arrives).
 A legacy `npc-compendium.json` is migrated on first load and renamed to `.json.migrated`.
 
-All file IO is asynchronous and streamed. JSON stores use `AtomicFile.WriteJsonAsync/ReadJsonAsync`:
+Persisted JSON/JSONL content is streamed asynchronously. JSON stores use `AtomicFile.WriteJsonAsync/ReadJsonAsync`:
 compact, shared serializer options serialized straight into a temp file (no intermediate JSON
-string or byte array) and atomically moved. Each store exposes `LoadAsync`/`SaveAsync`; saves take a
+string or byte array) and atomically moved. Repositories expose `LoadAsync`/`SaveAsync`; saves take a
 detached object snapshot under the store's lock (containers copied, immutable records and strings
 shared; never holding a lock across `await`), then stream it outside the lock behind a per-store
 `SemaphoreSlim` gate, so overlapping saves always leave the newest snapshot on disk. NPC history
 records are streamed onto the end of their `.jsonl` file one line at a time. `settings.json` follows
-the same pattern: `AppSettings.SaveAsync` snapshots the settings graph on the UI thread and streams
-it from a worker. Unchanged settings are skipped by comparing a SHA-256 of the snapshot
+the same pattern: `SettingsService.SaveAsync` snapshots the settings graph on the UI thread;
+`SettingsRepository` hashes and streams it from a worker. Unchanged settings are skipped by comparing a SHA-256 of the snapshot
 (`AtomicFile.HashJson`, which streams the serializer into the hash), so the serialized document is
-never built or retained. File-system
-metadata probes from the UI (`File.Exists`, log discovery, `FileInfo`) go through `Task.Run`.
+never built or retained. Game-input metadata probes and log discovery run inside
+Infrastructure source adapters on workers, not in views.
 
-Startup loads every store concurrently on the thread pool (`MainWindow.StartupState.LoadAsync`)
-before the window is built. Housekeeping calls `SaveAllInBackground` every few seconds (skipped
-while the previous save is still writing). Closing the dock cancels the close, awaits
+Startup composes Application loaders on the thread pool before the window is built.
+Missing stores start fresh; damaged/unreadable stores produce explicit startup failures
+and write protection instead of silent defaults. `ApplicationPersistenceService` starts
+all independent saves and returns per-feature success/failure outcomes.
+Housekeeping requests this batch every ten seconds (skipped while a previous batch
+is writing). Closing the dock cancels the close, awaits
 `ShutdownAsync` (stop the tailer, final `SaveAllAsync`) and then closes again. Windows logoff is
 the single exception: `SessionEnding` must be synchronous, so `SaveAllBlocking` waits (up to 15 s)
 on the saves running on the thread pool, which never resume on the dispatcher and so cannot

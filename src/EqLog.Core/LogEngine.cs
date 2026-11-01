@@ -426,9 +426,21 @@ public sealed class LogEngine
         }
     }
 
-    public Task SaveSpellDurationsAsync(string path, bool onlyIfDirty = true, CancellationToken ct = default)
+    /// <summary>Captures duration data under the engine's state lock for an external repository.</summary>
+    public SpellDurationStore.Dto? CaptureSpellDurationData(bool onlyIfDirty = true)
     {
-        return SnapshotStore.SaveAsync(_timers.Store, _gate, path, onlyIfDirty, ct);
+        lock (_gate)
+        {
+            return _timers.Store.ExportData(onlyIfDirty);
+        }
+    }
+
+    public void MarkSpellDurationDataDirty()
+    {
+        lock (_gate)
+        {
+            _timers.Store.MarkDirty();
+        }
     }
     public IReadOnlyList<SpawnCandidate> SpawnCandidates()
     {
@@ -484,9 +496,38 @@ public sealed class LogEngine
         }
     }
 
-    public Task SaveSpawnsAsync(string path, bool onlyIfDirty = true, CancellationToken ct = default)
+    /// <summary>Captures spawn data under the engine's state lock for an external repository.</summary>
+    public Dictionary<string, Dictionary<string, SpawnStore.Entry>>? CaptureSpawnData(bool onlyIfDirty = true)
     {
-        return SnapshotStore.SaveAsync(_spawns.Store, _gate, path, onlyIfDirty, ct);
+        lock (_gate)
+        {
+            return _spawns.Store.ExportData(onlyIfDirty);
+        }
+    }
+
+    public void MarkSpawnDataDirty()
+    {
+        lock (_gate)
+        {
+            _spawns.Store.MarkDirty();
+        }
+    }
+
+    /// <summary>Captures mote data under the engine's state lock for an external repository.</summary>
+    public MoteStore.Data? CaptureMoteData(bool onlyIfDirty = true)
+    {
+        lock (_gate)
+        {
+            return _motes.Store.ExportData(onlyIfDirty);
+        }
+    }
+
+    public void MarkMoteDataDirty()
+    {
+        lock (_gate)
+        {
+            _motes.Store.MarkDirty();
+        }
     }
 
     private string MoteCharacter
@@ -495,10 +536,5 @@ public sealed class LogEngine
         {
             return _parser.CharacterName.Length > 0 ? _parser.CharacterName : "Unknown";
         }
-    }
-
-    public Task SaveMotesAsync(string path, bool onlyIfDirty = true, CancellationToken ct = default)
-    {
-        return SnapshotStore.SaveAsync(_motes.Store, _gate, path, onlyIfDirty, ct);
     }
 }

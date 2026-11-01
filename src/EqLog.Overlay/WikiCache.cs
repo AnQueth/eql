@@ -68,7 +68,6 @@ public partial class MainWindow
                 _itemEffects.Clear();
                 _itemEffectErrors.Clear();
                 _itemEffectRetries.Clear();
-                _itemEffectsSaveEnabled = true;
                 _itemEffectsStorageError = null;
                 _skyCatalog = null;
                 _skyContent = null;
@@ -83,13 +82,10 @@ public partial class MainWindow
                 _npcNextRender = default;
                 _npcWikiStatus = "Wiki cache reset.";
                 _mobWikiStatus = "Wiki cache reset.";
-                await WikiCacheReset.ResetAsync(AppSettings.Folder, _mobResistances);
-                _engine.ResetWikiCaches();
-                await _engine.SaveSpellDurationsAsync(AppSettings.DurationsPath);
                 _spawnsSignature = "";
                 _durationsSignature = "";
                 RefreshMergeView();
-            }).Task.Unwrap());
+            }).Task.Unwrap(), _engine, _tracking);
             ResetWikiCacheStatus.Text = "All wiki caches reset. Next lookups fetch fresh information; tracking history and settings are unchanged.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException)

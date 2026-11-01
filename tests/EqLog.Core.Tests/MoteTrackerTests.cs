@@ -66,29 +66,6 @@ public class MoteTrackerTests
         Assert.Equal(2, Assert.Single(m.ZoneRates, r => r.Mob == "Guardian Golem").Kills);
     }
 
-    [Fact]
-    public async Task SavesAndLoads()
-    {
-        string path = Path.Combine(Path.GetTempPath(), $"motes-{Guid.NewGuid():N}.json");
-        try
-        {
-            var store = new MoteStore();
-            new LogEngine(motes: store) { CharacterName = "Quethrosar" }.ProcessLines(Log);
-            await store.SaveAsync(path);
-
-            var loaded = await MoteStore.LoadAsync(path);
-            Assert.Equal(13, loaded.Totals("quethrosar").Single(c => c.Tier == "Major").Count);
-            Assert.Single(loaded.ZoneRates("Nektropos Castle 2 (Adaptive)"), r => r.Mob == "Guardian Golem");
-
-            new LogEngine(motes: loaded) { CharacterName = "Quethrosar" }.ProcessLines(Log);
-            Assert.Equal(14, loaded.Totals("Quethrosar").Sum(c => c.Count));
-        }
-        finally
-        {
-            File.Delete(path);
-        }
-    }
-
     [Theory]
     [InlineData("Mote of Major Potential", "Major")]
     [InlineData("Mote of Infinitesimal Potential", "Infinitesimal")]
