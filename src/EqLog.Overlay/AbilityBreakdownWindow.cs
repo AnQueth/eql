@@ -86,31 +86,40 @@ public sealed class AbilityBreakdownWindow : Window
         return BuildTimeline(breakdown.Timeline ?? [], breakdown.TimelineSeconds, breakdown.TimelineStart);
     }
 
-    internal static FrameworkElement BuildLanesContent(AbilityBreakdown breakdown)
+    internal static DockPanel BuildLanesContent(AbilityBreakdown breakdown, DockPanel? panel = null)
     {
-        return BuildLanes(breakdown.AbilityTimelines ?? [], breakdown.TimelineSeconds, breakdown.TimelineStart);
+        return BuildLanes(breakdown.AbilityTimelines ?? [], breakdown.TimelineSeconds, breakdown.TimelineStart, panel);
     }
 
     /// <summary>One row per damage type; each row spans the whole fight, with a bar from the first to last hit of every stretch.</summary>
-    private static FrameworkElement BuildLanes(IReadOnlyList<AbilityTimeline> lanes, double seconds, DateTime? start)
+    private static DockPanel BuildLanes(IReadOnlyList<AbilityTimeline> lanes, double seconds, DateTime? start, DockPanel? panel)
     {
         int total = Math.Max(1, (int)Math.Ceiling(seconds));
         total = Math.Max(total, lanes.Max(l => l.Points.Max(p => p.Second)) + 1);
-        var panel = new DockPanel { Margin = new Thickness(8) };
-        var info = new TextBlock
+        if (panel is null)
         {
-            Text = $"Each row spans the full fight ({OverlayPresenters.Clock(total)}). Bars run from when a damage type started landing to when it finished; " +
-                   $"a gap over {DamageTimeline.SegmentGapSeconds} seconds starts a new bar. Hover a bar for times and damage.",
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 8),
-        };
-        info.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
-        DockPanel.SetDock(info, Dock.Top);
-        panel.Children.Add(info);
+            panel = new DockPanel { Margin = new Thickness(8) };
+            var description = new TextBlock
+            {
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 8),
+            };
+            description.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
+            DockPanel.SetDock(description, Dock.Top);
+            panel.Children.Add(description);
+            var tracks = new Grid();
+            tracks.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Auto), MaxWidth = 220 });
+            tracks.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            panel.Children.Add(new ScrollViewer { Content = tracks, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+        }
 
-        var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Auto), MaxWidth = 220 });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var info = (TextBlock)panel.Children[0];
+        info.Text = $"Each row spans the full fight ({OverlayPresenters.Clock(total)}). Bars run from when a damage type started landing to when it finished; " +
+                    $"a gap over {DamageTimeline.SegmentGapSeconds} seconds starts a new bar. Hover a bar for times and damage.";
+        // Keep the scroll viewer and its content grid alive so refreshes retain the user's offset.
+        var grid = (Grid)((ScrollViewer)panel.Children[1]).Content;
+        grid.Children.Clear();
+        grid.RowDefinitions.Clear();
         int row = 0;
         foreach (var lane in lanes)
         {
@@ -143,7 +152,6 @@ public sealed class AbilityBreakdownWindow : Window
         Grid.SetColumn(axis, 1);
         grid.Children.Add(axis);
 
-        panel.Children.Add(new ScrollViewer { Content = grid, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         return panel;
     }
 

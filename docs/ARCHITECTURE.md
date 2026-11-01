@@ -5,6 +5,7 @@
 - `src\EqLog.Core`: log parsing, file tailing, trackers, and `LogEngine`.
 - `src\EqLog.Overlay`: .NET 10 Windows WPF application.
 - `tests\EqLog.Core.Tests`: xUnit regression tests.
+- `tests\EqLog.Overlay.Tests`: Windows WPF/xUnit presentation, settings, and telemetry regression tests.
 - `tests\EqLog.UpdateSmoke`: console validation of release discovery, download, staging,
   and version policy using an isolated Velopack locator.
 
@@ -12,8 +13,9 @@
 
 `MainWindow` is a hidden controller. Its settings UI is hosted by the visible `DockWindow`.
 An `OverlayPanel` is reparented between a floating `OverlayWindow` and the dock canvas.
-Floating and docked bounds are stored separately. Dock resize collision resolution preserves
-the resized panel's anchor and saves displaced neighbors' positions.
+Floating and docked bounds are stored separately. With Auto-arrange enabled, dock resize collision resolution preserves
+the resized panel's anchor and saves displaced neighbors' positions. Auto-arrange is off
+by default; manual mode preserves positions and permits overlap.
 
 Docked `OverlayPanel` visuals have layered metallic bevels, inset content, a raised title
 strip and non-hit-testable corner studs. Gradients derive from the existing theme palette
@@ -29,6 +31,13 @@ explicit alert-test previews retain their existing behavior.
 
 Quest opportunities and Sky overlays use recycling virtualized lists. Other overlays update
 changed rows incrementally. This avoids rebuilding all row visuals on progress-only updates.
+
+The embedded DPS `AbilityDetailsView` synchronizes table rows in place. Its damage timeline
+and damage-type charts compare their own point values, lane names/order, duration, and start
+time with detached snapshots before rebuilding visuals. Equal data in newly allocated
+collections does not trigger a rebuild; a change to one chart's data does not rebuild the other.
+Damage-type updates retain the panel, scroll viewer, and content grid to preserve scrolling.
+Separate ability-breakdown windows remain click-time snapshots.
 
 Log parsing releases the engine lock between lines, so controls do not wait for an entire
 2,000-line history batch. The render timer allows only one frame in flight: tracker and chat
@@ -72,8 +81,8 @@ double-counting loot represented in the export.
 
 The former Loot quests settings tab is hosted in the `inventory` overlay: at startup
 `ConfigureInventoryOverlay` moves the XAML content (`LootQuestsContent`, with its event handlers)
-into the overlay through `OverlayPanel.SetBody`, beside a Ready to merge tab. The last parsed export
-rows are kept in memory. `InventoryExport.MergeGroups` groups loose rows by name without `+N`, and
+into the overlay through `OverlayPanel.SetBody`. Ready to merge has its own independent overlay.
+The last parsed export rows are kept in memory. `InventoryExport.MergeGroups` groups loose rows by name without `+N`, and
 location text is built from the export path. Worn slot numbers are assigned in `Parse` before empty
 rows are skipped, because repeated roots (Ear, Wrist, Fingers, Any Slot) are only distinguished by order.
 
@@ -153,14 +162,15 @@ observation or selection even inside the seven-day TTL so corrected lifetap clas
 observations without replaying or rewriting their counts. Missing details, area-effect/wave
 spells, and duration spells receive distinct assessment explanations; known school is never
 presented as unknown merely because damage assessment is unsupported.
-Unmodified non-critical damage histograms are persisted by character/exact ranked spell inside
-each mob's outcomes. The upper observed damage becomes a baseline only after three near-peak
-samples (at least 90% of maximum). Histograms are re-evaluated against this baseline: below 90%
-is one estimated partial-resist outcome, otherwise landed. Without enough baseline evidence,
-damage samples remain unassessed and excluded from label thresholds. Baselines are cached and
-invalidated when matching character/spell samples change. This is an estimate, not proof:
-buffs, mitigation and all-partial training samples may bias it. Legacy landed counts lack damage
-history and retain their prior classification.
+Unmodified non-critical damage histograms are persisted by character/loadout/level and exact
+ranked spell inside each mob's outcomes. After at least three eligible samples across mobs/zones,
+the sample-count-weighted median supplies the baseline (the middle two values are averaged
+for an even sample count). Hits below 90% of this baseline are reduced-damage estimates,
+not inferred resists. Confirmed hits count as landed even while a baseline is unavailable;
+only explicit resist messages enter the resisted count and determine resistance labels.
+Baselines are cached and invalidated when matching context/spell samples change. Buffs,
+mitigation and biased training samples can affect estimates, so reduced damage is not proof
+of resistance. Legacy landed counts lack damage amounts and cannot be assessed retrospectively.
 
 Automatic enrichment is debounced and cancellable when the selection changes. Network parsing
 and enrichment saves run off the dispatcher; cancelled requests cannot replace the new selection's
@@ -348,5 +358,11 @@ The Appearance editor exports import-compatible JSON. `Name` is nonempty and at 
 - `Pumpkin`: accent color; `AccentText`: text on accent-filled controls.
 - `Hover`, `Pressed`, `Selection`, `Alternate`, `GridLine`, `ScrollThumb`: interaction/table palette.
 
+Optional color keys are `OverlayHeader`, `OverlayDim`, `OverlayGood`, `OverlayWarn`, and
+`OverlayBad`, also using `#RRGGBB`. Omitted optional colors use the original overlay defaults,
+so older custom palettes remain valid. Unknown top-level JSON properties are preserved for
+forward compatibility; unknown names within `Colors` are rejected.
+
 Resource replacement and dynamic resource references support live theme changes.
-Combat/status colors and user alert colors retain their separate semantic meaning.
+Overlay status text uses the optional theme colors. Chat colors, progress fills, and custom
+alert colors remain separate.

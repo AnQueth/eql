@@ -1,7 +1,68 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.29" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.30" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.30
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 31, 2026 at 8:33 PM CT.
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Keep your place in live DPS damage graphs, avoid unnecessary chart refreshes,
+        and find app features more easily in the reorganized user guide.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Damage types keeps your scroll position
+        </Paragraph>
+        <Paragraph>
+            In Settings &gt; General &gt; Overlays, enable DPS and choose Full details
+            in its toolbar. Open Damage types and scroll down to a spell or proc.
+            Live updates now keep the scroll container in place instead of jumping
+            back to the top each second. The selected tab, table sorting, and column
+            widths still stay where you left them.
+        </Paragraph>
+        <Paragraph>
+            New damage and changing fight spans still update the bars. If fewer rows
+            remain than fit in the panel, scrolling adjusts to the available range.
+            Unlock floating overlays with Ctrl+Shift+L to interact; docked panels
+            remain interactive.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Charts update only when their inputs change
+        </Paragraph>
+        <Paragraph>
+            Damage timeline and Damage types now keep their existing visuals when
+            a refresh contains the same data. Each graph checks its own inputs,
+            so a change to one graph's damage data does not rebuild the other.
+            Changes to the fight duration or start time still refresh both graphs
+            so their time scales and labels remain accurate.
+        </Paragraph>
+        <Paragraph>
+            The embedded Full details view remains live. Separate ability breakdown
+            windows opened by clicking a combatant are still snapshots; click again
+            for a newer snapshot.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            A clearer introduction and feature guide
+        </Paragraph>
+        <Paragraph>
+            The repository README now starts with what the app does and its main
+            features, followed by installation, first-time setup, and screenshots.
+            Quick links lead to combat tools, inventory, quests, timers, and app
+            settings before the detailed instructions.
+        </Paragraph>
+        <Paragraph>
+            The detailed guide also clarifies manual versus Auto-arrange layouts,
+            locked floating controls, live versus snapshot DPS details, Sky's four
+            tabs, and the disabled-by-default spare-copy feeding option.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.29
     </Paragraph>

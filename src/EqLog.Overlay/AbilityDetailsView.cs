@@ -7,7 +7,7 @@ namespace EqLog.Overlay;
 
 /// <summary>
 /// Live ability table plus damage graphs. Refreshes update rows in place so column widths,
-/// sorting, selection, and the selected tab survive.
+/// sorting, selection, the selected tab, and damage-type scrolling survive.
 /// </summary>
 public sealed class AbilityDetailsView
 {
@@ -17,6 +17,10 @@ public sealed class AbilityDetailsView
     private readonly TabItem? _timelineTab;
     private TabItem? _lanesTab;
     private readonly string _rateLabel;
+    private DamageTimelinePoint[] _timelinePoints = [];
+    private AbilityTimeline[] _abilityTimelines = [];
+    private double _chartSeconds;
+    private DateTime? _chartStart;
 
     public AbilityDetailsView(AbilityBreakdown breakdown)
     {
@@ -34,10 +38,9 @@ public sealed class AbilityDetailsView
         _timelineTab = new TabItem
         {
             Header = "Damage timeline",
-            Content = AbilityBreakdownWindow.BuildTimelineContent(breakdown),
         };
         _tabs.Items.Add(_timelineTab);
-        UpdateLanes(breakdown);
+        UpdateCharts(breakdown);
         Root = _tabs;
     }
 
@@ -58,10 +61,51 @@ public sealed class AbilityDetailsView
             _table.SelectedItem = _rows.FirstOrDefault(r => r.Name == selectedName);
         }
 
-        if (_timelineTab is not null)
+        UpdateCharts(breakdown);
+
+        return true;
+    }
+
+    private void UpdateCharts(AbilityBreakdown breakdown)
+    {
+        if (_timelineTab is null)
+        {
+            return;
+        }
+
+        var points = breakdown.Timeline ?? [];
+        var lanes = breakdown.AbilityTimelines ?? [];
+        var spanChanged = _chartSeconds != breakdown.TimelineSeconds || _chartStart != breakdown.TimelineStart;
+        if (_timelineTab.Content is null || spanChanged || !_timelinePoints.SequenceEqual(points))
         {
             _timelineTab.Content = AbilityBreakdownWindow.BuildTimelineContent(breakdown);
+            _timelinePoints = points.ToArray();
+        }
+
+        if (spanChanged || !LanesEqual(lanes))
+        {
             UpdateLanes(breakdown);
+            _abilityTimelines = lanes.Select(lane => new AbilityTimeline(lane.Name, lane.Points.ToArray())).ToArray();
+        }
+
+        _chartSeconds = breakdown.TimelineSeconds;
+        _chartStart = breakdown.TimelineStart;
+    }
+
+    private bool LanesEqual(IReadOnlyList<AbilityTimeline> lanes)
+    {
+        if (_abilityTimelines.Length != lanes.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < lanes.Count; i++)
+        {
+            if (_abilityTimelines[i].Name != lanes[i].Name ||
+                !_abilityTimelines[i].Points.SequenceEqual(lanes[i].Points))
+            {
+                return false;
+            }
         }
 
         return true;
@@ -82,7 +126,7 @@ public sealed class AbilityDetailsView
                 _tabs.Items.Add(_lanesTab);
             }
 
-            _lanesTab.Content = AbilityBreakdownWindow.BuildLanesContent(breakdown);
+            _lanesTab.Content = AbilityBreakdownWindow.BuildLanesContent(breakdown, _lanesTab.Content as DockPanel);
         }
         else if (_lanesTab is not null)
         {

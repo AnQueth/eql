@@ -1,70 +1,42 @@
 # EqLog Overlay
 
-An app for Windows that reads EverQuest Legends log files (`eqlog_*.txt`) and shows live stats in
-small borderless, always-on-top overlay windows over the game.
+EqLog Overlay is a Windows companion app for EverQuest Legends. It turns your game logs into
+live combat stats, useful countdowns, and tools for managing loot, quests, and upgrades.
+Keep a few small, always-on-top panels over the game, or build a dashboard on another monitor.
 
-Track damage, healing, loot, spell and spawn timers, quest ingredients, chat, and custom alerts.
-Use floating overlays over the game or arrange panels in the main window on another monitor.
+The app reads EverQuest log files (`eqlog_*.txt`) and follows new events as you play.
+Combat stats reflect what appears in your log; inventory tools also use inventory exports,
+and linked wiki lookups add item, spell, NPC, and quest information.
 
-## Screenshots
+## What you can do
 
-### Dashboard workspaces
+- **Understand your fights.** Track DPS, healing, incoming damage, and damage share.
+  Explore ability breakdowns, damage timelines, and damage-type graphs, or revisit recent fights.
+- **Keep track of time.** See estimated spell-effect countdowns and learned respawn timers
+  for the mobs you choose to track.
+- **Follow your session.** Monitor loot, coin, kills, deaths, XP/AA progress, and zone time.
+  Track Motes of Potential across sessions and plan item or spell upgrades.
+- **Organize loot and upgrades.** Compare inventory across storage locations, find items
+  ready to merge, track item-rank increases, and search installed or loose exaltations.
+- **Find your next quest.** Look up quests tied to your items and follow Plane of Sky class
+  quests with rewards, drop sources, and HAVE/NEED counts.
+- **Learn about NPCs.** Browse saved encounters, damage breakdowns, wiki information,
+  and your observed spell resists.
+- **Notice important events.** Keep selected chat channels visible and create custom
+  text or sound alerts for matching log events.
+- **Make the layout yours.** Choose floating or docked panels, organize dashboard workspaces,
+  and customize themes, text sizes, and opacity. Settings and layouts are saved.
 
-![Dashboard workspace tabs with docked Motes and Loot panels and the DPS overlay in Full details view showing an ability table.](docs/images/dashboard-workspaces.png)
+Start with [installation](#installation) and [first-time setup](#first-time-setup).
+Then see [screenshots](#screenshots), the [full panel guide](#overlays), or jump to a tool:
 
-The dock window groups panels into your own [workspace](#main-window-settings--docked-panels-second-monitor) tabs, such as
-**Dashboard**, **Loot**, **Sky**, **Encounters**, and **Tools**. Use **+** to add a tab,
-right-click a tab to rename or delete it, and **Restore** to bring back a deleted tab with its
-saved layout. Each docked panel has **Move to** to send it to another workspace and
-**Pop out** to float it over the game. The DPS panel here uses **Full details**, which shows the
-live ability table plus **Damage timeline** and **Damage types** graphs right in the dashboard.
-
-### Dashboard preview
-
-![Docked dashboard showing combat stats, loot, motes, NPC encounter history, Sky quests, quest opportunities, and inventory.](docs/images/docked-dashboard.png)
-
-An example Plane of Sky dashboard with the settings panel hidden. Each tile can be moved,
-resized, or detached with **Pop out**. **Auto-arrange** is off by default, so you can keep a
-custom layout like this without other panels shifting around.
-
-Highlights from the screenshot:
-
-- **Combat and session stats:** DPS and damage share, incoming damage by attacker/spell,
-  character loadout and level, zone/session time, kills, deaths, and XP gains.
-- **Loot and [Motes](#motes):** grouped recent drops, coin looted and auto-sold totals,
-  clickable **[Quest]** markers, and per-tier session, all-time, and owned mote counts.
-- **[NPC compendium](#npc-compendium):** search by name and zone, then browse **Overview**,
-  **Spell resists**, or **Encounters**. Encounter cards show your average DPS, other attackers'
-  damage, incoming damage, and a per-spell breakdown for each recorded fight.
-- **[Sky quest tracker](#plane-of-sky-class-quests):** class-filtered quests with rewards,
-  quest givers, required dialogue, HAVE/NEED item counts, drop sources, and a watched-quest list.
-- **[Inventory & loot quests](#inventory--loot-quests-overlay):** compare owned, carried,
-  bank, hoard, and depot counts; open item/quest wiki pages; mark quests complete or reopen them;
-  with a separate **Ready to merge** overlay for upgrade-rank duplicates.
-- **[Quest opportunities](#loot-quest-lookup):** sort or search items and quest references,
-  watch lookup progress and cache/queue totals, and compare inventory locations with historical
-  loot. Historical loot is unconfirmed, not proof that you still own an item.
-- **[Spawn timers](#spawn-timers):** countdowns for mobs you choose to track in the current
-  zone. The screenshot shows the empty state before any mobs are selected.
-
-### Floating overlay example
-
-![Unlocked Motes, Spell Timers, and Alerts overlays arranged over EverQuest.](docs/images/floating-overlays.png)
-
-Floating overlays can be positioned and resized over the game while unlocked; their gold borders
-and **Dock** buttons are visible in this example. Lock them to pass clicks through to the game.
-See [Overlays](#overlays) for the available panels and controls.
-
-**Alerts:** Make important log events easier to notice with regex triggers that display a custom
-message in the Alerts panel and can optionally play a sound. [Set up alert triggers](#alert-triggers).
-
-### Spell countdowns
-
-![Spell Timers overlay showing three active effects on A thunder spirit and their remaining times.](docs/images/spell-timer-countdowns.png)
-
-Each active timer shows the spell, its target, and the time remaining. Here, three spells on
-**A thunder spirit** have **0:46**, **0:54**, and **1:21** remaining. These are estimated countdowns;
-see [Spell durations](#spell-durations) for how durations are learned and adjusted.
+| Combat and timers | Loot and progression | Layout and app settings |
+|---|---|---|
+| [Combat panels and graphs](#overlays) | [Inventory and loot quests](#inventory--loot-quests-overlay) | [Dashboard workspaces](#main-window-settings--docked-panels-second-monitor) |
+| [Spell countdowns](#spell-durations) | [Sky class quests](#plane-of-sky-class-quests) | [Themes and appearance](#appearance-and-themes) |
+| [Spawn timers](#spawn-timers) | [Motes and upgrade planning](#motes) | [Automatic updates](#automatic-updates) |
+| [NPC compendium](#npc-compendium) | [Item upgrades](#item-upgrades-overlay) and [exaltations](#exaltations-overlay) | [Saved data and backups](#saved-data-and-backups) |
+| [Custom alerts](#alert-triggers) | [Quest opportunities](#loot-quest-lookup) | [Optional telemetry](#usage-and-error-telemetry) |
 
 ## Installation
 
@@ -88,7 +60,7 @@ together; do not copy just the executable.
    it asks you to choose your **Logs** folder (choosing the EverQuest install folder also works). You can change it
    later in **General > Log file** with **Choose folder...**, or pick a single file with **Browse...**.
    If the folder has no logs yet, type `/log on` in game and the log is picked up automatically.
-4. Every panel starts **docked** in the main window (Alerts float over the game). In **General > Overlays**,
+4. Panels start **docked** in the main window, except Alerts, which float over the game. In **General > Overlays**,
    enable the panels you want and untick **docked** to float one over the game.
 5. Unlock floating overlays to arrange them, then lock them to pass clicks through to the game.
 
@@ -104,6 +76,46 @@ such as when you change characters. Startup history does not fire alert triggers
 
 If floating overlays are missing while arranging them, temporarily turn off
 **Only show floating overlays while EverQuest is active**.
+
+## Screenshots
+
+### Dashboard workspaces
+
+![Dashboard workspace tabs with docked Motes and Loot panels and the DPS overlay in Full details view showing an ability table.](docs/images/dashboard-workspaces.png)
+
+Group panels into your own workspace tabs, such as **Dashboard**, **Loot**, **Sky**,
+**Encounters**, and **Tools**. The DPS panel here shows its live ability table in **Full details**.
+See the [workspace guide](#main-window-settings--docked-panels-second-monitor) for adding tabs,
+moving panels, and restoring saved layouts.
+
+### Dashboard preview
+
+![Docked dashboard showing combat stats, loot, motes, NPC encounter history, Sky quests, quest opportunities, and inventory.](docs/images/docked-dashboard.png)
+
+An example Plane of Sky dashboard with the settings panel hidden. Combat stats, loot,
+motes, NPC encounters, quests, and inventory are together in one view.
+Move or resize each tile, or use **Pop out** to float it over the game.
+**Auto-arrange** is off by default, so your custom layout stays where you put it.
+See [Overlays](#overlays) for the complete panel list and layout controls.
+
+### Floating overlay example
+
+![Unlocked Motes, Spell Timers, and Alerts overlays arranged over EverQuest.](docs/images/floating-overlays.png)
+
+Small panels keep useful information visible over the game. Unlock them to arrange them,
+then lock them to pass clicks through. Gold borders and **Dock** buttons are visible here
+because the overlays are unlocked.
+The Alerts panel can show custom messages and optionally play sounds for matching log events;
+see [Alert triggers](#alert-triggers).
+
+### Spell countdowns
+
+![Spell Timers overlay showing three active effects on A thunder spirit and their remaining times.](docs/images/spell-timer-countdowns.png)
+
+Each timer shows an effect, its target, and estimated time remaining.
+See [Spell durations](#spell-durations) for how countdowns are learned and adjusted.
+
+The sections below cover individual features, settings, and tracking behavior in detail.
 
 ## Reset tracking data
 
@@ -240,18 +252,15 @@ separate settings tab). It can be docked or floating. See [Plane of Sky class qu
 The overlay is off by default.
 
 Docked overlays live on a **freeform canvas**, not a wrapping grid. Drag the boxed header
-grip to place a panel anywhere, including empty space, without
-moving any other panels. A full-size highlighted preview follows the pointer, preserving where
-you grabbed the panel. While you drag, the other panels move live to show the layout you'd get by
-dropping there. Drop to place it; Escape or dropping outside the dock cancels the move and puts
-every panel back.
-Panels never overlap: after every move, resize, dock/undock, or dock-window width change the canvas
-reflows. The panel you just dropped or resized stays exactly where you put it (it remains the anchor
-until you move or resize another panel). Panels it covers are pushed straight down below it, and
-every panel floats straight up into empty space above it. Panels never change columns, so panels
-you didn't touch stay put unless a gap opens above them. Panels never move sideways: resizing a
-panel past the right or bottom edge grows the canvas and scrolls along with the grip, and a
-narrower window or settings-panel splitter just adds a scrollbar. Drag near any edge to scroll.
+grip to place a panel anywhere, including empty space. A full-size highlighted preview follows
+the pointer, preserving where you grabbed the panel. Drop to place it; Escape or dropping
+outside the dock cancels the move and restores the previous layout.
+With **Auto-arrange** enabled, other panels move live to preview the layout. Panels do not
+overlap: the panel you just dropped or resized stays anchored where you put it, covered panels
+are pushed down, and other panels move straight up into available gaps. They keep their columns
+and never move sideways. With Auto-arrange off, other panels stay put and overlap is allowed.
+Resizing a panel past the right or bottom edge grows the canvas and scrolls along with the grip;
+a narrower window or settings-panel splitter adds a scrollbar. Drag near any edge to scroll.
 Each panel's canvas position and bottom-right-grip size are saved independently of its floating
 window position and size.
 Newly docked panels without saved positions are placed in available space automatically.
@@ -262,7 +271,8 @@ them when Auto-arrange is off, including after restarting the app.
 Tick it to re-pack the current layout and enable automatic rearranging. The choice is saved
 across restarts. With Auto-arrange on, undocking reflows the remaining panels and redocking
 places the panel after the others.
-Buttons, filters, and scrollbars remain interactive even when floating overlays are locked.
+Buttons, filters, and scrollbars remain interactive in docked panels. Unlock floating overlays
+to use them; locked floating overlays pass clicks through to the game.
 
 The **Loot** overlay selector offers **Recent drops**, **Grouped: most recent**, and
 **Grouped: item name (A-Z)**. Grouped rows show the session quantity and last-looted time,
@@ -283,9 +293,12 @@ more than 7 seconds starts a new bar, so 6-second DoT ticks stay together. In **
 click a recipient, incoming healer, or **Observed healers** name for session ability totals.
 Choose **Full details** in the DPS overlay to show the same ability table and damage graph tabs
 directly in the overlay; **Compact** restores the current small rows. The selection is saved.
-Full details update live each second without resetting column widths, sorting, or the selected tab.
-Details show total, DPS/HPS, share, hits, crits, maximum, and healing overheal. They are snapshots
-at click time, not live windows; click again for an updated view. Healing detail rates use the
+Full details update live each second without resetting column widths, sorting, the selected tab,
+or your scroll position in the **Damage types** graph.
+Both graphs keep their existing visuals unless their own data, fight duration, or start time changes.
+Details show total, DPS/HPS, share, hits, crits, maximum, and healing overheal. Separate breakdown
+windows opened by clicking a row are snapshots at click time, not live windows; click again
+for an updated snapshot. The embedded DPS **Full details** view is live. Healing detail rates use the
 span from first to last observed session heal (minimum one second), not the rolling 30-second
 meter. Only logged events are available; unnamed melee is grouped as Melee and unnamed heals
 as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels remain interactive.
@@ -294,12 +307,12 @@ as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels r
 |---|---|
 | DPS | Current or picked fight (last 10): your and others' damage, DPS, and share |
 | Damage Taken | Incoming damage by attacker/spell (encounter and session) |
-| Heals | Heals you cast (with overheal) and heals you received |
+| Healing | Heals you cast (with overheal) and heals you received |
 | Spell Timers | Countdowns for mez, charm, DoTs, debuffs and similar effects you cast |
 | Session | Session and zone time, kills/hr, deaths, XP/AA progress, level, AA-cap warning |
 | Loot | Recently looted items and coin |
 | Chat | Selected chat channels |
-| Spells | Casts per spell, interrupts, resists and fizzles |
+| Spell Casting | Casts per spell, interrupts, resists and fizzles |
 | Alerts | Text from your custom alert triggers (see below) |
 | Mob info | Your latest live /consider result, wiki stats, and saved Magic/Fire/Cold/Poison/Disease observations |
 | NPC compendium | Search saved NPCs by name/zone; browse wiki stats, per-spell resists, encounter history and average DPS |
@@ -312,6 +325,7 @@ as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels r
 | Item upgrades | Item ranks that increased between inventory exports, with the local date and time of each upgrade |
 | Exaltations | Search by effect to find installed and loose exaltations, their host items, and exact exported locations |
 | Quest opportunities | Searchable item-to-quest references with inventory counts and lookup progress |
+| Wiki activity | Shared lookup queue, request priorities, retry progress, and recent outcomes/errors |
 
 - **Lock all overlays** (or **Ctrl+Shift+L**): when locked, overlays are click-through so they don't block the game.
   When unlocked they have a gold border; drag the boxed header grip to move and drag the edges to resize.
@@ -355,14 +369,15 @@ Tick **docked** next to an overlay to add or remove it from the selected workspa
 panel out of every workspace and into its own floating overlay.
 To move a docked panel between workspaces, click **Move to** in that panel's title bar and choose a workspace.
 **Dock all** docks everything except Alerts in the selected workspace; **Float all** removes every panel from all workspaces.
-Drag a tile to reorder it on the canvas and drag its gold bottom-right corner to resize it; the
-other panels reflow around it.
+Drag a tile to move it on the canvas and drag its gold bottom-right corner to resize it.
+Other panels reflow around it only when **Auto-arrange** is enabled.
 Docked panels use fantasy-style metallic frames with beveled edges, inset content, raised
 title strips, and corner studs. Frame colors follow your theme; floating overlays keep their
 compact appearance.
 
 Canvas positions and panel sizes, the window's position, and the side panel's width and visibility
 are saved.
+
 ## Mob info and resistance observations
 
 The **Mob info** overlay is enabled by default. A **new /consider result** in the live log shows
@@ -535,7 +550,7 @@ Corrupt history is reported and protected from overwrites; new observations then
 
 Turn on the **Sky quest tracker** overlay (**General → Overlays**) to browse the wiki's class tests.
 Its toolbar has a search box (quest name, reward, required items, and droppers), a class filter
-(**All classes** or one class), **Wiki**, and **Refresh**. Unlock floating overlays to type. Three tabs:
+(**All classes** or one class), **Wiki**, and **Refresh**. Unlock floating overlays to type. Four tabs:
 
 - **By class**: each quest shows its reward, who to give it to and what to say, and every required
   item with HAVE/NEED counts, the mob(s) that drop it, and where your copies are.
@@ -657,6 +672,8 @@ search results as they complete. Only base-item and effect names are sent to EQL
 host items, locations, character names, or the inventory file. Effects are cached locally
 for seven days (missing pages for one day). **Refresh effects** bypasses that cache;
 it does not refresh the inventory export.
+
+### Quest references and inventory counts
 
 A **[Quest]** marker beside an inventory item or merge group means the cached wiki lookup found
 quest references. The same marker appears beside items in **Loot** and the **Wiki** work queue.
@@ -908,7 +925,7 @@ on spare copies before merging them.
   stop working at the next rank, and their points carry over.
   A plain-language **What to do** list comes first, including why a tier is needed (for example, Infinite is the only
   mote that still works on a +9 item); open **Math** for the full tables of the actual-inventory plan.
-- **Feed copies with motes first** (on by default) raises spare copies with motes before merging them. A lower-rank
+- **Feed copies with motes first** (off by default) raises spare copies with motes before merging them. A lower-rank
   copy may still take motes the main item can no longer use, and raising a copy to +N costs 2^N − 1 points while
   merging it gives 2^N, so feeding can turn those motes into a more valuable copy. For example, with the main item
   at +4, two +0 copies fed Infinitesimal ×1, Minor ×2 and Lesser ×2 each reach +3 and merge for the whole 16 points
