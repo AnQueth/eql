@@ -1,7 +1,40 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.30" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.31" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.31
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 31, 2026 at 8:44 PM CT.
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Find new stable releases without closing the app: automatic update checks
+        now run every four hours as well as at startup.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Automatic update checks every four hours
+        </Paragraph>
+        <Paragraph>
+            Open Settings &gt; General &gt; Application updates. Check for updates at
+            startup and every 4 hours controls both the startup check and periodic
+            checks while the app is running. Your existing automatic-check preference
+            is preserved. Turn it off to disable both; turning it on starts a new
+            four-hour interval. Check for updates still works manually.
+        </Paragraph>
+        <Paragraph>
+            Periodic checks skip active checks or downloads and leave an already
+            downloaded update ready for your restart. Automatically download new stable
+            releases remains a separate setting. Only stable releases are considered;
+            development or debugging builds do not automatically update.
+        </Paragraph>
+        <Paragraph>
+            Updates never restart the app automatically. Choose Restart to update
+            and confirm when convenient. Tracking data is saved before installation;
+            update errors appear in the status without stopping normal log reading.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.30
     </Paragraph>

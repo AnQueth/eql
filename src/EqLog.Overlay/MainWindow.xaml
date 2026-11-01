@@ -19,7 +19,7 @@
         <GroupBox Header="Application updates" DockPanel.Dock="Top">
             <StackPanel>
                 <TextBlock x:Name="AppVersionText" FontWeight="Bold" />
-                <CheckBox x:Name="CheckUpdatesBox" Content="Check for updates at startup" Margin="0,6,0,0" Click="UpdatePreferences_Click" />
+                <CheckBox x:Name="CheckUpdatesBox" Content="Check for updates at startup and every 4 hours" Margin="0,6,0,0" Click="UpdatePreferences_Click" />
                 <CheckBox x:Name="DownloadUpdatesBox" Content="Automatically download new stable releases" Margin="0,6,0,0" Click="UpdatePreferences_Click" />
                 <CheckBox x:Name="UsageTelemetryBox" Content="Share usage and error telemetry" Margin="0,6,0,0" Click="TelemetryPreferences_Click"
                           ToolTip="Sends app starts, app version, feature actions, bundled theme choices (custom themes are labeled Custom), panel visibility and docked/floating placement, and error types to Application Insights. Game/log content, personal names, file paths, exception messages, and stack traces are not sent." />

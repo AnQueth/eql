@@ -232,8 +232,11 @@ Click **What's New** in the main window's top bar for this version's release hig
 and short instructions for using the new features. The scrollable help follows your theme,
 works offline, and remains available with Settings hidden.
 
-**General > Application updates** shows the current version and update status. Startup checks and
-automatic downloads are enabled by default and can be disabled independently. **Check for updates**
+**General > Application updates** shows the current version and update status. Automatic checks
+run at startup and every four hours while the app is running. Checks and automatic downloads
+are enabled by default and can be disabled independently. Disabling automatic checks stops both
+startup and periodic checks; enabling them starts a new four-hour interval. Periodic checks skip
+an active update operation or an already-downloaded update awaiting your restart. **Check for updates**
 and **Download update** also work manually. Only stable releases from `AnQueth/eql` are considered;
 drafts, prereleases, and downgrades are excluded. Downloads display progress and are verified by
 the updater against the release feed. Failures are shown without stopping normal log reading.

@@ -1673,6 +1673,7 @@ public partial class MainWindow : Window
 
     private async Task ShutdownAsync()
     {
+        _updateCheckTimer.Stop();
         // Start disposal first so it abandons wiki work before the callers' tokens cancel it layer by layer.
         var disposingWiki = _wikiRepository.DisposeAsync();
         _wikiCts.Cancel();

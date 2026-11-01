@@ -11,6 +11,8 @@ namespace EqLog.Overlay;
 public partial class MainWindow
 {
     private const string UpdateRepository = "https://github.com/AnQueth/eql";
+    internal static readonly TimeSpan AutomaticUpdateCheckInterval = TimeSpan.FromHours(4);
+    private readonly DispatcherTimer _updateCheckTimer = new() { Interval = AutomaticUpdateCheckInterval };
     private UpdateManager? _updater;
     private UpdateInfo? _availableUpdate;
     private bool _updateBusy;
@@ -33,6 +35,8 @@ public partial class MainWindow
                 return;
             }
             UpdateStatusText.Text = "Updates come from stable GitHub releases. Restart is always your choice.";
+            _updateCheckTimer.Tick += AutomaticUpdateCheck_Tick;
+            UpdateAutomaticCheckTimer();
             if (_settings.CheckForUpdatesOnStartup)
             {
                 await CheckForUpdatesAsync();
@@ -51,7 +55,34 @@ public partial class MainWindow
     {
         _settings.CheckForUpdatesOnStartup = CheckUpdatesBox.IsChecked == true;
         _settings.AutomaticallyDownloadUpdates = DownloadUpdatesBox.IsChecked == true;
+        UpdateAutomaticCheckTimer();
         SaveSettingsInBackground(error => UpdateStatusText.Text = $"Could not save update preferences: {error}");
+    }
+
+    private void UpdateAutomaticCheckTimer()
+    {
+        _updateCheckTimer.Stop();
+        if (_settings.CheckForUpdatesOnStartup && _updater is { IsInstalled: true } &&
+            !Debugger.IsAttached && !_shutDown && !_shuttingDown && !_sessionEnding)
+        {
+            _updateCheckTimer.Start();
+        }
+    }
+
+    private async void AutomaticUpdateCheck_Tick(object? sender, EventArgs e)
+    {
+        if (CanAutomaticallyCheckForUpdates(_settings.CheckForUpdatesOnStartup,
+            _updater is { IsInstalled: true }, Debugger.IsAttached, _updateBusy,
+            _updateDownloaded, _shutDown || _shuttingDown || _sessionEnding))
+        {
+            await CheckForUpdatesAsync();
+        }
+    }
+
+    internal static bool CanAutomaticallyCheckForUpdates(bool enabled, bool installed,
+        bool debugging, bool busy, bool downloaded, bool shuttingDown)
+    {
+        return enabled && installed && !debugging && !busy && !downloaded && !shuttingDown;
     }
 
     private void TelemetryPreferences_Click(object sender, RoutedEventArgs e)
