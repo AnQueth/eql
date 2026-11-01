@@ -15,6 +15,7 @@ public partial class MainWindow
     private TextBox? _planName;
     private ComboBox? _planInventoryName;
     private string? _planNameFilter;
+    private AsyncTextFilter<string[]>? _planNamesWork;
     private bool _refreshingPlanNames;
     private ComboBox? _planRank;
     private ComboBox? _planTargetRank;
@@ -204,19 +205,18 @@ public partial class MainWindow
 
             RefreshMotePlan();
         };
-        _planInventoryName.SelectionChanged += (_, _) =>
+        BindPlanInventorySelection(_planName, _planInventoryName, name =>
         {
-            if (!_refreshingPlanNames && _planKind.SelectedIndex == 0 && _planInventoryName.SelectedItem is string name)
+            if (!_refreshingPlanNames && _planKind.SelectedIndex == 0)
             {
-                _planName.Text = name;
                 SelectBestCopy(name);
                 RefreshMotePlan();
             }
-        };
-        _planName.TextChanged += (_, _) =>
+        });
+        TextFilterBinding.Bind(_planName, _ =>
         {
             RefreshMotePlan();
-        };
+        });
         _planRank.SelectionChanged += (_, _) =>
         {
             RefreshMotePlan();
@@ -455,25 +455,42 @@ public partial class MainWindow
         _planNamesSource = _inventoryRows;
         _planNamesKind = kind;
         _planNameFilter = _planName.Text.Trim();
-        // The inventory export only lists items, so spells are typed in by name.
-        var names = kind == MoteUpgradeKind.Spell
-            ? Array.Empty<string>()
-            : PlanTargetNames(PlanInventoryRows(), _planNameFilter);
+        var inventory = PlanInventoryRows().ToArray();
+        string filter = _planNameFilter;
+        _planNamesWork ??= new(Dispatcher, error => _planInventoryName.ToolTip = $"Filtering failed: {error.Message}");
+        _planNamesWork.Request((_planNamesSource, kind, filter, _characterName, _session.Revision),
+            token =>
+            {
+                token.ThrowIfCancellationRequested();
+                return kind == MoteUpgradeKind.Spell ? [] : PlanTargetNames(inventory, filter);
+            },
+            names => ApplyPlanNames(kind, filter, names));
+    }
+
+    private void ApplyPlanNames(MoteUpgradeKind kind, string filter, string[] names)
+    {
+        if (_planInventoryName is null)
+        {
+            return;
+        }
+        object? previous = _planInventoryName.SelectedItem;
         _refreshingPlanNames = true;
         try
         {
-            _planInventoryName.ItemsSource = names;
-            _planInventoryName.SelectedItem = names.FirstOrDefault(name =>
-                name.Equals(_planNameFilter, StringComparison.OrdinalIgnoreCase));
+            UpdatePlanNameChoices(_planInventoryName, names, filter);
             _planInventoryName.IsEnabled = names.Length > 0;
             _planInventoryName.Visibility = kind == MoteUpgradeKind.Equipment ? Visibility.Visible : Visibility.Collapsed;
             _planInventoryName.ToolTip = names.Length == 0
                 ? "No matching inventory items. Type a name above to plan manually, or clear the search to see all exported items."
-                : "Pick a matching inventory item to set its name and best-copy rank.";
+                : "Pick a matching inventory item to plan for its best-copy rank without changing your search.";
         }
         finally
         {
             _refreshingPlanNames = false;
+        }
+        if (!Equals(previous, _planInventoryName.SelectedItem))
+        {
+            RefreshMotePlan();
         }
     }
 
@@ -531,7 +548,7 @@ public partial class MainWindow
         _planPoints.IsEnabled = MotePlanningQueries.CanAddProgress(startRank);
         var owned = OwnedMotesByRank();
         _planSignature = _characterName + "|" + string.Join(",", owned.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}:{kv.Value}"));
-        string name = _planName.Text.Trim();
+        string name = PlanTargetName(kind, _planName, _planInventoryName);
         var inventory = PlanInventoryRows();
         var copies = equipment ? MotePlanningQueries.SelectCopies(inventory, name, startRank).Spares.ToList() : [];
         RefreshHypotheticalCopies(name, startRank, copies, equipment);
@@ -548,6 +565,33 @@ public partial class MainWindow
         _planSummary.Visibility = _planSummary.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         _planHost.Children.Clear();
         RenderMotePlan(model, _planHost, _planPanel?.FontSize ?? 13, request.Page);
+    }
+
+    internal static void BindPlanInventorySelection(TextBox search, ComboBox selector, Action<string> selected)
+    {
+        search.TextChanged += (_, _) => selector.SelectedItem = null;
+        selector.SelectionChanged += (_, _) =>
+        {
+            if (selector.SelectedItem is string name)
+            {
+                selected(name);
+            }
+        };
+    }
+
+    internal static void UpdatePlanNameChoices(ComboBox selector, string[] names, string filter)
+    {
+        string target = selector.SelectedItem as string ?? filter;
+        selector.ItemsSource = names;
+        selector.SelectedItem = names.FirstOrDefault(name =>
+            name.Equals(target, StringComparison.OrdinalIgnoreCase));
+    }
+
+    internal static string PlanTargetName(MoteUpgradeKind kind, TextBox search, ComboBox? selector)
+    {
+        return kind == MoteUpgradeKind.Equipment && selector?.SelectedItem is string selected
+            ? selected
+            : search.Text.Trim();
     }
 
     internal static int UpdatePlanTargetRanks(ComboBox selector, int currentRank)

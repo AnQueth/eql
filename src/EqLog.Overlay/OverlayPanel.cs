@@ -76,7 +76,10 @@ public sealed record OverlayTable(IReadOnlyList<string>? Header, IReadOnlyList<I
                 merged.TryAdd(text, url);
             }
         }
-        return this with { Links = merged };
+        return this with
+        {
+            Links = merged
+        };
     }
 
     public bool Equals(OverlayTable? other)
@@ -144,7 +147,7 @@ public sealed class OverlayPanel : ContentControl
     private readonly TextBlock _subtitle = new() { Foreground = Brushes.LightGray, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly StackPanel _rows = new();
     private readonly ScrollViewer _scroll;
-    private readonly ObservableCollection<OverlayRow> _virtualRows = [];
+    private readonly OverlayRowCollection _virtualRows = [];
     private readonly VirtualRowList? _virtualList;
     private readonly TextBlock _hint;
     private readonly Thumb _dragHandle;
@@ -725,11 +728,20 @@ public sealed class OverlayPanel : ContentControl
 
         if (_virtualList is not null)
         {
-            if (_invalidateRows)
+            int changed = Math.Abs(_virtualRows.Count - rows.Count);
+            for (int index = 0; index < Math.Min(_virtualRows.Count, rows.Count) && changed <= 64; index++)
             {
-                _virtualRows.Clear();
-                _current = [];
+                if (_virtualRows[index] != rows[index])
+                {
+                    changed++;
+                }
+            }
+            if (_invalidateRows || changed > 64)
+            {
+                _virtualRows.ReplaceAll(rows);
+                _current = rows;
                 _invalidateRows = false;
+                return;
             }
             int shared = Math.Min(_virtualRows.Count, rows.Count);
             for (int i = 0; i < shared; i++)
@@ -841,7 +853,10 @@ public sealed class OverlayPanel : ContentControl
             };
             track.Click += (_, e) =>
             {
-                SpawnTrackToggleRequested?.Invoke(spawnTrack with { Tracked = track.IsChecked == true });
+                SpawnTrackToggleRequested?.Invoke(spawnTrack with
+                {
+                    Tracked = track.IsChecked == true
+                });
                 e.Handled = true;
             };
             DockPanel.SetDock(track, Dock.Left);
@@ -860,7 +875,10 @@ public sealed class OverlayPanel : ContentControl
             };
             track.Click += (_, e) =>
             {
-                SpellTrackToggleRequested?.Invoke(spellTrack with { Tracked = track.IsChecked == true });
+                SpellTrackToggleRequested?.Invoke(spellTrack with
+                {
+                    Tracked = track.IsChecked == true
+                });
                 e.Handled = true;
             };
             DockPanel.SetDock(track, Dock.Left);

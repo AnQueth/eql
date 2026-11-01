@@ -54,6 +54,7 @@ public partial class MainWindow
                 await Task.WhenAll(lookups.Select(lookup => lookup.Completion));
                 ResetWikiCacheStatus.Text = "Clearing wiki caches from memory and disk...";
                 _questCache.Clear();
+                _questCacheRevision++;
                 _questAttempted.Clear();
                 _questFailed.Clear();
                 _questCacheCursor = 0;
@@ -66,13 +67,12 @@ public partial class MainWindow
                 _questProgress = "Wiki caches reset. Items will be checked again.";
                 QuestLookupStatus.Text = _questProgress;
                 _itemEffects.Clear();
+                _itemEffectsRevision++;
                 _itemEffectErrors.Clear();
                 _itemEffectRetries.Clear();
                 _itemEffectsStorageError = null;
                 _skyCatalog = null;
-                _skyContent = null;
                 _skyOverlayLoadAttempted = false;
-                _skyNextRender = default;
                 _skyStatus = "Wiki cache reset. Reloading when next shown.";
                 _spawnWikiPending.Clear();
                 _spawnWikiRetry.Clear();

@@ -20,12 +20,15 @@ public partial class MainWindow
     private Button? _refreshExaltations;
     private string _exaltationFilter = "";
     private IReadOnlyList<ExaltationLocation> _exaltationLocations = [];
+    private AsyncTextFilter<OverlayContent>? _exaltationFilterWork;
+    private long _itemEffectsRevision;
 
     private void InitializeExaltations(StartupState state)
     {
         foreach (var result in state.ItemEffects)
         {
             _itemEffects[result.Item] = result;
+            _itemEffectsRevision++;
             _wikiRepository.SeedItemEffects(result);
         }
         if (state.ItemEffectsError is { } error)
@@ -114,37 +117,64 @@ public partial class MainWindow
         {
             _ = LookupExaltationEffectsAsync(force: false);
         }
+        _exaltationFilterWork ??= new(Dispatcher, error => _itemEffectsStorageError = $"Effect filtering failed: {error.Message}");
+        string? character = _characterName;
+        bool current = _inventoryRowsCharacter == character && _inventoryRows.Count > 0;
+        bool installedOnly = _exaltationsInstalledOnly?.IsChecked == true;
+        string filter = _exaltationFilter;
+        string? activeItem = _itemEffectsActive;
+        string? storageError = _itemEffectsStorageError;
+        var exported = _inventoryLoaded?.Written;
+        var key = (all, character, current, installedOnly, filter, activeItem, storageError, exported,
+            _itemEffectsRevision, _session.Revision);
+        if (!_exaltationFilterWork.Matches(key))
+        {
+            var effects = new Dictionary<string, ItemEffectInfo>(_itemEffects, StringComparer.OrdinalIgnoreCase);
+            var errors = new Dictionary<string, string>(_itemEffectErrors, StringComparer.OrdinalIgnoreCase);
+            _exaltationFilterWork.Request(key, token => BuildExaltationsContent(all, effects, errors, character,
+                current, installedOnly, filter, activeItem, storageError, exported, token),
+                context: (character, _session.Revision));
+        }
+        return _exaltationFilterWork.Result ?? new("Exaltations", character, [new("Filtering exaltations...", Wrap: true)]);
+    }
+
+    private static OverlayContent BuildExaltationsContent(IReadOnlyList<ExaltationLocation> all,
+        IReadOnlyDictionary<string, ItemEffectInfo> effects, IReadOnlyDictionary<string, string> errors,
+        string? character, bool current, bool installedOnly, string filter, string? activeItem,
+        string? storageError, DateTime? exported, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
         var rows = new List<OverlayRow>();
-        if (_itemEffectsStorageError is { } storageError)
+        if (storageError is not null)
         {
             rows.Add(new(storageError, Wrap: true));
         }
-        if (_inventoryRowsCharacter != _characterName || _inventoryRows.Count == 0)
+        if (!current)
         {
             rows.Add(new("Waiting for this character's inventory export. Run /outputfile inventory in game.", Wrap: true));
-            return new("Exaltations", _characterName, rows);
+            return new("Exaltations", character, rows);
         }
-        var shown = all.Where(location => (_exaltationsInstalledOnly?.IsChecked != true || location.Installed) &&
-            (!location.WikiDefault || _itemEffects.GetValueOrDefault(location.BaseItem) is { Found: true, Effects.Count: > 0 }) &&
-            InventoryQueries.MatchesExaltation(location, _itemEffects.GetValueOrDefault(location.BaseItem), _exaltationFilter)).ToArray();
+        var shown = all.Where(location => (!installedOnly || location.Installed) &&
+            (!location.WikiDefault || effects.GetValueOrDefault(location.BaseItem) is { Found: true, Effects.Count: > 0 }) &&
+            InventoryQueries.MatchesExaltation(location, effects.GetValueOrDefault(location.BaseItem), filter)).ToArray();
         int ready = all.Select(location => location.BaseItem).Distinct(StringComparer.OrdinalIgnoreCase)
-            .Count(item => _itemEffects.ContainsKey(item));
+            .Count(item => effects.ContainsKey(item));
         int total = all.Select(location => location.BaseItem).Distinct(StringComparer.OrdinalIgnoreCase).Count();
         rows.Add(new($"{shown.Where(location => !location.WikiDefault).Sum(location => location.Count)} matching exported copies / " +
             $"{all.Where(location => !location.WikiDefault).Sum(location => location.Count)} total; " +
             $"{shown.Count(location => location.WikiDefault)} unverified wiki-default matches; " +
             $"effects loaded {ready}/{total}." +
-            (_itemEffectsActive is { } active ? $" Looking up {active}..." : ""),
+            (activeItem is { } active ? $" Looking up {active}..." : ""),
             Wrap: true, Scale: 0.9));
-        if (_inventoryLoaded is { } exported)
+        if (exported is DateTime exportTime)
         {
-            rows.Add(new($"Inventory snapshot: {exported.Written.ToLocalTime():g}. Re-export after moving or swapping exaltations.",
+            rows.Add(new($"Inventory snapshot: {exportTime.ToLocalTime():g}. Re-export after moving or swapping exaltations.",
                 Wrap: true, Scale: 0.9));
         }
         foreach (string item in all.Select(location => location.BaseItem).Distinct(StringComparer.OrdinalIgnoreCase)
-            .Where(item => _itemEffectErrors.ContainsKey(item)))
+            .Where(item => errors.ContainsKey(item)))
         {
-            rows.Add(new($"Effect lookup failed for {item}: {_itemEffectErrors[item]}. " +
+            rows.Add(new($"Effect lookup failed for {item}: {errors[item]}. " +
                 "Effect searches may be incomplete. Retrying after 5 minutes, or use Refresh effects.", Wrap: true));
         }
         if (shown.Length == 0)
@@ -154,9 +184,10 @@ public partial class MainWindow
         }
         foreach (var group in shown.GroupBy(location => (location.BaseItem, location.WikiDefault)))
         {
-            _itemEffects.TryGetValue(group.Key.BaseItem, out var info);
+            token.ThrowIfCancellationRequested();
+            effects.TryGetValue(group.Key.BaseItem, out var info);
             string? warning = null;
-            if (_itemEffectErrors.TryGetValue(group.Key.BaseItem, out string? error))
+            if (errors.TryGetValue(group.Key.BaseItem, out string? error))
             {
                 warning = $"Wiki lookup failed: {error}. Retrying after 5 minutes, or use Refresh effects.";
             }
@@ -167,7 +198,7 @@ public partial class MainWindow
             }
             rows.Add(BuildExaltationCard(group.ToArray(), info, warning));
         }
-        return new("Exaltations", _characterName, rows);
+        return new("Exaltations", character, rows);
     }
 
     internal static OverlayRow BuildExaltationCard(IReadOnlyList<ExaltationLocation> copies,
@@ -271,6 +302,7 @@ public partial class MainWindow
                         force ? WikiPriority.Interactive : WikiPriority.Background, force, token);
                     token.ThrowIfCancellationRequested();
                     _itemEffects[item] = result;
+                    _itemEffectsRevision++;
                     _itemEffectErrors.Remove(item);
                     _itemEffectRetries.Remove(item);
                     _itemEffectsStorageError = _wikiRepository.GetCacheError("item-effects:" + item) is { } cacheError
@@ -285,6 +317,7 @@ public partial class MainWindow
                 {
                     UsageTelemetry.TrackError(ex, UsageErrorSource.Wiki);
                     _itemEffectErrors[item] = ex.Message;
+                    _itemEffectsRevision++;
                     _itemEffectRetries[item] = DateTime.UtcNow.AddMinutes(5);
                 }
             }

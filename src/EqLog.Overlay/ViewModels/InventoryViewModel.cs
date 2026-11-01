@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows.Data;
+using System.Windows.Threading;
 using EqLog.Application.Inventory;
 using EqLog.Core;
 
@@ -12,14 +13,78 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
     private string _filter = "";
     private QuestInventoryItem? _selected;
     private string _importStatus = "Waiting for inventory export.";
+    private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
+    private readonly InventoryFilterWork _filterWork;
+    private HashSet<QuestInventoryItem>? _matches;
+    private bool _filtersSuspended;
+    private bool _refreshingFilter;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public InventoryViewModel()
     {
+        _filterWork = new InventoryFilterWork(_dispatcher);
         ItemsView = CollectionViewSource.GetDefaultView(Items);
         ItemsView.Filter = item => item is QuestInventoryItem row &&
-            OverlayPresenters.MatchesItemName(row.Item, Filter);
+            (_matches is null || _matches.Contains(row));
+    }
+
+    public Task PendingFilter
+    {
+        get
+        {
+            return _filterWork.Pending;
+        }
+    }
+
+    public void SuspendFilters()
+    {
+        _dispatcher.VerifyAccess();
+        _filtersSuspended = true;
+        _filterWork.Cancel();
+    }
+
+    public void ResumeFilters()
+    {
+        _dispatcher.VerifyAccess();
+        _filtersSuspended = false;
+        RequestFilter(false);
+    }
+
+    private void RequestFilter(bool debounce)
+    {
+        _dispatcher.VerifyAccess();
+        _filterWork.Cancel();
+        if (_filtersSuspended)
+        {
+            return;
+        }
+        var rows = Items.ToArray();
+        var names = rows.Select(row => row.Item).ToArray();
+        string filter = Filter;
+        _filterWork.Start(
+            cancellation => InventoryFilterWork.MatchNames(names, filter, cancellation),
+            (indices, cancellation) =>
+            {
+                _matches = indices.Select(index => rows[index]).ToHashSet();
+                _refreshingFilter = true;
+                try
+                {
+                    ItemsView.Refresh();
+                }
+                finally
+                {
+                    _refreshingFilter = false;
+                }
+                Notify(nameof(SelectedItem));
+                return Task.CompletedTask;
+            },
+            error =>
+            {
+                ImportStatus = $"Inventory filter failed: {error.Message}";
+                UsageTelemetry.TrackError(error, UsageErrorSource.InventoryImport);
+            },
+            debounce);
     }
 
     public ObservableCollection<QuestInventoryItem> Items { get; } = [];
@@ -57,12 +122,13 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
         }
         set
         {
+            _dispatcher.VerifyAccess();
             if (_filter == value)
             {
                 return;
             }
             _filter = value;
-            ItemsView.Refresh();
+            RequestFilter(true);
             Notify(nameof(Filter));
         }
     }
@@ -75,6 +141,14 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
         }
         set
         {
+            _dispatcher.VerifyAccess();
+            // DataGrid clears its visible selection during Refresh. Keep the detached
+            // selection/copy details when only the filter hides that item.
+            if (value is null && _selected is not null && Items.Contains(_selected) &&
+                (_refreshingFilter || (_matches is not null && !_matches.Contains(_selected))))
+            {
+                return;
+            }
             if (ReferenceEquals(_selected, value))
             {
                 return;
@@ -87,6 +161,8 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
 
     public void Apply(InventorySnapshot snapshot, string? character)
     {
+        _dispatcher.VerifyAccess();
+        _filterWork.Cancel();
         Revision = snapshot.Revision;
         State = snapshot.ReadModel;
         Export = snapshot.Export;
@@ -127,12 +203,22 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
         {
             SelectedItem = null;
         }
-        ItemsView.Refresh();
+        // Initial/clear-filter source display stays immediate; active filters use a detached query.
+        if (string.IsNullOrWhiteSpace(Filter))
+        {
+            _matches = null;
+            ItemsView.Refresh();
+        }
+        else
+        {
+            RequestFilter(false);
+        }
         RefreshCopies();
     }
 
     public void RefreshCopies()
     {
+        _dispatcher.VerifyAccess();
         Copies = [];
         if (SelectedItem is null)
         {

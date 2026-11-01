@@ -284,9 +284,8 @@ public partial class MainWindow : Window
         _dock = new DockWindow(_settings.DockWindow);
         _activeDockWorkspaceId = _settings.DockWindow.ActiveWorkspaceId;
         _dock.WorkspaceChanged += Dock_WorkspaceChanged;
-        for (int i = 0; i < OverlayPresenters.All.Count; i++)
+        foreach (var def in SettingsOverlayDefinitions())
         {
-            var def = OverlayPresenters.All[i];
             var p = _settings.Overlays[def.Key];
             p.FontSize ??= _settings.FontSize;
             p.BackgroundOpacity ??= _settings.BackgroundOpacity;
@@ -449,6 +448,11 @@ public partial class MainWindow : Window
 
             ApplyMode(def.Key);
         }
+    }
+
+    internal static IReadOnlyList<OverlayDefinition> SettingsOverlayDefinitions()
+    {
+        return OverlayPresenters.All.OrderBy(def => def.Caption, StringComparer.CurrentCultureIgnoreCase).ToArray();
     }
 
     private void TrackUsageState()
@@ -1598,6 +1602,13 @@ public partial class MainWindow : Window
 
     private async Task ShutdownAsync()
     {
+        _questFilterWork?.Dispose();
+        _skyFilterWork?.Dispose();
+        _rawFilterWork?.Dispose();
+        _npcFilterWork?.Dispose();
+        _exaltationFilterWork?.Dispose();
+        _planNamesWork?.Dispose();
+        CancelInventoryFilters();
         _updateCheckTimer.Stop();
         // Start disposal first so it abandons wiki work before the callers' tokens cancel it layer by layer.
         var disposingWiki = _wikiRepository.DisposeAsync();
@@ -1996,7 +2007,28 @@ public partial class MainWindow : Window
         }
 
         string filter = RawFilterBox.Text;
-        var selection = RawLogQueries.Filter(snapshot, filter, RegexFilterBox.IsChecked == true, _characterName, RawDisplayMax);
+        bool regex = RegexFilterBox.IsChecked == true;
+        string? character = _characterName;
+        _rawFilterWork ??= new(Dispatcher, error => RawStatusText.Text = $"Log filtering failed: {error.Message}");
+        long revision = _session.Revision;
+        var key = (_rawShownVersion, filter, regex, character, hold, revision);
+        _rawFilterWork.Request(key, token =>
+        {
+            token.ThrowIfCancellationRequested();
+            return RawLogQueries.Filter(snapshot, filter, regex, character, RawDisplayMax);
+        }, selection =>
+        {
+            if (character == _characterName && revision == _session.Revision)
+            {
+                ApplyRawLines(selection, snapshot.Length, filter, hold);
+            }
+        }, delayMilliseconds: force ? 180 : 0);
+    }
+
+    private AsyncTextFilter<RawLogSelection>? _rawFilterWork;
+
+    private void ApplyRawLines(RawLogSelection selection, int total, string filter, bool hold)
+    {
         string status = selection.Status switch
         {
             RawLogFilterStatus.Success => "",
@@ -2017,7 +2049,7 @@ public partial class MainWindow : Window
             RawLinesList.ScrollIntoView(shown[^1]);
         }
 
-        RawStatusText.Text = status + $"Showing {shown.Length:N0} of the last {snapshot.Length:N0} lines" +
+        RawStatusText.Text = status + $"Showing {shown.Length:N0} of the last {total:N0} lines" +
                              (filter.Length > 0 ? " matching the filter" : "") +
                              (hold ? " (paused: scroll to the bottom and clear the selection, or untick Pause, to follow)" : "") +
                              ". Double-click a line to make an alert trigger from it.";

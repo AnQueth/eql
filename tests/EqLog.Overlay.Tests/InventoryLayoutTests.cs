@@ -1,5 +1,4 @@
 using System.IO;
-using System.Runtime.ExceptionServices;
 using System.Windows;
 using System.Windows.Automation.Peers;
 using System.Windows.Automation.Provider;
@@ -20,28 +19,10 @@ public sealed class InventoryLayoutTests
     [Fact]
     public void InventorySplitter_ResizesWholeQuestPane_AndPreservesMinimumHeights()
     {
-        Exception? failure = null;
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                VerifySplitter();
-            }
-            catch (Exception ex)
-            {
-                failure = ex;
-            }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        if (failure is not null)
-        {
-            ExceptionDispatchInfo.Capture(failure).Throw();
-        }
+        InventoryFilterTestDispatcher.Run(VerifySplitterAsync);
     }
 
-    private static void VerifySplitter()
+    private static async Task VerifySplitterAsync()
     {
         XNamespace presentation = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
         XNamespace xaml = "http://schemas.microsoft.com/winfx/2006/xaml";
@@ -80,7 +61,7 @@ public sealed class InventoryLayoutTests
         var copies = Assert.IsType<DataGrid>(grid.FindName("InventoryCopiesGrid"));
         Assert.True(copies.IsReadOnly);
         Assert.Equal(["Item", "Rank", "Qty", "Location", "Kind"], copies.Columns.Select(column => column.Header));
-        VerifyBindings(grid, owned, filter, copies);
+        await VerifyBindingsAsync(grid, owned, filter, copies);
         details.SelectedIndex = 1;
         var results = Assert.IsType<ListBox>(grid.FindName("QuestResults"));
         var status = Assert.IsAssignableFrom<FrameworkElement>(grid.FindName("QuestLookupStatus"));
@@ -143,7 +124,7 @@ public sealed class InventoryLayoutTests
         grid.UpdateLayout();
     }
 
-    private static void VerifyBindings(Grid grid, DataGrid owned, TextBox filter, DataGrid copies)
+    private static async Task VerifyBindingsAsync(Grid grid, DataGrid owned, TextBox filter, DataGrid copies)
     {
         var model = new InventoryViewModel();
         var at = new DateTime(2026, 11, 1, 12, 0, 0, DateTimeKind.Utc);
@@ -165,10 +146,14 @@ public sealed class InventoryLayoutTests
         filter.Text = "sword";
         Layout(grid);
         Assert.Equal("sword", model.Filter);
+        Assert.Equal(2, owned.Items.Count);
+        await model.PendingFilter;
+        Layout(grid);
         Assert.Single(owned.Items.Cast<QuestInventoryItem>());
         rows = [new("Bank2", "Sword +10", 1, 1, InventoryStorage.Bank)];
         state.ApplyExport("Que", rows, at.AddMinutes(1));
         model.Apply(new(2, state.Clone(), new("Que", new("export", 1, at.AddMinutes(1)), Array.AsReadOnly(rows))), "Que");
+        await model.PendingFilter;
         Layout(grid);
         Assert.Same(owned.SelectedItem, model.SelectedItem);
         Assert.Equal("Sword +10", Assert.Single(copies.Items.Cast<InventoryItemLocation>()).Item);
@@ -178,6 +163,8 @@ public sealed class InventoryLayoutTests
             .SelectMany(link => link.Inlines.OfType<Run>()), run => run.Text == "Sword +10");
         Assert.Contains("1 copies", Assert.IsType<TextBlock>(grid.FindName("InventoryCopiesStatus")).Text);
         filter.Text = "";
+        await model.PendingFilter;
+        Layout(grid);
         grid.DataContext = null;
     }
 

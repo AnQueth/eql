@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
-using System.Windows.Data;
+using System.Windows.Threading;
 using EqLog.Application.Inventory;
 using EqLog.Core;
 
@@ -14,6 +14,8 @@ public partial class MainWindow
     private TextBlock? _mergeSummary;
     private TextBox? _mergeFilter;
     private OverlayPanel? _mergePanel;
+    private InventoryFilterWork? _mergeWork;
+    private bool _mergeSuspended;
     private IReadOnlyList<InventoryExportItem> _inventoryRows
     {
         get
@@ -40,7 +42,7 @@ public partial class MainWindow
             ToolTip = "Filter by item name (case-insensitive). Clear to show all. Unlock floating panels to type.",
         };
         System.Windows.Automation.AutomationProperties.SetName(filter, "Item name filter");
-        filter.TextChanged += (_, _) => filterChanged(filter.Text);
+        TextFilterBinding.Bind(filter, filterChanged);
         var toolbar = new StackPanel { Children = { filter } };
         if (options is not null)
         {
@@ -51,12 +53,9 @@ public partial class MainWindow
     }
 
     /// <summary>Filters only the displayed inventory rows, preserving ownership data and automatic lookups.</summary>
-    internal static void ConfigureInventoryItemFilter(DataGrid grid, TextBox filter)
+    internal static InventoryFilterWork ConfigureInventoryItemFilter(DataGrid grid, TextBox filter)
     {
-        var view = CollectionViewSource.GetDefaultView(grid.ItemsSource);
-        view.Filter = item => item is QuestInventoryItem inventoryItem &&
-            OverlayPresenters.MatchesItemName(inventoryItem.Item, filter.Text);
-        filter.TextChanged += (_, _) => view.Refresh();
+        return InventoryFilterBinding.Attach(grid, filter);
     }
 
     private void ConfigureInventoryOverlay(OverlayPanel panel)
@@ -65,17 +64,20 @@ public partial class MainWindow
         LootQuestsTab.Content = null;
         Tabs.Items.Remove(LootQuestsTab);
         panel.SetBody(LootQuestsContent);
+        LootQuestsContent.Unloaded += (_, _) => _inventoryView.SuspendFilters();
+        LootQuestsContent.Loaded += (_, _) => _inventoryView.ResumeFilters();
     }
 
     private void ConfigureMergeOverlay(OverlayPanel panel)
     {
         _mergePanel = panel;
+        _mergeWork = new InventoryFilterWork(Dispatcher);
         _mergeFilter = new TextBox
         {
             ToolTip = "Filter by item name or location (case-insensitive). Clear to show all.",
             Margin = new Thickness(0, 0, 0, 6),
         };
-        _mergeFilter.TextChanged += (_, _) => RefreshMergeView();
+        _mergeFilter.TextChanged += (_, _) => RefreshMergeView(true);
         _mergeSummary = new FixedLineTextBlock { Margin = new Thickness(0, 0, 0, 6) };
         _mergeSummary.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
         _mergeHost = new StackPanel();
@@ -92,6 +94,16 @@ public partial class MainWindow
         mergeView.Children.Add(mergeScroll);
 
         panel.SetBody(mergeView);
+        mergeView.Unloaded += (_, _) =>
+        {
+            _mergeSuspended = true;
+            _mergeWork.Cancel();
+        };
+        mergeView.Loaded += (_, _) =>
+        {
+            _mergeSuspended = false;
+            RefreshMergeView();
+        };
         RefreshMergeView();
     }
 
@@ -172,36 +184,81 @@ public partial class MainWindow
 
     private void RefreshMergeView()
     {
-        if (_mergeHost is null || _mergeSummary is null || _mergeFilter is null)
+        RefreshMergeView(false);
+    }
+
+    /// <summary>Call on the dispatcher when the inventory/session lifetime ends.</summary>
+    internal void CancelInventoryFilters()
+    {
+        Dispatcher.VerifyAccess();
+        _inventoryView.SuspendFilters();
+        _mergeSuspended = true;
+        _mergeWork?.Cancel();
+    }
+
+    private void RefreshMergeView(bool debounce)
+    {
+        Dispatcher.VerifyAccess();
+        if (_mergeHost is null || _mergeSummary is null || _mergeFilter is null || _mergeWork is null)
         {
             return;
         }
-
-        _mergeHost.Children.Clear();
+        _mergeWork.Cancel();
+        if (_mergeSuspended)
+        {
+            return;
+        }
         bool current = _inventoryRowsCharacter is not null &&
             _inventoryRowsCharacter.Equals(_characterName, StringComparison.OrdinalIgnoreCase);
         if (!current || _inventoryRows.Count == 0)
         {
+            _mergeHost.Children.Clear();
             _mergeSummary.Text = "Waiting for this character's inventory export. Run /outputfile inventory in game.";
             return;
         }
 
-        var groups = InventoryQueries.MergeGroups(_inventoryRows);
-        string filter = _mergeFilter.Text.Trim();
-        var shown = filter.Length == 0
-            ? groups
-            : groups.Where(g => g.BaseName.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-                g.Items.Any(i => i.Where.Contains(filter, StringComparison.OrdinalIgnoreCase))).ToArray();
-        _mergeSummary.Text = groups.Count == 0
+        var rows = _inventoryRows.ToArray();
+        string filter = _mergeFilter.Text;
+        long revision = _inventoryView.Revision;
+        string? character = _characterName;
+        _mergeWork.Start(
+            cancellation => InventoryFilterWork.QueryMerge(rows, filter, cancellation),
+            async (result, cancellation) =>
+            {
+                if (revision != _inventoryView.Revision || character != _characterName)
+                {
+                    return;
+                }
+                await RenderMergeAsync(result, cancellation, revision, character);
+            },
+            error =>
+            {
+                _mergeSummary.Text = $"Merge filter failed: {error.Message}";
+                UsageTelemetry.TrackError(error, UsageErrorSource.InventoryImport);
+            },
+            debounce);
+    }
+
+    private async Task RenderMergeAsync(
+        InventoryMergeResult result, CancellationToken cancellation, long revision, string? character)
+    {
+        var host = _mergeHost!;
+        _mergeSummary!.Text = result.Total == 0
             ? "Nothing to merge: no item has copies at different +N ranks."
-            : $"{groups.Count:N0} item(s) have more than one copy at different ranks" +
-                (shown.Count == groups.Count ? "." : $"; {shown.Count:N0} match the filter.") +
+            : $"{result.Total:N0} item(s) have more than one copy at different ranks" +
+                (result.Shown.Count == result.Total ? "." : $"; {result.Shown.Count:N0} match the filter.") +
                 " Plain copies count as +0. Two copies that were never upgraded are not listed, because they look like stackable items." +
                 " Collections and installed augments are left out.";
 
         double fontSize = _mergePanel?.FontSize ?? 13;
-        foreach (var group in shown)
+        host.Children.Clear();
+        foreach (var group in result.Shown)
         {
+            cancellation.ThrowIfCancellationRequested();
+            if (revision != _inventoryView.Revision || character != _characterName)
+            {
+                return;
+            }
             var heading = new TextBlock
             {
                 FontWeight = FontWeights.SemiBold,
@@ -230,13 +287,23 @@ public partial class MainWindow
             link.Click += ItemWikiLink_Click;
             heading.Inlines.Add(link);
             heading.Inlines.Add(new Run($"  ·  {group.Total:N0} copies"));
-            _mergeHost.Children.Add(heading);
+            host.Children.Add(heading);
 
-            var rows = group.Items
-                .Select(i => (IReadOnlyList<string>)[i.Rank > 0 ? $"+{i.Rank}" : "+0", i.Count.ToString("N0"), i.Where])
-                .ToArray();
-            var table = OverlayPanel.BuildTable(new OverlayTable(["Rank", "Qty", "Location"], rows), fontSize);
-            _mergeHost.Children.Add(table);
+            var rows = group.Rows;
+            // Even a single item can have many exported locations. Bound each table
+            // construction and yield between chunks, not just between item groups.
+            for (int offset = 0; offset < rows.Count; offset += 32)
+            {
+                cancellation.ThrowIfCancellationRequested();
+                if (revision != _inventoryView.Revision || character != _characterName)
+                {
+                    return;
+                }
+                var batch = rows.Skip(offset).Take(32).ToArray();
+                var table = OverlayPanel.BuildTable(new OverlayTable(["Rank", "Qty", "Location"], batch), fontSize);
+                host.Children.Add(table);
+                await Dispatcher.Yield(DispatcherPriority.Background);
+            }
         }
     }
 

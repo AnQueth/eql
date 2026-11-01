@@ -26,6 +26,7 @@ public partial class MainWindow
     private Button _npcNext = null!;
     private TextBlock _npcPageLabel = null!;
     private const int NpcHistoryPageSize = 10;
+    private AsyncTextFilter<NpcChoice[]>? _npcFilterWork;
 
     private sealed record NpcChoice(string Mob, string Zone)
     {
@@ -235,7 +236,24 @@ public partial class MainWindow
             return;
         }
         _npcChoicesNextRefresh = DateTime.Now.AddSeconds(2);
-        var matches = _session.SearchNpcs(_npcSearch.Text).Select(e => new NpcChoice(e.Mob, e.Zone)).ToArray();
+        string filter = _npcSearch.Text;
+        long revision = _session.Revision;
+        _npcFilterWork ??= new(Dispatcher, error => _npcStorageError = $"NPC filtering failed: {error.Message}");
+        _npcFilterWork.Request((filter, revision, _npcChoicesNextRefresh), token =>
+        {
+            token.ThrowIfCancellationRequested();
+            return _session.SearchNpcs(filter).Select(e => new NpcChoice(e.Mob, e.Zone)).ToArray();
+        }, matches =>
+        {
+            if (revision == _session.Revision && filter == _npcSearch.Text)
+            {
+                ApplyNpcChoices(matches);
+            }
+        });
+    }
+
+    private void ApplyNpcChoices(NpcChoice[] matches)
+    {
         string signature = string.Join("\n", matches.Select(m => m.Label));
         if (_npcChoicesSignature == signature)
         {

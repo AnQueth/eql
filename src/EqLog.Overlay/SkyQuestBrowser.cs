@@ -21,14 +21,13 @@ public partial class MainWindow
     private static readonly Brush SkyDim = FrozenBrush(Color.FromRgb(170, 170, 180));
 
     private SkyQuestCatalog? _skyCatalog;
+    private AsyncTextFilter<OverlayContent>? _skyFilterWork;
     private bool _skyLoading;
     private WikiPriority _skyLoadPriority;
     private bool _skyForceRefresh;
     private bool _skyOverlayLoadAttempted;
     private string _skyStatus = "";
     private ComboBox? _skyOverlayClass;
-    private OverlayContent? _skyContent;
-    private DateTime _skyNextRender;
 
     private async Task LoadSkyQuestsAsync(bool refresh, WikiPriority priority = WikiPriority.Interactive)
     {
@@ -53,7 +52,6 @@ public partial class MainWindow
         _skyLoadPriority = priority;
         _skyForceRefresh = refresh;
         _skyStatus = "Loading Plane of Sky class quests...";
-        _skyNextRender = default;
         try
         {
             _skyCatalog = await _wikiRepository.GetSkyAsync(_skyLoadPriority, _skyForceRefresh, token);
@@ -75,13 +73,9 @@ public partial class MainWindow
         {
             if (_skyCatalog is not null && _skyOverlayClass is not null)
             {
-                string selected = _settings.SkyClass;
-                _skyOverlayClass.ItemsSource = new[] { AllSkyClasses }
-                    .Concat(_skyCatalog.Quests.Select(q => q.Class).Distinct().Order()).ToArray();
-                _skyOverlayClass.SelectedItem = _skyOverlayClass.Items.Contains(selected) ? selected : AllSkyClasses;
+                PopulateSkyClasses(_skyOverlayClass, _skyCatalog, _settings.SkyClass);
             }
             _skyLoading = false;
-            _skyNextRender = default;
         }
     }
 
@@ -107,23 +101,21 @@ public partial class MainWindow
         search.TextChanged += (_, _) =>
         {
             _settings.SkyFilter = search.Text;
-            _skyNextRender = default;
         };
         searchRow.Children.Add(search);
         bar.Children.Add(searchRow);
 
         _skyOverlayClass = new ComboBox
         {
-            ItemsSource = new[] { AllSkyClasses, _settings.SkyClass }.Distinct().ToArray(),
-            SelectedItem = _settings.SkyClass,
             ToolTip = "Class filter for By class and By dropper. Watching shows every watched quest.",
         };
+        PopulateSkyClasses(_skyOverlayClass, _skyCatalog, _settings.SkyClass);
+        _settings.SkyClass = (string)_skyOverlayClass.SelectedItem;
         _skyOverlayClass.SelectionChanged += (_, _) =>
         {
             if (_skyOverlayClass.SelectedItem is string selected)
             {
                 _settings.SkyClass = selected;
-                _skyNextRender = default;
             }
         };
         bar.Children.Add(_skyOverlayClass);
@@ -150,12 +142,25 @@ public partial class MainWindow
             if (e.Source == views && views.SelectedItem is TabItem { Tag: int view })
             {
                 _settings.SkyView = view;
-                _skyNextRender = default;
             }
         };
         bar.Children.Add(views);
         panel.SetToolbar(bar);
         panel.WatchToggleRequested += ToggleSkyWatch;
+    }
+
+    internal static void PopulateSkyClasses(ComboBox selector, SkyQuestCatalog? catalog, string selected)
+    {
+        var classes = catalog is null
+            ? new[] { selected }
+            : catalog.Quests.Select(quest => quest.Class);
+        var choices = new[] { AllSkyClasses }.Concat(classes.Where(name => !string.IsNullOrWhiteSpace(name)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name == AllSkyClasses ? 0 : 1)
+            .ThenBy(name => name, StringComparer.CurrentCultureIgnoreCase).ToArray();
+        selector.ItemsSource = choices;
+        selector.SelectedItem = choices.FirstOrDefault(name => name.Equals(selected, StringComparison.OrdinalIgnoreCase))
+            ?? AllSkyClasses;
     }
 
     private void ToggleSkyWatch(string key)
@@ -172,7 +177,6 @@ public partial class MainWindow
         }
 
         SaveSettingsInBackground(error => _skyStatus = $"Could not save watched quests: {error}");
-        _skyNextRender = default;
     }
 
     private OverlayContent SkyOverlayContent()
@@ -183,27 +187,42 @@ public partial class MainWindow
             _ = LoadSkyQuestsAsync(false, WikiPriority.Background);
         }
 
-        if (_skyContent is null || DateTime.Now >= _skyNextRender)
+        _skyFilterWork ??= new(Dispatcher, error => _skyStatus = $"Sky filtering failed: {error.Message}");
+        var inventory = _questInventory;
+        string character = _characterName ?? "";
+        string filter = _settings.SkyFilter;
+        string selectedClass = _settings.SkyClass;
+        int view = _settings.SkyView;
+        var catalog = _skyCatalog;
+        bool loading = _skyLoading;
+        string status = _skyStatus;
+        var key = (inventory, character, filter, selectedClass, view, catalog, loading, status,
+            string.Join("\n", _settings.SkyWatched), _session.Revision);
+        if (!_skyFilterWork.Matches(key))
         {
-            _skyContent = BuildSkyOverlayContent();
-            _skyNextRender = DateTime.Now.AddSeconds(1);
+            var watched = _settings.SkyWatched.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _skyFilterWork.Request(key, token => BuildSkyOverlayContent(inventory, catalog, character, filter,
+                selectedClass, view, watched, loading, status, token), context: (character, _session.Revision));
         }
-        return _skyContent;
+        return _skyFilterWork.Result ?? new("Sky quest tracker", character, [new("Filtering Sky quests...", Wrap: true)]);
     }
 
-    private OverlayContent BuildSkyOverlayContent()
+    private static OverlayContent BuildSkyOverlayContent(InventoryReadModel inventory, SkyQuestCatalog? source,
+        string character, string filter, string selectedClass, int view, ISet<string> watched,
+        bool loading, string status, CancellationToken token)
     {
+        token.ThrowIfCancellationRequested();
         var rows = new List<OverlayRow>();
-        if (_skyLoading)
+        if (loading)
         {
             rows.Add(new("Refreshing wiki data...", Wrap: true, Foreground: SkyDim));
         }
-        else if (_skyStatus.Length > 0)
+        else if (status.Length > 0)
         {
-            rows.Add(new(_skyStatus, Wrap: true, Foreground: SkyNeed));
+            rows.Add(new(status, Wrap: true, Foreground: SkyNeed));
         }
 
-        if (_skyCatalog is not { } catalog)
+        if (source is not { } catalog)
         {
             if (rows.Count == 0)
             {
@@ -212,26 +231,23 @@ public partial class MainWindow
             return new("Sky quest tracker", null, rows);
         }
 
-        string character = _characterName ?? "";
-        string filter = _settings.SkyFilter;
-        var watched = _settings.SkyWatched.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var classQuests = catalog.Quests
-            .Where(q => _settings.SkyClass == AllSkyClasses || q.Class.Equals(_settings.SkyClass, StringComparison.OrdinalIgnoreCase))
+            .Where(q => selectedClass == AllSkyClasses || q.Class.Equals(selectedClass, StringComparison.OrdinalIgnoreCase))
             .ToArray();
         string subtitle;
-        switch (_settings.SkyView)
+        switch (view)
         {
             case SkyViewByDropper:
-                subtitle = AddSkyDropperRows(rows, catalog, classQuests, filter, character, watched);
+                subtitle = AddSkyDropperRows(rows, catalog, classQuests, filter, character, watched, inventory, selectedClass);
                 break;
             case SkyViewWatching:
-                subtitle = AddSkyWatchRows(rows, catalog, filter, character, watched);
+                subtitle = AddSkyWatchRows(rows, catalog, filter, character, watched, inventory);
                 break;
             case SkyViewNeed:
-                subtitle = AddSkyNeedRows(rows, catalog, classQuests, filter, character, watched);
+                subtitle = AddSkyNeedRows(rows, catalog, classQuests, filter, character, watched, inventory, selectedClass);
                 break;
             default:
-                subtitle = AddSkyClassRows(rows, catalog, classQuests, filter, character, watched);
+                subtitle = AddSkyClassRows(rows, catalog, classQuests, filter, character, watched, inventory, selectedClass);
                 break;
         }
 
@@ -239,14 +255,15 @@ public partial class MainWindow
         {
             subtitle += $" · {character}";
         }
+        token.ThrowIfCancellationRequested();
         return new("Sky quest tracker", subtitle, rows);
     }
 
-    private string AddSkyClassRows(List<OverlayRow> rows, SkyQuestCatalog catalog, IReadOnlyList<SkyQuest> classQuests,
-        string filter, string character, ISet<string> watched)
+    private static string AddSkyClassRows(List<OverlayRow> rows, SkyQuestCatalog catalog, IReadOnlyList<SkyQuest> classQuests,
+        string filter, string character, ISet<string> watched, InventoryReadModel inventory, string selectedClass)
     {
         var quests = classQuests.Where(q => SkyQueries.Matches(q, filter, catalog)).ToArray();
-        var progress = SkyQueries.ProgressAll(quests, _questInventory, character);
+        var progress = SkyQueries.ProgressAll(quests, inventory, character);
         foreach (var quest in quests)
         {
             AddSkyQuestRows(rows, catalog, quest, progress[quest], watched);
@@ -256,10 +273,10 @@ public partial class MainWindow
         {
             rows.Add(new("No quests match the search.", Wrap: true, Foreground: SkyDim));
         }
-        return $"{_settings.SkyClass} · {quests.Length} quests";
+        return $"{selectedClass} · {quests.Length} quests";
     }
 
-    private void AddSkyQuestRows(List<OverlayRow> rows, SkyQuestCatalog catalog, SkyQuest quest,
+    private static void AddSkyQuestRows(List<OverlayRow> rows, SkyQuestCatalog catalog, SkyQuest quest,
         IReadOnlyList<SkyItemProgress> progress, ISet<string> watched)
     {
         string key = SkyQueries.Key(quest);
@@ -361,11 +378,11 @@ public partial class MainWindow
         };
     }
 
-    private string AddSkyDropperRows(List<OverlayRow> rows, SkyQuestCatalog catalog, IReadOnlyList<SkyQuest> classQuests,
-        string filter, string character, ISet<string> watched)
+    private static string AddSkyDropperRows(List<OverlayRow> rows, SkyQuestCatalog catalog, IReadOnlyList<SkyQuest> classQuests,
+        string filter, string character, ISet<string> watched, InventoryReadModel inventory, string selectedClass)
     {
         var groups = SkyQueries.ByDropper(classQuests, catalog, filter);
-        var progress = SkyQueries.ProgressAll(classQuests, _questInventory, character);
+        var progress = SkyQueries.ProgressAll(classQuests, inventory, character);
         foreach (var group in groups)
         {
             bool known = group.Mob.Length > 0;
@@ -385,10 +402,11 @@ public partial class MainWindow
         {
             rows.Add(new("No items match the search.", Wrap: true, Foreground: SkyDim));
         }
-        return $"{_settings.SkyClass} · {groups.Count(g => g.Mob.Length > 0)} droppers";
+        return $"{selectedClass} · {groups.Count(g => g.Mob.Length > 0)} droppers";
     }
 
-    private string AddSkyWatchRows(List<OverlayRow> rows, SkyQuestCatalog catalog, string filter, string character, ISet<string> watched)
+    private static string AddSkyWatchRows(List<OverlayRow> rows, SkyQuestCatalog catalog, string filter, string character,
+        ISet<string> watched, InventoryReadModel inventory)
     {
         var quests = catalog.Quests.Where(q => watched.Contains(SkyQueries.Key(q))).ToArray();
         if (quests.Length == 0)
@@ -398,7 +416,7 @@ public partial class MainWindow
             return "Watching 0 quests";
         }
 
-        var progress = SkyQueries.ProgressAll(quests, _questInventory, character);
+        var progress = SkyQueries.ProgressAll(quests, inventory, character);
         var shown = quests.Where(q => SkyQueries.Matches(q, filter, catalog)).ToArray();
 
         var missing = new List<OverlayRow>();
@@ -425,17 +443,17 @@ public partial class MainWindow
         return $"Watching {quests.Length} quest{(quests.Length == 1 ? "" : "s")}";
     }
 
-    private string AddSkyNeedRows(List<OverlayRow> rows, SkyQuestCatalog catalog, IReadOnlyList<SkyQuest> classQuests,
-        string filter, string character, ISet<string> watched)
+    private static string AddSkyNeedRows(List<OverlayRow> rows, SkyQuestCatalog catalog, IReadOnlyList<SkyQuest> classQuests,
+        string filter, string character, ISet<string> watched, InventoryReadModel inventory, string selectedClass)
     {
-        var progress = SkyQueries.ProgressAll(classQuests, _questInventory, character);
+        var progress = SkyQueries.ProgressAll(classQuests, inventory, character);
         var (bosses, items) = AddSkyNeededRows(rows, SkyQueries.ByDropper(classQuests, catalog, filter), progress, watched, bossHeadings: true);
         if (items == 0)
         {
             rows.Add(new(string.IsNullOrWhiteSpace(filter) ? "Nothing needed - every listed item is owned." : "No needed items match the search.",
                 Wrap: true, Foreground: string.IsNullOrWhiteSpace(filter) ? SkyHave : SkyDim));
         }
-        return $"{_settings.SkyClass} · need {items} item{(items == 1 ? "" : "s")} from {bosses} boss{(bosses == 1 ? "" : "es")}";
+        return $"{selectedClass} · need {items} item{(items == 1 ? "" : "s")} from {bosses} boss{(bosses == 1 ? "" : "es")}";
     }
 
     /// <summary>

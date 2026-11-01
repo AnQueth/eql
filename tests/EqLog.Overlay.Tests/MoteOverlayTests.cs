@@ -13,6 +13,42 @@ namespace EqLog.Overlay.Tests;
 public sealed class MoteOverlayTests
 {
     [Fact]
+    public void InventorySelectionPreservesSearchAndPlansForSelectedItem()
+    {
+        OnSta(() =>
+        {
+            var search = new TextBox { Text = "bracer" };
+            var selector = new ComboBox
+            {
+                ItemsSource = new[] { "Leather Bracer", "Steel Bracer" },
+            };
+            string? target = null;
+            MainWindow.BindPlanInventorySelection(search, selector, name =>
+            {
+                target = name;
+            });
+            selector.SelectedIndex = 0;
+            Assert.Equal("bracer", search.Text);
+            Assert.Equal("Leather Bracer", target);
+            Assert.Equal("Leather Bracer", MainWindow.PlanTargetName(MoteUpgradeKind.Equipment, search, selector));
+            selector.SelectedIndex = 1;
+            Assert.Equal("bracer", search.Text);
+            Assert.Equal("Steel Bracer", target);
+            MainWindow.UpdatePlanNameChoices(selector, ["Leather Bracer", "Steel Bracer"], search.Text);
+            Assert.Equal("Steel Bracer", selector.SelectedItem);
+            Assert.Equal("bracer", search.Text);
+            search.Text = " leather ";
+            Assert.Null(selector.SelectedItem);
+            Assert.Equal("leather", MainWindow.PlanTargetName(MoteUpgradeKind.Equipment, search, selector));
+            selector.SelectedIndex = 0;
+            Assert.Equal("leather", MainWindow.PlanTargetName(MoteUpgradeKind.Spell, search, selector));
+            MainWindow.UpdatePlanNameChoices(selector, ["Steel Bracer"], search.Text);
+            Assert.Null(selector.SelectedItem);
+            Assert.Equal(" leather ", search.Text);
+        });
+    }
+
+    [Fact]
     public void PlannerGuideRendersTypedCalculationsWithOriginalTextAndLayout()
     {
         OnSta(() =>

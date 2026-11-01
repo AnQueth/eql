@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Runtime.ExceptionServices;
 using System.Windows.Controls;
 using EqLog.Core;
 using EqLog.Core.Parsing;
@@ -178,49 +177,32 @@ public sealed class ItemFilterTests
     [Fact]
     public void InventoryFilter_NarrowsGridAndIncludesNewMatchingRowsWithoutChangingSource()
     {
-        RunSta(() =>
+        InventoryFilterTestDispatcher.Run(async () =>
         {
             var sword = new QuestInventoryItem { Item = "Sword", Owned = 3 };
             var shield = new QuestInventoryItem { Item = "Shield", Owned = 2 };
             var source = new ObservableCollection<QuestInventoryItem> { sword, shield };
             var grid = new DataGrid { ItemsSource = source, CanUserAddRows = false };
             var filter = new TextBox();
-            MainWindow.ConfigureInventoryItemFilter(grid, filter);
+            var work = MainWindow.ConfigureInventoryItemFilter(grid, filter);
 
             filter.Text = " sWo ";
+            Assert.Equal(2, grid.Items.Count);
+            await work.Pending;
             Assert.Same(sword, Assert.Single(grid.Items.Cast<QuestInventoryItem>()));
             var newSword = new QuestInventoryItem { Item = "Sword of Fire", Owned = 1 };
             source.Add(newSword);
+            await work.Pending;
             Assert.Equal([sword, newSword], grid.Items.Cast<QuestInventoryItem>());
             filter.Text = "missing";
+            await work.Pending;
             Assert.Empty(grid.Items);
             filter.Clear();
+            await work.Pending;
             Assert.Equal(source, grid.Items.Cast<QuestInventoryItem>());
             Assert.Equal(3, sword.Owned);
             Assert.Equal(2, shield.Owned);
         });
     }
 
-    private static void RunSta(Action action)
-    {
-        Exception? failure = null;
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                action();
-            }
-            catch (Exception ex)
-            {
-                failure = ex;
-            }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        if (failure is not null)
-        {
-            ExceptionDispatchInfo.Capture(failure).Throw();
-        }
-    }
 }

@@ -22,11 +22,15 @@ public sealed class OverlayChromeTests
         {
             try
             {
-                var application = new System.Windows.Application();
+                var application = new System.Windows.Application
+                {
+                    ShutdownMode = ShutdownMode.OnExplicitShutdown,
+                };
                 foreach (string key in new[] { "NightBackground", "NightBorder", "Pumpkin", "NightRaised" })
                 {
                     application.Resources[key] = Brushes.Gray;
                 }
+                AsyncTextFilterTests.VerifyQuestVirtualization();
 
                 var panel = new OverlayPanel("timers", "Spell Timers", false);
                 var frame = Assert.IsType<Border>(panel.Content);
@@ -123,6 +127,7 @@ public sealed class OverlayChromeTests
                 VerifyAllMoteTiersVisible();
                 VerifyHoverBackgroundOpacity();
                 VerifyItemFilterToolbars();
+                application.Shutdown();
             }
             catch (Exception ex)
             {
@@ -159,13 +164,41 @@ public sealed class OverlayChromeTests
             {
                 panel.SetDocked(docked);
                 filter.Text = "Sword";
+                WaitForFilter(() => value == "Sword");
                 Assert.Equal("Sword", value);
                 filter.Clear();
+                WaitForFilter(() => value == "");
                 Assert.Equal("", value);
             }
         }
     }
 
+    private static void WaitForFilter(Func<bool> completed)
+    {
+        var frame = new System.Windows.Threading.DispatcherFrame();
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        var timer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(20),
+        };
+        timer.Tick += (_, _) =>
+        {
+            if (completed() || elapsed.Elapsed > TimeSpan.FromSeconds(5))
+            {
+                frame.Continue = false;
+            }
+        };
+        timer.Start();
+        try
+        {
+            System.Windows.Threading.Dispatcher.PushFrame(frame);
+            Assert.True(completed(), "The latest text filter was not applied.");
+        }
+        finally
+        {
+            timer.Stop();
+        }
+    }
     private static void VerifyHoverBackgroundOpacity()
     {
         var panel = new OverlayPanel("timers", "Spell Timers", false);

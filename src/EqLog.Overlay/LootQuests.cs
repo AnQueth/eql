@@ -15,6 +15,8 @@ public partial class MainWindow
 {
     private readonly Dictionary<string, QuestLookupResult> _questCache = new(StringComparer.OrdinalIgnoreCase);
     private long _questSelectionVersion;
+    private long _questCacheRevision;
+    private AsyncTextFilter<OverlayContent>? _questFilterWork;
     private readonly CancellationTokenSource _wikiCts = new();
     private InventoryService _inventoryService = null!;
     private readonly InventoryViewModel _inventoryView = new();
@@ -117,6 +119,7 @@ public partial class MainWindow
         if (previous != result)
         {
             _questCache[item] = result;
+            _questCacheRevision++;
             if (WikiQueries.HasQuestReferences(previous) != WikiQueries.HasQuestReferences(result))
             {
                 RefreshMergeView();
@@ -180,13 +183,33 @@ public partial class MainWindow
 
     private OverlayContent QuestOpportunities()
     {
+        _questFilterWork ??= new(Dispatcher, error => QuestLookupStatus.Text = $"Quest filtering failed: {error.Message}");
+        var inventory = _questInventory;
+        string character = _characterName ?? "";
+        string filter = _settings.QuestFilter;
+        bool recentFirst = _settings.QuestRecentFirst;
+        var key = (inventory, character, filter, recentFirst, _questCacheRevision, _session.Revision);
+        if (!_questFilterWork.Matches(key))
+        {
+            var cache = new Dictionary<string, QuestLookupResult>(_questCache, StringComparer.OrdinalIgnoreCase);
+            _questFilterWork.Request(key, token => BuildQuestOpportunities(inventory, character, cache, filter, recentFirst, token),
+                context: (character, _session.Revision));
+        }
+        return _questFilterWork.Result ?? new("Quest opportunities", character, [new("Filtering quest opportunities...", Wrap: true)]);
+    }
+
+    internal static OverlayContent BuildQuestOpportunities(InventoryReadModel inventory, string character,
+        IReadOnlyDictionary<string, QuestLookupResult> cache, string filter, bool recentFirst, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
         var rows = new List<OverlayRow>();
-        var quests = _questInventory.Opportunities(_characterName ?? "", _questCache, _settings.QuestFilter, _settings.QuestRecentFirst);
+        var quests = inventory.Opportunities(character, cache, filter, recentFirst);
         foreach (var quest in quests)
         {
+            token.ThrowIfCancellationRequested();
             rows.Add(new(quest.Title, Bold: true, QuestHeading: true, Wrap: true,
                 Link: WikiLinks.PageUrl(quest.Title), ToolTip: $"Open {quest.Title} on EQLWiki"));
-            var items = _settings.QuestRecentFirst
+            var items = recentFirst
                 ? quest.Items.OrderByDescending(i => i.LastLootUtc).ThenBy(i => i.Item, StringComparer.OrdinalIgnoreCase)
                 : quest.Items.OrderBy(i => i.Item, StringComparer.OrdinalIgnoreCase);
             foreach (var item in items)
@@ -209,11 +232,11 @@ public partial class MainWindow
         }
         if (rows.Count == 0)
         {
-            rows.Add(new(string.IsNullOrWhiteSpace(_settings.QuestFilter)
+            rows.Add(new(string.IsNullOrWhiteSpace(filter)
             ? "No quest opportunities found yet." : "No quests or items match your filter.", Wrap: true));
         }
 
-        return new("Quest opportunities", _characterName, rows);
+        return new("Quest opportunities", character, rows);
     }
 
     private void ConfigureQuestToolbar(OverlayPanel panel)
@@ -414,6 +437,7 @@ public partial class MainWindow
                 {
                     Item = title
                 };
+                _questCacheRevision++;
             }
         }
     }

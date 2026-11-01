@@ -57,6 +57,30 @@ Overlay tests exercise the actual inventory XAML bindings, read-only columns,
 selection retention, filters, copy-location refresh, splitter and long-list scrolling.
 These do not start the real app or write to your profile.
 
+Settings lists overlay visibility checkboxes and per-overlay appearance options
+alphabetically by displayed caption. Default placement and runtime presenter order
+remain independent of this settings-only ordering.
+
+The Sky class dropdown populates from the startup catalog as well as refreshed
+catalogs, preserving a valid saved selection. Cached quests must not require a
+network refresh before their classes become selectable.
+
+Text searches debounce typing for approximately 180-200 ms. Quest opportunities,
+Sky quests, exaltations, inventory/merge, raw logs, saved NPCs and mote target names
+prepare filtered results away from the WPF dispatcher. Capture detached input on
+the dispatcher; never read controls or mutable UI caches from a worker. Only the
+newest request may publish, and shutdown cancels pending work. Formatting remains
+in Overlay, even when performed on a worker; only frozen brushes may cross threads.
+Shared item filter toolbars debounce their callbacks. WPF layout stays on the
+dispatcher: virtualized overlays replace large row changes with one collection
+reset instead of notifying once per item, and merge-table rendering yields between
+small batches. Filter tests verify coalescing, responsiveness and stale-result rejection.
+
+The mote planner's inventory selection is independent of its typed name filter.
+Picking a matching item preserves the search text and plans for the selected item
+at its highest owned rank. Editing the search clears that selection; refreshing
+matching choices preserves it while the selected item still matches.
+
 If shared build outputs are damaged, use one isolated artifact directory for both
 build and tests. Allow restore on the first build: a new artifact directory has no
 `project.assets.json`. Do not run simultaneous builds against shared outputs.
