@@ -2,6 +2,7 @@ using System.Text.Json;
 using EqLog.Application.Inventory;
 using EqLog.Application.Tracking;
 using EqLog.Application.Wiki;
+using EqLog.Application.Sessions;
 using EqLog.Core;
 
 namespace EqLog.Application.Settings;
@@ -26,6 +27,11 @@ public sealed record PersistenceResult(IReadOnlyList<PersistenceOutcome> Outcome
 public sealed class ApplicationPersistenceService(SettingsService settings, TrackingService tracking,
     InventoryService inventory, WikiService wiki)
 {
+    public Task<PersistenceResult> SaveAsync(AppSettings state, GameSession session)
+    {
+        return SaveAsync(state, session.Engine, session.Mobs, session.Npcs, session.MobsWritable, session.NpcsWritable);
+    }
+
     public async Task<PersistenceResult> SaveAsync(AppSettings state, LogEngine engine, MobResistanceStore mobs,
         NpcCompendium npcs, bool mobsWritable, bool npcsWritable)
     {

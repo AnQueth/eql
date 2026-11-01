@@ -2,17 +2,53 @@ using EqLog.Application.Inventory;
 using EqLog.Application.Settings;
 using EqLog.Application.Tracking;
 using EqLog.Application.Wiki;
+using EqLog.Application.Sessions;
 using EqLog.Infrastructure.GameFiles;
 
 namespace EqLog.Infrastructure.Tests;
 
 public sealed class ApplicationPersistenceTests
 {
+    [Theory]
+    [InlineData(true, false, PersistedFeature.Npcs)]
+    [InlineData(false, true, PersistedFeature.Mobs)]
+    public async Task ApplicationSessionPreservesIndependentStoreProtection(bool mobsWritable, bool npcsWritable, PersistedFeature expected)
+    {
+        await using var fixture = new Fixture(blockSettings: false);
+        var session = fixture.Session(mobsWritable, npcsWritable);
+        session.Mobs.Record("log", 1, "Zone", "Mob", "Poison", true, DateTime.UtcNow);
+        var result = await fixture.Service.SaveAsync(new(), session);
+        Assert.Equal(expected, Assert.Single(result.Failures).Feature);
+        Assert.Equal(mobsWritable, File.Exists(Path.Combine(fixture.Folder, "mob-resistances.json")));
+        Assert.Equal(npcsWritable, Directory.Exists(Path.Combine(fixture.Folder, "npc-compendium")));
+    }
+
+    [Fact]
+    public async Task ApplicationSessionSavesAllLoadedTrackingStateBeforeSelectingALog()
+    {
+        await using var fixture = new Fixture(blockSettings: false);
+        var durations = new EqLog.Core.Tracking.SpellDurationStore();
+        durations.AddSample("Fire +2", 75, DateTime.UtcNow);
+        var spawns = new EqLog.Core.Tracking.SpawnStore();
+        spawns.AddSample("Zone", "Mob", DateTime.UtcNow, 300);
+        var motes = new EqLog.Core.Tracking.MoteStore();
+        motes.AddMote("Que", "Minor", 3);
+        var session = new GameSession(new(durations, spawns, motes, new(), new(), []));
+        var result = await fixture.Service.SaveAsync(new(), session);
+        Assert.Empty(result.Failures);
+        var storedDurations = await new SpellDurationRepository().LoadAsync(Path.Combine(fixture.Folder, "spell-durations.json"));
+        var storedSpawns = await new SpawnRepository().LoadAsync(Path.Combine(fixture.Folder, "spawn-timers.json"));
+        var storedMotes = await new MoteRepository().LoadAsync(Path.Combine(fixture.Folder, "motes.json"));
+        Assert.Equal(75, Assert.Single(storedDurations.List()).LearnedSeconds);
+        Assert.Equal(300, Assert.Single(storedSpawns.List("Zone")).LearnedSeconds);
+        Assert.Equal(3, Assert.Single(storedMotes.Totals("Que")).Count);
+    }
+
     [Fact]
     public async Task FailedSettingsWriteDoesNotSkipOtherStores()
     {
         await using var fixture = new Fixture(blockSettings: true);
-        var result = await fixture.Service.SaveAsync(new(), fixture.Engine, new(), new(), true, true);
+        var result = await fixture.Service.SaveAsync(new(), fixture.Session(true, true));
         var failure = Assert.Single(result.Failures);
         Assert.Equal(PersistedFeature.Settings, failure.Feature);
         Assert.IsAssignableFrom<IOException>(failure.Error);
@@ -24,7 +60,7 @@ public sealed class ApplicationPersistenceTests
     public async Task ProtectedTrackingStoresReturnExplicitFailuresWithoutBeingWritten()
     {
         await using var fixture = new Fixture(blockSettings: false);
-        var result = await fixture.Service.SaveAsync(new(), fixture.Engine, new(), new(), false, false);
+        var result = await fixture.Service.SaveAsync(new(), fixture.Session(false, false));
         Assert.Equal([PersistedFeature.Mobs, PersistedFeature.Npcs], result.Failures.Select(failure => failure.Feature));
         Assert.True(File.Exists(Path.Combine(fixture.Folder, "settings.json")));
         Assert.False(File.Exists(Path.Combine(fixture.Folder, "mob-resistances.json")));
@@ -34,12 +70,16 @@ public sealed class ApplicationPersistenceTests
     private sealed class Fixture : IAsyncDisposable
     {
         public string Folder { get; } = Path.Combine(Path.GetTempPath(), "eql-persistence-" + Guid.NewGuid().ToString("N"));
-        public LogEngine Engine { get; } = new();
         public ApplicationPersistenceService Service
         {
             get;
         }
         private readonly WikiService _wiki;
+
+        public GameSession Session(bool mobsWritable, bool npcsWritable)
+        {
+            return new(new(new(), new(), new(), mobsWritable ? new() : null, npcsWritable ? new() : null, []));
+        }
 
         public Fixture(bool blockSettings)
         {

@@ -8,7 +8,6 @@ namespace EqLog.Overlay;
 
 public partial class MainWindow
 {
-    private NpcCompendium _npcCompendium = new();
     private bool _npcSaveEnabled = true;
     private string? _npcStorageError;
     private TextBox _npcSearch = null!;
@@ -41,9 +40,8 @@ public partial class MainWindow
 
     private void InitializeNpcCompendium(StartupState state)
     {
-        if (state.NpcCompendium is { } npcs)
+        if (_session.NpcsWritable)
         {
-            _npcCompendium = npcs;
             return;
         }
         _npcSaveEnabled = false;
@@ -95,7 +93,7 @@ public partial class MainWindow
                 return;
             }
             UsageTelemetry.TrackFeature(UsageFeature.NpcLookup);
-            var matches = _npcCompendium.Search(name);
+            var matches = _session.SearchNpcs(name);
             var exact = matches.FirstOrDefault(e => string.Equals(e.Mob, name, StringComparison.OrdinalIgnoreCase));
             SelectNpc(exact?.Mob ?? name, exact?.Zone ?? "(unknown zone)");
             StartNpcWikiLookup(false);
@@ -170,7 +168,7 @@ public partial class MainWindow
         panel.SetToolbar(bar);
     }
 
-    private NpcEntry? _npcEntry;
+    private NpcReadModel? _npcEntry;
     private string? _npcEntryKey;
     private Task? _npcEntryLoad;
 
@@ -178,7 +176,7 @@ public partial class MainWindow
     /// The selected NPC with its history. Cached histories come back immediately; otherwise the file is read in the
     /// background, this returns null for a new selection until it arrives, and the panel re-renders when it does.
     /// </summary>
-    private NpcEntry? SelectedNpc()
+    private NpcReadModel? SelectedNpc()
     {
         if (_settings.NpcSelectedMob is not { } mob || _settings.NpcSelectedZone is not { } zone)
         {
@@ -187,7 +185,7 @@ public partial class MainWindow
         string key = mob + "\n" + zone;
         if (_npcEntryLoad is null || _npcEntryLoad.IsCompleted)
         {
-            var load = _tracking.GetNpcAsync(_npcCompendium, mob, zone);
+            var load = _session.GetNpcAsync(_tracking, mob, zone);
             if (load.IsCompletedSuccessfully)
             {
                 _npcEntry = load.Result;
@@ -201,7 +199,7 @@ public partial class MainWindow
         return _npcEntryKey == key ? _npcEntry : null;
     }
 
-    private async Task CompleteNpcLoadAsync(Task<NpcEntry?> load, string key)
+    private async Task CompleteNpcLoadAsync(Task<NpcReadModel?> load, string key)
     {
         try
         {
@@ -237,7 +235,7 @@ public partial class MainWindow
             return;
         }
         _npcChoicesNextRefresh = DateTime.Now.AddSeconds(2);
-        var matches = _npcCompendium.Search(_npcSearch.Text).Select(e => new NpcChoice(e.Mob, e.Zone)).ToArray();
+        var matches = _session.SearchNpcs(_npcSearch.Text).Select(e => new NpcChoice(e.Mob, e.Zone)).ToArray();
         string signature = string.Join("\n", matches.Select(m => m.Label));
         if (_npcChoicesSignature == signature)
         {
@@ -268,7 +266,7 @@ public partial class MainWindow
         _npcWikiCts?.Dispose();
         _npcWikiCts = CancellationTokenSource.CreateLinkedTokenSource(_wikiCts.Token);
         _npcWikiSelection = mob + "\n" + zone;
-        _npcSpellSignature = string.Join("\n", _mobResistances.Get(zone, mob).Spells);
+        _npcSpellSignature = string.Join("\n", _session.GetMob(zone, mob).Spells);
         _ = LookupMobInfoAsync(mob, zone, force, _npcWikiCts.Token, WikiPriority.Interactive, status =>
         {
             _npcWikiStatus = status;
@@ -295,7 +293,7 @@ public partial class MainWindow
                 [new(_npcStorageError ?? "Importing the selected log's history and recording new interactions. " +
                     "Choose a name/zone above. Unlock floating overlays to search.", Wrap: true)]);
         }
-        var resistanceInfo = _mobResistances.Get(zone, mob);
+        var resistanceInfo = _session.GetMob(zone, mob);
         if (_npcWikiSelection != mob + "\n" + zone ||
             _npcSpellSignature != string.Join("\n", resistanceInfo.Spells))
         {
@@ -323,10 +321,10 @@ public partial class MainWindow
         {
             rows.AddRange(MobQuestRows(resistanceInfo.Wiki));
         }
-        return new(mob, zone, rows, QuestLookup.SearchUrl(mob));
+        return new(mob, zone, rows, WikiLinks.SearchUrl(mob));
     }
 
-    private void AddNpcOverviewRows(List<OverlayRow> rows, NpcEntry? entry, string mob, string zone)
+    private void AddNpcOverviewRows(List<OverlayRow> rows, NpcReadModel? entry, string mob, string zone)
     {
         if (entry is not null)
         {
@@ -357,28 +355,28 @@ public partial class MainWindow
         }
     }
 
-    private static void AddNpcCombatSummary(List<OverlayRow> rows, NpcEntry entry)
+    private static void AddNpcCombatSummary(List<OverlayRow> rows, NpcReadModel entry)
     {
         var encounters = entry.Encounters;
         rows.Add(new("Your combat record",
-            encounters.Any(e => e.YourDamage > 0) ? $"{entry.YourAverageDps:N1} average DPS" : "No personal damage recorded",
+            entry.HasPersonalDamage ? $"{entry.YourAverageDps:N1} average DPS" : "No personal damage recorded",
             Table: OverlayTable.Pairs(
             [
-                ("Damage", $"{encounters.Sum(e => e.YourDamage):N0}"),
+                ("Damage", $"{entry.YourDamage:N0}"),
                 ("Encounters", $"{encounters.Count:N0}"),
-                ("NPC deaths observed", $"{encounters.Count(e => e.Outcome == "NPC died"):N0}"),
-                ("Damage taken", $"{encounters.Sum(e => e.IncomingDamage):N0}"),
+                ("NPC deaths observed", $"{entry.ObservedDeaths:N0}"),
+                ("Damage taken", $"{entry.IncomingDamage:N0}"),
             ]),
             Stacked: true));
-        if (encounters.Any(e => e.OtherDamage > 0))
+        if (entry.HasOtherDamage)
         {
             rows.Add(new("Other attackers", $"{entry.OtherAverageDps:N1} average DPS",
-                Details: $"{encounters.Sum(e => e.OtherDamage):N0} observed damage; group membership is not verified.",
+                Details: $"{entry.OtherDamage:N0} observed damage; group membership is not verified.",
                 Stacked: true));
         }
     }
 
-    private void AddNpcEncounterRows(List<OverlayRow> rows, NpcEntry? entry)
+    private void AddNpcEncounterRows(List<OverlayRow> rows, NpcReadModel? entry)
     {
         var encounters = entry?.Encounters ?? [];
         int pages = Math.Max(1, (encounters.Count + NpcHistoryPageSize - 1) / NpcHistoryPageSize);
@@ -424,7 +422,7 @@ public partial class MainWindow
             "Same-name NPCs can merge if an ending event is missing. No raw lines are stored.", Stacked: true));
     }
 
-    private void AddNpcSpellRows(List<OverlayRow> rows, MobResistanceInfo resistanceInfo, string zone, string mob)
+    private void AddNpcSpellRows(List<OverlayRow> rows, MobDetails resistanceInfo, string zone, string mob)
     {
         rows.Add(new("Spell resistance history", Bold: true, QuestHeading: true));
         rows.Add(new("Saved observations for this NPC and zone. School and damage rating are separate.", Wrap: true, Scale: 0.85));
@@ -432,68 +430,10 @@ public partial class MainWindow
         {
             rows.Add(new("No spell observations yet", Details: "Targeted resists and confirmed personal casts will appear here as the log is read.", Stacked: true));
         }
-        foreach (string spell in resistanceInfo.Spells.Order(StringComparer.OrdinalIgnoreCase))
+        foreach (var card in _session.NpcSpellDetails(zone, mob))
         {
-            var details = _mobResistances.Get(zone, mob, spell);
-            var counts = _mobResistances.GetRawSpellCounts(zone, mob, spell);
-            var metadata = _mobResistances.GetSpell(spell);
-            var observed = metadata?.Type is { } type ? details.Observations.Single(o => o.Type == type) : null;
-            string school = metadata?.Type?.ToString() ?? "School not verified";
-            string result;
-            string explanation;
-            var evidence = new List<(string Label, string Value)>
-            {
-                ("Full resists", $"{counts.FullResists:N0}"),
-                ("Damage samples", $"{counts.DamageHits:N0}"),
-            };
-            if (counts.LegacyLandings > 0)
-            {
-                evidence.Add(("Earlier landings", $"{counts.LegacyLandings:N0}"));
-            }
-            if (observed is not null && metadata?.SingleTargetDirectDamage == true)
-            {
-                result = $"{school}  /  {observed.DisplayText}";
-                evidence =
-                [
-                    ("Confirmed landings", $"{observed.Landed:N0}"),
-                    ("Full resists", $"{counts.FullResists:N0}"),
-                    ("Reduced damage", $"{observed.EstimatedPartial:N0}"),
-                ];
-                explanation = observed.UnassessedDamage > 0
-                    ? $"{observed.UnassessedDamage:N0} landed hits need at least 3 damage samples for a typical-damage baseline for this character/loadout/rank."
-                    : observed.Landed + observed.Resisted == 0 ? "No assessed damage outcomes yet." : "";
-                if (observed.EstimatedPartial > 0)
-                {
-                    explanation += (explanation.Length > 0 ? "\n" : "") +
-                        "Reduced-damage hits are below 90% of the sample-weighted median; cause unknown. They count as landed, not resisted.";
-                }
-                if (counts.LegacyLandings > 0)
-                {
-                    explanation += (explanation.Length > 0 ? "\n" : "") +
-                        $"{counts.LegacyLandings:N0} earlier landings have no damage values; partial damage cannot be checked retrospectively.";
-                }
-            }
-            else if (metadata?.DamageOverTime == true)
-            {
-                long total = counts.DotLanded + counts.DotResisted;
-                result = total == 0
-                    ? $"{school} DoT  /  no assessed casts yet"
-                    : $"{school} DoT  /  {100m * counts.DotResisted / total:0.#}% resisted ({counts.DotResisted}/{total})";
-                evidence =
-                [
-                    ("Casts landed", $"{counts.DotLanded:N0}"),
-                    ("Casts resisted", $"{counts.DotResisted:N0}"),
-                    ("All resists", $"{counts.FullResists:N0}"),
-                ];
-                explanation = metadata.AssessmentNote ?? "";
-            }
-            else
-            {
-                result = $"{school}  /  {metadata?.TargetType ?? "Wiki details pending"}";
-                explanation = metadata?.AssessmentNote ?? "Spell metadata has not been loaded. Use Refresh wiki to retry.";
-            }
-            rows.Add(new(spell, result, Table: OverlayTable.Pairs(evidence, pairsPerRow: 3),
-                Details: explanation.Length > 0 ? explanation : null, Stacked: true));
+            rows.Add(new(card.Spell, card.Result, Table: OverlayTable.Pairs(card.Evidence, pairsPerRow: 3),
+                Details: card.Explanation, Stacked: true));
         }
         rows.Add(new("About damage ratings", Details:
             "Only explicit resists enter the resist percentage for verified single-target instant damage (including lifetaps). " +
@@ -519,7 +459,7 @@ public partial class MainWindow
         }
         try
         {
-            await _tracking.SaveNpcsAsync(_npcCompendium);
+            await _session.SaveNpcsAsync(_tracking);
             _npcStorageError = null;
         }
         catch (Exception ex) when (!throwOnError && (ex is IOException or UnauthorizedAccessException))

@@ -14,11 +14,11 @@ internal static class WikiComposition
     {
         return new WikiStartupService(Caches).LoadAsync();
     }
-    public static WikiService CreateService(MobResistanceStore mobs, bool writesAllowed)
+    public static WikiService CreateService(GameSession session)
     {
-        Caches.ProtectMobWrites(writesAllowed);
+        Caches.ProtectMobWrites(session.MobsWritable);
         var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("EqLogOverlay/1.0");
-        return new(new WikiTransport(http, ownsHttp: true), mobs, Caches);
+        return session.CreateWikiService(new WikiTransport(http, ownsHttp: true), Caches);
     }
 }

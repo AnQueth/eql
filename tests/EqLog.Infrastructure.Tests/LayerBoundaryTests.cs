@@ -66,6 +66,11 @@ public sealed class LayerBoundaryTests
             Assert.DoesNotContain("using EqLog.Infrastructure", code);
             Assert.False(Regex.IsMatch(code, @"\b(File|Directory)\s*\.|\b(AtomicFile|JsonLines|HttpClient|FileStream)\b"),
                 path + " accesses concrete file/storage/HTTP adapters outside composition.");
+            Assert.False(Regex.IsMatch(code,
+                @"\b(LogEngine|SpellDurationStore|SpawnStore|MoteStore|MobResistanceStore|NpcCompendium|TriggerMatcher|HealTracker|FightTracker|MoteValues|MoteTiers|MoteUpgrades)\b"),
+                path + " exposes live domain state or invokes its rule engine.");
+            Assert.False(Regex.IsMatch(code, @"\b(InventoryExport|ItemNames|SkyQuests|Exaltations|QuestLookup|LogLine|DamageTimeline)\s*\.\s*\w+\s*\("),
+                path + " invokes domain rules instead of Application queries.");
         }
     }
 

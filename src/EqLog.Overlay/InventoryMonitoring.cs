@@ -24,7 +24,7 @@ public partial class MainWindow
         _inventoryView.Apply(_inventoryService.Snapshot(), _characterName ?? "");
         if (!ReferenceEquals(previous, _inventoryView.Export))
         {
-            _exaltationLocations = Exaltations.Locate(_inventoryRows).Concat(Exaltations.WikiDefaults(_inventoryRows)).ToArray();
+            _exaltationLocations = InventoryQueries.ExaltationLocations(_inventoryRows);
             RefreshMergeView();
             RefreshMotePlan();
         }
@@ -56,7 +56,7 @@ public partial class MainWindow
                 case InventoryImportStatus.Imported:
                     var export = result.Export!;
                     var items = export.Rows;
-                    var unknown = InventoryExport.UnknownLocations(items);
+                    var unknown = InventoryQueries.UnknownLocations(items);
                     string sections = unknown.Count == 0
                         ? "All sections imported."
                         : $"Unrecognised locations counted as Other: {string.Join(", ", unknown)}.";

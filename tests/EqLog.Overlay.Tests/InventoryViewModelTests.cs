@@ -57,9 +57,10 @@ public sealed class InventoryViewModelTests
         OnSta(() =>
         {
             var model = new InventoryViewModel();
-            model.Apply(Snapshot(1, "Que", [new("Held", "Sword", 1, 1, InventoryStorage.Carried)]), "Que");
+            var initial = Snapshot(1, "Que", [new("Held", "Sword", 1, 1, InventoryStorage.Carried)]);
+            model.Apply(initial, "Que");
             model.SelectedItem = model.Items[0];
-            var state = model.State.Clone();
+            var state = initial.State.Clone();
             model.Apply(new(2, state, null), "Que");
             Assert.Empty(model.Copies);
             Assert.Equal(1, model.Items[0].Owned);

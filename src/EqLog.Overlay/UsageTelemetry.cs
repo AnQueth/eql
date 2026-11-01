@@ -129,7 +129,7 @@ internal static class UsageTelemetry
     {
         // Never send imported/edited palette names. Only exact shipped palettes get a name.
         bool bundled = bundledThemes.Any(candidate => candidate.Name == theme.Name &&
-            ThemePalette.AllColorKeys.All(key => string.Equals(candidate.GetColor(key), theme.GetColor(key),
+            ThemePalette.AllColorKeys.All(key => string.Equals(ThemeQueries.Color(candidate, key), ThemeQueries.Color(theme, key),
                 StringComparison.OrdinalIgnoreCase)));
         string name = (bundled ? theme.Name : "") switch
         {

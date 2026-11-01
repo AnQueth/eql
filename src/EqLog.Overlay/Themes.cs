@@ -26,13 +26,13 @@ public partial class MainWindow
                 return;
             }
             _themes.AddRange(state.Themes);
-            _bundledThemes.AddRange(state.Themes.Select(theme => theme.Clone()));
+            _bundledThemes.AddRange(state.Themes.Select(ThemeQueries.Copy));
 
             if (_settings.Theme is { } saved)
             {
                 try
                 {
-                    saved.Validate();
+                    ThemeQueries.Validate(saved);
                     var bundled = _themes.FirstOrDefault(t => t.Name == saved.Name &&
                         t.Colors.Count == saved.Colors.Count && t.Colors.All(c => saved.Colors.TryGetValue(c.Key, out var value) && value == c.Value));
                     if (bundled is not null)
@@ -162,7 +162,7 @@ public partial class MainWindow
         try
         {
             var applied = theme ?? ThemeManager.GetSystemTheme(_themes);
-            applied.Validate();
+            ThemeQueries.Validate(applied);
             _settings.Theme = theme;
             await _settingsPersistence.SaveAsync(_settings);
             ApplyTheme(applied);

@@ -4,6 +4,9 @@ using EqLog.Core.Parsing;
 using EqLog.Core.Tracking;
 using EqLog.Core.Triggers;
 using EqLog.Application.Sessions;
+using EqLog.Application.Inventory;
+using EqLog.Application.Motes;
+using EqLog.Application.Presentation;
 
 namespace EqLog.Overlay;
 
@@ -16,9 +19,9 @@ public sealed record ActiveAlert(string Text, Brush Color, DateTime Expires, Ale
 
 /// <summary>Per-render options the presenters need from the app.</summary>
 public sealed record OverlayView(ISet<ChatChannel> ChatChannels, IReadOnlyList<ActiveAlert> Alerts, int LootGrouping = 0,
-    QuestInventory? Inventory = null, WikiActivitySnapshot? WikiActivity = null, QuestWikiActivity? QuestWiki = null,
+    InventoryReadModel? Inventory = null, WikiActivitySnapshot? WikiActivity = null, QuestWikiActivity? QuestWiki = null,
     IReadOnlyList<ChatEvent>? RecentChat = null, DpsFightKey? DpsFight = null, string? CharacterName = null,
-    string ItemFilter = "");
+    string ItemFilter = "", MoteInventoryReadModel? MoteInventory = null);
 
 /// <summary>Identifies one fight chosen in the DPS overlay picker.</summary>
 public sealed record DpsFightKey(string Target, DateTime Start)
@@ -251,86 +254,41 @@ public static class OverlayPresenters
         return new("Wiki activity", "Priority queue · paced HTTP · Polly retries", rows);
     }
 
-    private const string MoteValuesTip =
-        "A mote adds points to gear and spells. In the Gear/Spell column, the first number is for gear; the second is for spells.\n" +
-        "The ≤+N part means this mote works on gear at +N or lower. Motes work on spells at any rank.\n" +
-        "Example: 5/16 ≤+4 means 5 gear points at +4 or lower, or 16 spell points at any rank. " +
-        "Values are from the EQLWiki Mote Guide.";
-
     private static OverlayContent Motes(EngineSnapshot s, EngineQuerySnapshot _, OverlayView view)
     {
-        var m = s.Motes;
         var rows = new List<OverlayRow>();
-        var inventory = view.Inventory;
-        var held = inventory?.Items.Where(i => i.Character.Equals(s.CharacterName, StringComparison.OrdinalIgnoreCase))
-            .Select(i => (Item: i, Tier: MoteTiers.TierOf(ItemNames.Normalize(i.Item))))
-            .Where(i => i.Tier is not null)
-            .GroupBy(i => i.Tier!, StringComparer.OrdinalIgnoreCase)
-            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase).ToArray();
-        bool hasExport = inventory is not null &&
-            inventory.ExportTimes.ContainsKey(s.CharacterName.ToUpperInvariant());
-        string inventoryTip = (hasExport
-            ? $"Export {inventory!.ExportTimes[s.CharacterName.ToUpperInvariant()].ToLocalTime():g}; owned counts are confirmed by this export."
-            : "No inventory export: export inventory to confirm owned counts.") +
-            "\nOwned excludes collection, installed items and historical drops." +
-            "\nLoot logs do not change Owned. Run /outputfile inventory after looting, spending, or moving motes to refresh.";
-        var ownedByTier = held?.ToDictionary(g => g.Key, g => g.Sum(i => i.Item.Owned), StringComparer.OrdinalIgnoreCase)
-            ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var model = (view.MoteInventory ?? MoteInventoryReadModel.Empty).Prepare(s.Motes, s.Now);
         rows.Add(new("Tier", "session (all)", Foreground: Header, Bold: true,
-            ExtraColumn: "Owned", ToolTip: MoteValuesTip + "\n\n" + inventoryTip, ValueColumn: "Gear/Spell"));
-        var allTime = m.AllTime.ToDictionary(c => c.Tier, c => c.Count, StringComparer.OrdinalIgnoreCase);
-        var session = m.Session.ToDictionary(c => c.Tier, c => c.Count, StringComparer.OrdinalIgnoreCase);
-        var tiers = allTime.Keys.Union(session.Keys, StringComparer.OrdinalIgnoreCase)
-            .Union(ownedByTier.Keys, StringComparer.OrdinalIgnoreCase)
-            .Union(MoteValues.Tiers, StringComparer.OrdinalIgnoreCase)
-            .OrderBy(t => MoteValues.RankOf(t) ?? int.MaxValue)
-            .ThenBy(t => t, StringComparer.OrdinalIgnoreCase);
-        foreach (var tier in tiers)
+            ExtraColumn: "Owned", ToolTip: model.HeaderToolTip, ValueColumn: "Gear/Spell"));
+        foreach (var tier in model.Tiers)
         {
-            int n = session.GetValueOrDefault(tier);
-            string owned = hasExport || ownedByTier.ContainsKey(tier)
-                ? ownedByTier.GetValueOrDefault(tier).ToString("N0") : "?";
-            string value = "?";
-            string tip = $"No upgrade value is known for {tier}.\n\n{inventoryTip}";
-            if (MoteValues.RankOf(tier) is int rank)
-            {
-                value = $"{MoteValues.ItemPoints(rank)}/{MoteValues.SpellPoints(rank)} ≤+{MoteValues.ItemMaxTier(rank)}";
-                tip = $"{MoteTiers.ItemName(tier)} (rank {rank})\n" +
-                    $"Adds {MoteValues.ItemPoints(rank)} points to gear at +{MoteValues.ItemMaxTier(rank)} or lower.\n" +
-                    $"Adds {MoteValues.SpellPoints(rank)} points to spells at any rank.\n\n" + inventoryTip;
-            }
-            rows.Add(new(tier, $"{n}  ({allTime.GetValueOrDefault(tier)})", Foreground: n > 0 ? Good : Dim,
-                LootItem: MoteTiers.ItemName(tier), ExtraColumn: owned, ToolTip: tip, ValueColumn: value));
+            rows.Add(new(tier.Tier, tier.Count, Foreground: tier.HasSessionDrops ? Good : Dim,
+                LootItem: tier.ItemName, ExtraColumn: tier.Owned, ToolTip: tier.ToolTip, ValueColumn: tier.Value));
         }
 
-        rows.Add(new("Total", $"{m.SessionTotal}  ({m.AllTimeTotal})", Bold: true,
-            ExtraColumn: hasExport || ownedByTier.Count > 0 ? ownedByTier.Values.Sum().ToString("N0") : "?",
-            ToolTip: inventoryTip, ValueColumn: ""));
+        rows.Add(new("Total", model.TotalCount, Bold: true,
+            ExtraColumn: model.OwnedTotal, ToolTip: model.InventoryToolTip, ValueColumn: ""));
 
-        if (m.Recent.Count > 0)
+        if (model.Recent.Count > 0)
         {
             rows.Add(new("Recent", "", Foreground: Header, Bold: true));
-            foreach (var d in m.Recent.Take(5))
+            foreach (var recent in model.Recent)
             {
-                string who = d.Looter == Names.You ? "" : $"[{d.Looter}] ";
-                string qty = d.Quantity > 1 ? $" x{d.Quantity}" : "";
-                rows.Add(new($"{who}{d.Tier}{qty}  {d.Source}", d.Time.ToString("HH:mm"),
-                    Foreground: d.Looter == Names.You ? null : Dim, LootItem: MoteTiers.ItemName(d.Tier)));
+                rows.Add(new(recent.Text, recent.Time,
+                    Foreground: recent.IsYou ? null : Dim, LootItem: recent.ItemName));
             }
         }
 
-        if (m.ZoneRates.Count > 0)
+        if (model.ZoneRates.Count > 0)
         {
             rows.Add(new("Drops here", "drops / kills", Foreground: Header, Bold: true));
-            foreach (var r in m.ZoneRates.Take(10))
+            foreach (var r in model.ZoneRates)
             {
-                string rate = r.DropRate is double d ? $"  {d:P0}" : "";
-                rows.Add(new(r.Mob, $"{r.Drops}/{r.Kills}{rate}", Link: QuestLookup.SearchUrl(r.Mob)));
+                rows.Add(new(r.Mob, r.Rate, Link: WikiLinks.SearchUrl(r.Mob)));
             }
         }
 
-        string sub = $"{m.SessionTotal} this session  {m.PerHour(s.Now):0.#}/hr";
-        return new("Motes", sub, rows);
+        return new("Motes", model.Subtitle, rows);
     }
 
     private static OverlayContent Spawns(EngineSnapshot s, EngineQuerySnapshot queries, OverlayView __)
@@ -344,7 +302,7 @@ public static class OverlayPresenters
         foreach (var t in ordered)
         {
             string source = t.UsesWiki ? " (wiki)" : "";
-            string link = QuestLookup.SearchUrl(t.Mob);
+            string link = WikiLinks.SearchUrl(t.Mob);
             var tracking = sp.Zone is { } trackedZone
                 ? new SpawnTrackChange(trackedZone, t.Mob, true)
                 : null;
@@ -480,7 +438,7 @@ public static class OverlayPresenters
         var recent = s.RecentFights.Where(r => f is null || !(r.Start == f.Start && r.Target == f.Target)).Take(3).ToList();
         foreach (var r in recent)
         {
-            rows.Add(new($"{r.Target}", $"{Short(r.You?.Dps ?? 0)} dps  {Clock(r.DurationSeconds)}", Foreground: Dim,
+            rows.Add(new($"{r.Target}", $"{Short(CombatQueries.PersonalDps(r))} dps  {Clock(r.DurationSeconds)}", Foreground: Dim,
                 Breakdown: FightBreakdown(r)));
         }
 
@@ -488,18 +446,14 @@ public static class OverlayPresenters
         string? sub = f is null
             ? null
             : $"{Short(f.Total)} in {Clock(f.DurationSeconds)}  {Short(f.Dps)} dps  {(f.Killed ? "killed" : f.IsActive ? "active" : "ended")}";
-        return new(title, sub, rows, f is null ? null : QuestLookup.SearchUrl(f.Target));
+        return new(title, sub, rows, f is null ? null : WikiLinks.SearchUrl(f.Target));
     }
 
     public static AbilityBreakdown FightBreakdown(FightSnapshot fight)
     {
-        var abilities = fight.Attackers.SelectMany(a => a.Abilities).GroupBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(g => new AbilityStats(g.Key, g.Sum(a => a.Total), g.Sum(a => a.Total) / fight.DurationSeconds,
-                fight.Total == 0 ? 0 : 100.0 * g.Sum(a => a.Total) / fight.Total,
-                g.Sum(a => a.Hits), g.Sum(a => a.Crits), g.Max(a => a.MaxHit), 0))
-            .OrderByDescending(a => a.Total).ToArray();
-        return new(fight.Target, $"All attackers · {Clock(fight.DurationSeconds)} fight · snapshot at click", "DPS", abilities,
-            fight.Timeline, fight.DurationSeconds, fight.Start, DamageTimeline.Merge(fight.Attackers.SelectMany(a => a.AbilityTimelines)));
+        var details = CombatQueries.Fight(fight);
+        return new(fight.Target, $"All attackers · {Clock(fight.DurationSeconds)} fight · snapshot at click", "DPS", details.Abilities,
+            fight.Timeline, fight.DurationSeconds, fight.Start, details.Timelines);
     }
 
     private static OverlayContent Taken(EngineSnapshot s, EngineQuerySnapshot _, OverlayView __)
@@ -508,7 +462,7 @@ public static class OverlayPresenters
         var rows = new List<OverlayRow>();
         foreach (var a in d.EncounterByAttacker.Take(6))
         {
-            rows.Add(new(a.Name, $"{Short(a.Total)}  {a.Percent:0}%", a.Percent / 100, TakenBar, Link: QuestLookup.SearchUrl(a.Name)));
+            rows.Add(new(a.Name, $"{Short(a.Total)}  {a.Percent:0}%", a.Percent / 100, TakenBar, Link: WikiLinks.SearchUrl(a.Name)));
         }
 
         rows.Add(new("Session", $"{Short(d.SessionTotal)}", Foreground: Header, Bold: true));
@@ -519,7 +473,7 @@ public static class OverlayPresenters
 
         foreach (var a in d.SessionByAttacker.Take(4))
         {
-            rows.Add(new(a.Name, $"{Short(a.Total)}  {a.Percent:0}%", Foreground: Dim, Link: QuestLookup.SearchUrl(a.Name)));
+            rows.Add(new(a.Name, $"{Short(a.Total)}  {a.Percent:0}%", Foreground: Dim, Link: WikiLinks.SearchUrl(a.Name)));
         }
 
         string? sub = d.EncounterStart is null ? null : $"{Short(d.EncounterTotal)} in {Clock(d.EncounterSeconds)}  {Short(d.EncounterDtps)} dtps";
@@ -529,10 +483,11 @@ public static class OverlayPresenters
     private static OverlayContent Heals(EngineSnapshot s, EngineQuerySnapshot _, OverlayView __)
     {
         var h = s.Heals;
+        var details = CombatQueries.Healing(h);
         var rows = new List<OverlayRow>();
         if (h.OutgoingTotal > 0)
         {
-            double over = h.OutgoingTotal + h.OutgoingOverheal == 0 ? 0 : 100.0 * h.OutgoingOverheal / (h.OutgoingTotal + h.OutgoingOverheal);
+            double over = details.OverhealPercent;
             rows.Add(new("Outgoing", $"{Short(h.OutgoingTotal)}  {over:0}% over", Foreground: Header, Bold: true));
             foreach (var x in h.OutgoingBySpell.Take(4))
             {
@@ -560,7 +515,7 @@ public static class OverlayPresenters
             rows.Add(new("Observed healers", "click for abilities", Foreground: Header, Bold: true));
             foreach (var healer in h.Healers)
             {
-                rows.Add(new(Who(healer.Name), Short(healer.Abilities.Sum(a => a.Total)),
+                rows.Add(new(Who(healer.Name), Short(details.HealerTotals[healer.Name]),
                     Breakdown: new(Who(healer.Name), $"All observed healing · session {Clock(h.DurationSeconds)} · snapshot at click",
                         "HPS", healer.Abilities)));
             }
@@ -661,12 +616,12 @@ public static class OverlayPresenters
         }
 
         rows.Add(new("Deaths", x.Deaths == 0 ? "0" : $"{x.Deaths}  (last: {x.LastKilledBy})", Foreground: x.Deaths > 0 ? Warn : null,
-            Link: x.Deaths > 0 && !string.IsNullOrWhiteSpace(x.LastKilledBy) ? QuestLookup.SearchUrl(x.LastKilledBy) : null,
+            Link: x.Deaths > 0 && !string.IsNullOrWhiteSpace(x.LastKilledBy) ? WikiLinks.SearchUrl(x.LastKilledBy) : null,
             ToolTip: x.Deaths > 0 ? $"Open {x.LastKilledBy} on EQLWiki" : null));
         rows.Add(new("XP gains", $"{x.ExperienceGains}  ({x.PartyExperienceGains} party)"));
         if (x.ExperiencePercent > 0)
         {
-            rows.Add(new("XP", $"{x.ExperiencePercent:0.##}%  ({x.ExperiencePercentPerHour(now):0.#}%/hr)"));
+            rows.Add(new("XP", $"{x.ExperiencePercent:0.##}%  ({SessionQueries.ExperiencePercentPerHour(x, now):0.#}%/hr)"));
         }
 
         if (x.Level is int lvl)
@@ -681,7 +636,7 @@ public static class OverlayPresenters
 
         foreach (var k in x.RecentKills.Take(5))
         {
-            rows.Add(new(k.Victim, k.Time.ToString("HH:mm:ss"), Foreground: Dim, Link: QuestLookup.SearchUrl(k.Victim)));
+            rows.Add(new(k.Victim, k.Time.ToString("HH:mm:ss"), Foreground: Dim, Link: WikiLinks.SearchUrl(k.Victim)));
         }
 
         return new(x.Zone ?? "Session", s.CharacterName.Length > 0 ? s.CharacterName : null, rows);
@@ -701,11 +656,11 @@ public static class OverlayPresenters
 
         if (view.LootGrouping is 1 or 2)
         {
-            foreach (var group in l.OrderedGroups(view.LootGrouping == 1)
+            foreach (var group in SessionQueries.LootGroups(l, view.LootGrouping == 1)
                 .Where(group => MatchesItemName(group.Item, view.ItemFilter)))
             {
                 string who = group.Looter == Names.You ? "" : $"[{group.Looter}] ";
-                rows.Add(new($"{who}{ItemNames.Normalize(group.Item)}", $"x{group.Quantity:N0}  {group.LastLoot:HH:mm}",
+                rows.Add(new($"{who}{ItemPresentation.Normalize(group.Item)}", $"x{group.Quantity:N0}  {group.LastLoot:HH:mm}",
                     Foreground: group.Looter == Names.You ? null : Dim, LootItem: group.Item));
             }
         }

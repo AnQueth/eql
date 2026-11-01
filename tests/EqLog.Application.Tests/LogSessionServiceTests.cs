@@ -8,6 +8,35 @@ namespace EqLog.Application.Tests;
 public sealed class LogSessionServiceTests
 {
     [Fact]
+    public async Task ApplicationSessionOwnsEngineReplacementAndRejectsLateSourceCallbacks()
+    {
+        var input = new FakeInput();
+        var inventory = new InventoryService(new NoExport(), new NoStorage(), new());
+        await using var source = new LogSessionService(input, input, inventory);
+        var session = new GameSession(new(new(), new(), new(), new(), new(), []));
+        session.Start(source, File("one", "Que"), false);
+        await input.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        long first = session.Revision;
+        var late = input.Lines!;
+        late(["[Tue Oct 27 12:00:00 2026] You have entered Blackburrow."]);
+        var oldFrame = await session.CaptureFrameAsync(source, false, []);
+        Assert.Equal("Que", oldFrame.Snapshot.CharacterName);
+        Assert.Throws<InvalidOperationException>(() => session.Start(source, File("two", "Other"), true));
+        Assert.Equal(first, session.Revision);
+        await source.StopAsync();
+        input.Reset();
+        session.Start(source, File("two", "Other"), true);
+        await input.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        late(["[Tue Oct 27 12:01:00 2026] You have entered Qeynos."]);
+        var current = await session.CaptureFrameAsync(source, false, []);
+        Assert.Equal(first + 1, session.Revision);
+        Assert.Equal("Other", current.Snapshot.CharacterName);
+        Assert.Null(current.Snapshot.LastLogTime);
+        Assert.Equal("Que", oldFrame.Snapshot.CharacterName);
+        Assert.Equal("Blackburrow", oldFrame.Snapshot.Session.Zone);
+    }
+
+    [Fact]
     public async Task ReplayAndLiveBatchesRetainSourceIdentityAndOnlyLiveInputRaisesAlerts()
     {
         var input = new FakeInput();

@@ -99,11 +99,12 @@ public sealed class ThemeEditor : UserControl
     public void LoadPalette(ThemePalette palette)
     {
         _loading = true;
-        _original = ThemePalette.Parse(JsonSerializer.Serialize(palette));
+        ThemeQueries.Validate(palette);
+        _original = ThemeQueries.Copy(palette);
         _name.Text = palette.Name;
         foreach (string key in ThemePalette.AllColorKeys)
         {
-            _colors[key].Text = palette.GetColor(key);
+            _colors[key].Text = ThemeQueries.Color(palette, key);
         }
 
         _loading = false;
@@ -117,7 +118,7 @@ public sealed class ThemeEditor : UserControl
             Name = _name.Text.Trim(),
             Colors = _colors.ToDictionary(c => c.Key, c => c.Value.Text.Trim()),
         };
-        palette.Validate();
+        ThemeQueries.Validate(palette);
         return palette;
     }
 
@@ -126,7 +127,7 @@ public sealed class ThemeEditor : UserControl
         string value = _colors[key].Text.Trim();
         if (!IsHexColor(value))
         {
-            value = _original?.GetColor(key) ?? "#000000";
+            value = _original is null ? "#000000" : ThemeQueries.Color(_original, key);
             _status.Text = "The hex value is invalid. The picker starts from the original color; choosing a color will replace it.";
         }
 
@@ -165,7 +166,7 @@ public sealed class ThemeEditor : UserControl
             var palette = ReadPalette();
             var brushes = ThemePalette.AllColorKeys.ToDictionary(
                 key => key,
-                key => (Brush)new SolidColorBrush((Color)ColorConverter.ConvertFromString(palette.GetColor(key))));
+                key => (Brush)new SolidColorBrush((Color)ColorConverter.ConvertFromString(ThemeQueries.Color(palette, key))));
             foreach (var (key, paint) in _painters)
             {
                 paint(brushes[key]);

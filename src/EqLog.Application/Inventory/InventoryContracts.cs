@@ -36,8 +36,13 @@ public sealed record InventoryExportSnapshot(
 /// <summary>A detached domain snapshot and a stable export identity; never the service's live state.</summary>
 public sealed record InventorySnapshot(long Revision, QuestInventory State, InventoryExportSnapshot? Export)
 {
+    public InventoryReadModel ReadModel { get; } = new(State);
+
     /// <summary>Immutable summaries for binding, separate from the detached rule-engine compatibility snapshot.</summary>
-    public IReadOnlyList<InventoryItemSummary> Items { get; } = Array.AsReadOnly(State.Items.Select(item =>
+    public IReadOnlyList<InventoryItemSummary> Items
+    {
+        get;
+    } = Array.AsReadOnly(State.Items.Select(item =>
         new InventoryItemSummary(item.Character, item.Item, item.Owned, item.Historical, item.Carried, item.Bank,
             item.Hoard, item.Depot, item.OtherStorage, item.Collection, item.Installed, item.LastLootUtc)).ToArray());
 }

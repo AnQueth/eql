@@ -109,7 +109,7 @@ public partial class MainWindow
     {
         var all = CurrentExaltations();
         if (!_itemEffectsWorking && all.Any(location =>
-            (!_itemEffects.TryGetValue(location.BaseItem, out var cached) || cached.NeedsRefresh) &&
+            (!_itemEffects.TryGetValue(location.BaseItem, out var cached) || WikiQueries.NeedsRefresh(cached)) &&
             _itemEffectRetries.GetValueOrDefault(location.BaseItem) <= DateTime.UtcNow))
         {
             _ = LookupExaltationEffectsAsync(force: false);
@@ -126,7 +126,7 @@ public partial class MainWindow
         }
         var shown = all.Where(location => (_exaltationsInstalledOnly?.IsChecked != true || location.Installed) &&
             (!location.WikiDefault || _itemEffects.GetValueOrDefault(location.BaseItem) is { Found: true, Effects.Count: > 0 }) &&
-            Exaltations.Matches(location, _itemEffects.GetValueOrDefault(location.BaseItem), _exaltationFilter)).ToArray();
+            InventoryQueries.MatchesExaltation(location, _itemEffects.GetValueOrDefault(location.BaseItem), _exaltationFilter)).ToArray();
         int ready = all.Select(location => location.BaseItem).Distinct(StringComparer.OrdinalIgnoreCase)
             .Count(item => _itemEffects.ContainsKey(item));
         int total = all.Select(location => location.BaseItem).Distinct(StringComparer.OrdinalIgnoreCase).Count();
@@ -160,7 +160,7 @@ public partial class MainWindow
             {
                 warning = $"Wiki lookup failed: {error}. Retrying after 5 minutes, or use Refresh effects.";
             }
-            if (info?.NeedsRefresh == true)
+            if (info is not null && WikiQueries.NeedsRefresh(info))
             {
                 warning = string.Join("\n", new[] { warning, "Cached effects are stale; refresh pending." }
                     .Where(value => value is not null));
@@ -204,7 +204,7 @@ public partial class MainWindow
         }
         string source = $"{first.BaseItem} (original item wiki)";
         fields.Add(("Effect source", source));
-        links.Add((source, info?.Url ?? QuestLookup.PageUrl(first.BaseItem)));
+        links.Add((source, info?.Url ?? WikiLinks.PageUrl(first.BaseItem)));
         for (int i = 0; i < copies.Count; i++)
         {
             var copy = copies[i];
@@ -259,7 +259,7 @@ public partial class MainWindow
                 {
                     continue;
                 }
-                if (!force && ((_itemEffects.TryGetValue(item, out var cached) && !cached.NeedsRefresh) ||
+                if (!force && ((_itemEffects.TryGetValue(item, out var cached) && !WikiQueries.NeedsRefresh(cached)) ||
                     _itemEffectRetries.GetValueOrDefault(item) > DateTime.UtcNow))
                 {
                     continue;

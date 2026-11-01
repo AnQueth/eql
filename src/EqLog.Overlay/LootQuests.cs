@@ -18,7 +18,7 @@ public partial class MainWindow
     private readonly CancellationTokenSource _wikiCts = new();
     private InventoryService _inventoryService = null!;
     private readonly InventoryViewModel _inventoryView = new();
-    private QuestInventory _questInventory
+    private InventoryReadModel _questInventory
     {
         get
         {
@@ -46,7 +46,7 @@ public partial class MainWindow
 
     private void InitializeQuestInventory(StartupState state)
     {
-        _inventoryService = InventoryComposition.CreateService(state.QuestInventory ?? new(), state.QuestInventoryError);
+        _inventoryService = state.Inventory;
         if (state.QuestInventoryError is { } error)
         {
             QuestLookupStatus.Text = $"Could not load quest inventory: {error.Message}";
@@ -74,8 +74,8 @@ public partial class MainWindow
             var item = items[_questCacheCursor++];
             string title = GetQuestItemTitle(item.Item);
             _questCache.TryGetValue(title, out var cached);
-            item.HasQuestReferences = cached?.HasQuestReferences == true;
-            if (!_questAttempted.Contains(title) && cached is not null && !cached.NeedsRefresh)
+            item.HasQuestReferences = WikiQueries.HasQuestReferences(cached);
+            if (!_questAttempted.Contains(title) && cached is not null && !WikiQueries.NeedsRefresh(cached))
             {
                 _questAttempted.Add(title);
                 _questFailed.Remove(title);
@@ -97,7 +97,7 @@ public partial class MainWindow
             {
                 string title = GetQuestItemTitle(i.Item);
                 return !_questAttempted.Contains(title) &&
-                    (!_questCache.TryGetValue(title, out var cached) || cached.NeedsRefresh);
+                    (!_questCache.TryGetValue(title, out var cached) || WikiQueries.NeedsRefresh(cached));
             });
             if (next is not null)
             {
@@ -110,14 +110,14 @@ public partial class MainWindow
 
     private async Task<QuestLookupResult> GetQuestResultAsync(string item, CancellationToken token, WikiPriority priority = WikiPriority.Interactive)
     {
-        item = QuestLookup.ItemTitle(item);
+        item = WikiLinks.ItemTitle(item);
         var result = await _wikiRepository.GetQuestAsync(item, priority, false, token);
         token.ThrowIfCancellationRequested();
         var previous = _questCache.GetValueOrDefault(item);
         if (previous != result)
         {
             _questCache[item] = result;
-            if ((previous?.HasQuestReferences == true) != result.HasQuestReferences)
+            if (WikiQueries.HasQuestReferences(previous) != WikiQueries.HasQuestReferences(result))
             {
                 RefreshMergeView();
             }
@@ -127,14 +127,14 @@ public partial class MainWindow
 
     private bool HasQuestReferences(string item)
     {
-        return _questCache.TryGetValue(GetQuestItemTitle(item), out var result) && result.HasQuestReferences;
+        return _questCache.TryGetValue(GetQuestItemTitle(item), out var result) && WikiQueries.HasQuestReferences(result);
     }
 
     private string GetQuestItemTitle(string item)
     {
         if (!_questTitles.TryGetValue(item, out string? title))
         {
-            title = QuestLookup.ItemTitle(item);
+            title = WikiLinks.ItemTitle(item);
             _questTitles[item] = title;
         }
         return title;
@@ -149,12 +149,12 @@ public partial class MainWindow
         using var lookup = BeginWikiLookup();
         var token = lookup.Token;
         _questWorking = true;
-        _questActiveItem = QuestLookup.ItemTitle(item);
+        _questActiveItem = WikiLinks.ItemTitle(item);
         _questProgress = $"Looking up {item}...";
         try
         {
             var result = await GetQuestResultAsync(item, token, WikiPriority.Background);
-            _questFailed.Remove(QuestLookup.ItemTitle(item));
+            _questFailed.Remove(WikiLinks.ItemTitle(item));
             _questActiveItem = null;
             _questProgress = result.Found ? $"Wiki references checked: {item}."
                 : $"Wiki item page not found: {item}. Cached for 24 hours.";
@@ -166,7 +166,7 @@ public partial class MainWindow
             UnauthorizedAccessException or JsonException or InvalidOperationException)
         {
             UsageTelemetry.TrackError(ex, UsageErrorSource.Wiki);
-            _questFailed.Add(QuestLookup.ItemTitle(item));
+            _questFailed.Add(WikiLinks.ItemTitle(item));
             _questProgress = $"Lookup failed for {item}: {ex.Message}. Use Retry lookups.";
             QuestLookupStatus.Text = _questProgress;
         }
@@ -185,7 +185,7 @@ public partial class MainWindow
         foreach (var quest in quests)
         {
             rows.Add(new(quest.Title, Bold: true, QuestHeading: true, Wrap: true,
-                Link: QuestLookup.PageUrl(quest.Title), ToolTip: $"Open {quest.Title} on EQLWiki"));
+                Link: WikiLinks.PageUrl(quest.Title), ToolTip: $"Open {quest.Title} on EQLWiki"));
             var items = _settings.QuestRecentFirst
                 ? quest.Items.OrderByDescending(i => i.LastLootUtc).ThenBy(i => i.Item, StringComparer.OrdinalIgnoreCase)
                 : quest.Items.OrderBy(i => i.Item, StringComparer.OrdinalIgnoreCase);
@@ -322,7 +322,7 @@ public partial class MainWindow
         bool Cached(string item)
         {
             return _questCache.TryGetValue(item, out var result) &&
-            !result.NeedsRefresh;
+            !WikiQueries.NeedsRefresh(result);
         }
 
         int cached = items.Count(Cached);
@@ -407,7 +407,7 @@ public partial class MainWindow
         }
         foreach (var result in state.QuestCache)
         {
-            string title = QuestLookup.ItemTitle(result.Item);
+            string title = WikiLinks.ItemTitle(result.Item);
             if (!_questCache.TryGetValue(title, out var existing) || result.CheckedUtc > existing.CheckedUtc)
             {
                 _questCache[title] = result with
@@ -452,7 +452,7 @@ public partial class MainWindow
         ShowInventoryOverlay();
         _inventoryService.TrackItem(_characterName ?? "", item);
         SynchronizeInventoryView();
-        var selected = _ownedQuestItems.First(i => ItemNames.Comparer.Equals(i.Item, item));
+        var selected = _ownedQuestItems.First(i => ItemPresentation.Comparer.Equals(i.Item, item));
 
         if (ReferenceEquals(QuestOwnedGrid.SelectedItem, selected))
         {
@@ -532,7 +532,7 @@ public partial class MainWindow
     {
         if (QuestOwnedGrid.SelectedItem is QuestInventoryItem selected)
         {
-            OpenWiki(QuestLookup.PageUrl(QuestLookup.ItemTitle(selected.Item)));
+            OpenWiki(WikiLinks.PageUrl(WikiLinks.ItemTitle(selected.Item)));
         }
         else
         {
@@ -544,7 +544,7 @@ public partial class MainWindow
     {
         if (sender is System.Windows.Documents.Hyperlink { Tag: string item })
         {
-            OpenWiki(QuestLookup.ItemUrl(item));
+            OpenWiki(WikiLinks.ItemUrl(item));
             e.Handled = true;
         }
     }
@@ -579,7 +579,7 @@ public partial class MainWindow
     {
         if (sender is System.Windows.Documents.Hyperlink { Tag: string npc })
         {
-            OpenWiki(QuestLookup.SearchUrl(npc));
+            OpenWiki(WikiLinks.SearchUrl(npc));
             e.Handled = true;
         }
     }

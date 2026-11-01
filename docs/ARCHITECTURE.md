@@ -24,7 +24,19 @@ and forbid concrete file/HTTP/WPF access in Core/Application and file/adapter ac
 outside Overlay composition. Persisted compatibility attributes and detached data
 records remain portable; they do not perform I/O.
 
+`PresentationBoundaryTests` also inspect compiled calls (including generated
+lambdas) to reject domain rule methods, calculated domain getters and live
+engine/store fields in presentation. Shared portable records/enums may still
+describe snapshot values; sharing their types is not permission to run their
+rules. Composition is limited to the explicit factories and startup composition.
+
 ### Application ownership
+
+`GameSession` owns the engine and adopted tracking stores. Tracking toggles,
+overrides, relearning, resistance resets, trigger matching, saves and selected
+NPC queries go through its Application commands/read models. WPF cannot access
+its engine or mutable stores. Session revisions reject frames from a replaced
+engine.
 
 `LogSessionService` owns source cancellation, progress, replay/live policy and
 follow-newest decisions. Stopped source callbacks cannot update a newer session;
@@ -37,6 +49,20 @@ preserves dirty retries behind ordered saves. `SettingsService` captures the UI-
 settings graph before awaiting; `SettingsRepository` preserves extension fields,
 serializer options and atomic replacement. `ThemeService` separates palette
 import/export from native dialogs, previews and WPF resources.
+
+`InventoryReadModel` hides its detached domain inventory. Inventory/Sky queries
+prepare progress and combined shortages; NPC queries prepare damage rates,
+resistance evidence and explanatory labels. Mote planning and combat aggregation
+are Application operations using Core rules. Item identity, wiki navigation,
+cache freshness, theme validation and raw-log parsing likewise cross Application
+queries, not direct domain calls from views.
+`SessionQueries` prepares loot ordering and the experience rate, including its
+warmup policy, without requiring presentation to invoke calculated domain methods.
+
+Presentation retains formatting, visual ordering, selection, paging, bar geometry,
+themes/brushes, drag/focus behavior and user confirmations. These are display
+policies, not ownership, combat, upgrade or quest rules. `HealTracker`, for example,
+continues calculating healing in Core; views receive its detached data.
 
 `HousekeepingService` owns the two-second maintenance clock, six-second refresh
 policy and ten-second save policy. Awaited UI dispatch prevents queued tick buildup.

@@ -4,12 +4,57 @@ using System.Windows.Controls;
 using EqLog.Core;
 using EqLog.Core.Parsing;
 using EqLog.Core.Tracking;
+using EqLog.Application.Inventory;
+using EqLog.Application.Motes;
 using Xunit;
 
 namespace EqLog.Overlay.Tests;
 
 public sealed class MoteOverlayTests
 {
+    [Fact]
+    public void PlannerRenderingDisplaysPreparedApplicationTextWithoutRecalculatingIt()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var model = new MotePlanReadModel("", "", new MotePlanBlock[]
+                {
+                    new MotePlanHeading("Prepared heading"),
+                    new MotePlanLine("Prepared points and instructions", Indent: true, Muted: true, Bold: true),
+                    new MotePlanComparison("Prepared comparison", new[] { "Prepared copies count" }),
+                    new MotePlanComplete("Prepared target completion"),
+                });
+                var host = new StackPanel();
+                MainWindow.RenderMotePlan(model, host, 13);
+                Assert.Equal(4, host.Children.Count);
+                Assert.Equal("Prepared heading", Assert.IsType<TextBlock>(host.Children[0]).Text);
+                var line = Assert.IsType<TextBlock>(host.Children[1]);
+                Assert.Equal("Prepared points and instructions", line.Text);
+                Assert.Equal(16, line.Margin.Left);
+                Assert.Equal(FontWeights.SemiBold, line.FontWeight);
+                var comparison = Assert.IsType<Expander>(host.Children[2]);
+                Assert.Equal("Prepared comparison", comparison.Header);
+                var content = Assert.IsType<StackPanel>(comparison.Content);
+                Assert.Equal("Prepared copies count", Assert.IsType<TextBlock>(Assert.Single(content.Children.Cast<UIElement>())).Text);
+                Assert.Equal("Prepared target completion", Assert.IsType<TextBlock>(host.Children[3]).Text);
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure is not null)
+        {
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+    }
+
     [Fact]
     public void PlannerScrollBody_LongCopyEditorAndResultsAreReachableInEveryTab()
     {
@@ -403,7 +448,12 @@ public sealed class MoteOverlayTests
 
     private static OverlayContent RenderMotes(EngineSnapshot snapshot, LogEngine engine, QuestInventory? inventory)
     {
-        var view = new OverlayView(new HashSet<ChatChannel>(), [], Inventory: inventory);
+        var readModel = inventory is null ? null : new InventoryReadModel(inventory);
+        DateTime? exportTime = readModel is not null &&
+            readModel.ExportTimes.TryGetValue(snapshot.CharacterName.ToUpperInvariant(), out DateTime exported)
+            ? exported : null;
+        var moteInventory = MoteInventoryReadModel.Capture(readModel?.Items ?? [], snapshot.CharacterName, exportTime);
+        var view = new OverlayView(new HashSet<ChatChannel>(), [], Inventory: readModel, MoteInventory: moteInventory);
         var presenter = Assert.Single(OverlayPresenters.All, definition => definition.Key == "motes");
         return presenter.Render(snapshot, EngineQuerySnapshot.Capture(engine), view);
     }

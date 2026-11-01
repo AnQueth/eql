@@ -154,7 +154,7 @@ public sealed class ItemFilterTests
                 new("Other", "Sword", 2, 3, now.AddMinutes(2)),
             ],
         };
-        var view = new OverlayView(new HashSet<ChatChannel>(), [], Inventory: inventory,
+        var view = new OverlayView(new HashSet<ChatChannel>(), [], Inventory: new EqLog.Application.Inventory.InventoryReadModel(inventory),
             CharacterName: "Que", ItemFilter: " sWo ");
         var presenter = OverlayPresenters.All.Single(definition => definition.Key == "itemupgrades");
 

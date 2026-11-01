@@ -111,7 +111,6 @@ public partial class MainWindow : Window
     private readonly EqLog.Application.Settings.SettingsService _settingsPersistence;
     private readonly TrackingService _tracking;
     private readonly ApplicationPersistenceService _persistence;
-    private readonly SpellDurationStore _durations;
     private readonly Dictionary<string, OverlayWindow> _overlays = [];
     private readonly Dictionary<string, CheckBox> _overlayToggles = [];
     private readonly Dictionary<string, CheckBox> _dockToggles = [];
@@ -121,8 +120,6 @@ public partial class MainWindow : Window
     private string? _activeDockWorkspaceId;
     private readonly HashSet<ChatChannel> _chatChannels;
     private readonly ObservableCollection<DurationRow> _durationRows = [];
-    private readonly SpawnStore _spawnStore;
-    private readonly MoteStore _moteStore;
     private readonly ObservableCollection<SpawnRow> _spawnRows = [];
     private string _spawnsSignature = "";
     private readonly DispatcherTimer _renderTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
@@ -140,7 +137,6 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, Brush> _alertBrushes = new(StringComparer.OrdinalIgnoreCase);
     private const int MaxAlerts = 6;
 
-    private volatile TriggerMatcher _matcher = TriggerMatcher.Empty;
     private string? _characterName;
 
     private const int RawBufferSize = 5000;
@@ -150,7 +146,7 @@ public partial class MainWindow : Window
     private long _rawVersion;
     private long _rawShownVersion = -1;
 
-    private LogEngine _engine = new();
+    private readonly GameSession _session;
     private LogSessionService _logSessions = null!;
     private string? _currentFile;
     private string _durationsSignature = "";
@@ -161,10 +157,7 @@ public partial class MainWindow : Window
         _settings = state.Settings;
         _settingsPersistence = state.SettingsPersistence ?? SettingsComposition.CreateService();
         _tracking = state.Tracking ?? TrackingComposition.CreateService();
-        _durations = state.Durations;
-        _engine = new LogEngine(_durations);
-        _spawnStore = state.Spawns;
-        _moteStore = state.Motes;
+        _session = state.Session;
         InitializeComponent();
         InitializeThemes(state);
         InitializeLootQuests(state);
@@ -175,7 +168,7 @@ public partial class MainWindow : Window
             RememberRawLines(batch.Lines);
             if (batch.Live)
             {
-                foreach (var alert in _matcher.Match(batch.Lines))
+                foreach (var alert in _session.MatchTriggers(batch.Lines))
                 {
                     _pendingAlerts.Enqueue(alert);
                 }
@@ -316,9 +309,9 @@ public partial class MainWindow : Window
             {
                 panel.SpawnTrackToggleRequested += change =>
                 {
-                    _engine.SetSpawnTracked(change.Zone, change.Mob, change.Tracked);
+                    _session.SetSpawnTracked(change.Zone, change.Mob, change.Tracked);
                     CheckSpawnWiki();
-                    _ = SaveQuietlyAsync(_tracking.SaveSpawnsAsync(_engine));
+                    _ = SaveQuietlyAsync(_session.SaveSpawnsAsync(_tracking));
                 };
             }
 
@@ -326,8 +319,8 @@ public partial class MainWindow : Window
             {
                 panel.SpellTrackToggleRequested += change =>
                 {
-                    _engine.SetSpellTracked(change.Spell, change.Tracked);
-                    _ = SaveQuietlyAsync(_tracking.SaveSpellDurationsAsync(_engine));
+                    _session.SetSpellTracked(change.Spell, change.Tracked);
+                    _ = SaveQuietlyAsync(_session.SaveSpellDurationsAsync(_tracking));
                 };
             }
 
@@ -377,7 +370,7 @@ public partial class MainWindow : Window
                 ConfigureItemFilterToolbar(panel, filter => _itemFilters[def.Key] = filter);
             }
             panel.LootLookupRequested += async item => await LookupLootItemAsync(item);
-            panel.ItemWikiRequested += item => OpenWiki(QuestLookup.PageUrl(QuestLookup.ItemTitle(item)));
+            panel.ItemWikiRequested += item => OpenWiki(WikiLinks.PageUrl(WikiLinks.ItemTitle(item)));
             panel.LinkRequested += url => OpenWiki(url);
             panel.BreakdownRequested += breakdown =>
             {
@@ -1001,14 +994,9 @@ public partial class MainWindow : Window
         ResetMobInfo();
 
         var info = await _logSessions.DescribeAsync(path);
-        _engine = new LogEngine(_durations, _spawnStore, _moteStore, _mobResistances, info.Path, _npcCompendium)
-        {
-            CharacterName = info.CharacterName,
-            ResetOnLogin = _settings.ResetOnLogin,
-        };
         _currentFile = path;
         _characterName = info.CharacterName;
-        _matcher = new TriggerMatcher(_triggers, _characterName);
+        _session.ConfigureTriggers(_triggers, _characterName);
         _settings.LogPath = path;
         _settings.LogDirectory = Path.GetDirectoryName(path);
         LogPathBox.Text = path;
@@ -1018,7 +1006,7 @@ public partial class MainWindow : Window
             _rawVersion++;
         }
 
-        _logSessions.Start(info, _engine);
+        _session.Start(_logSessions, info, _settings.ResetOnLogin);
         _inventoryView.ImportStatus = "Waiting for this character's inventory export. Create/update it in game with /outputfile inventory.";
         _questSelectionVersion++;
         SynchronizeInventoryView();
@@ -1072,12 +1060,12 @@ public partial class MainWindow : Window
             StatusText.Text = $"Loading history {HistoryProgress.Value:P0} - {p.LinesRead:N0} lines";
         }
 
-        var engine = _engine;
+        long generation = _session.Revision;
         var channels = new HashSet<ChatChannel>(_chatChannels);
         bool includeChat = IsShowing("chat");
-        var frame = await _logSessions.CaptureFrameAsync(engine, includeChat, channels,
+        var frame = await _session.CaptureFrameAsync(_logSessions, includeChat, channels,
             includeSpawns: IsShowing("spawns"), includeSpellDurations: IsShowing("timers"));
-        if (_shutDown || !ReferenceEquals(engine, _engine))
+        if (_shutDown || generation != _session.Revision)
         {
             return;
         }
@@ -1119,7 +1107,8 @@ public partial class MainWindow : Window
             renderWiki ? GetQuestWikiActivity() : null,
             frame.Chat,
             _dpsFight,
-            _characterName);
+            _characterName,
+            MoteInventory: IsShowing("motes") ? _questInventory.Motes(_characterName) : null);
         if (LogLinesTab.IsSelected)
         {
             RefreshRawLines();
@@ -1166,7 +1155,7 @@ public partial class MainWindow : Window
             if (!p.CaughtUp && renderBudget.ElapsedMilliseconds >= 8)
             {
                 await System.Windows.Threading.Dispatcher.Yield(DispatcherPriority.Background);
-                if (_shutDown || !ReferenceEquals(engine, _engine))
+                if (_shutDown || generation != _session.Revision)
                 {
                     return;
                 }
@@ -1285,7 +1274,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var list = _engine.SpellDurations(highestRanksOnly: true);
+        var list = _session.SpellDurations();
         string signature = string.Join('|', list.Select(d => $"{d.Spell}:{d.Samples}:{d.LearnedSeconds:F0}:{d.OverrideSeconds}:{d.Tracked}:{d.WikiSeconds}"));
         if (signature == _durationsSignature)
         {
@@ -1322,13 +1311,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        _engine.SetSpellDurationOverride(spell, seconds);
-        _engine.SetSpellTracked(spell, true);
+        _session.AddSpellDuration(spell, seconds);
         _durationsSignature = "";
         RefreshDurations(force: true);
         NewDurationSpellBox.Clear();
         NewDurationSecondsBox.Clear();
-        _ = SaveQuietlyAsync(_tracking.SaveSpellDurationsAsync(_engine));
+        _ = SaveQuietlyAsync(_session.SaveSpellDurationsAsync(_tracking));
     }
 
     private void RemoveDuration_Click(object sender, RoutedEventArgs e)
@@ -1349,10 +1337,10 @@ public partial class MainWindow : Window
             return;
         }
 
-        _engine.RemoveSpellDuration(row.Spell);
+        _session.RemoveSpellDuration(row.Spell);
         _durationsSignature = "";
         RefreshDurations(force: true);
-        _ = SaveQuietlyAsync(_tracking.SaveSpellDurationsAsync(_engine));
+        _ = SaveQuietlyAsync(_session.SaveSpellDurationsAsync(_tracking));
     }
 
     private void RelearnDuration_Click(object sender, RoutedEventArgs e)
@@ -1373,25 +1361,24 @@ public partial class MainWindow : Window
             return;
         }
 
-        _engine.RelearnSpellDuration(row.Spell);
+        _session.RelearnSpellDuration(row.Spell);
         _durationsSignature = "";
         RefreshDurations(force: true);
-        _ = SaveQuietlyAsync(_tracking.SaveSpellDurationsAsync(_engine));
+        _ = SaveQuietlyAsync(_session.SaveSpellDurationsAsync(_tracking));
     }
 
     private static bool TryReadSpellDuration(string text, out double seconds)
     {
-        return double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out seconds) &&
-            double.IsFinite(seconds) && seconds > 0 && seconds <= TimeSpan.MaxValue.TotalSeconds - 60;
+        return GameSession.TryReadSpellDuration(text, out seconds);
     }
 
     private void DurationTrack_Click(object sender, RoutedEventArgs e)
     {
         if (sender is CheckBox { DataContext: DurationRow row } box)
         {
-            _engine.SetSpellTracked(row.Spell, box.IsChecked == true);
+            _session.SetSpellTracked(row.Spell, box.IsChecked == true);
             _durationsSignature = "";
-            _ = SaveQuietlyAsync(_tracking.SaveSpellDurationsAsync(_engine));
+            _ = SaveQuietlyAsync(_session.SaveSpellDurationsAsync(_tracking));
         }
     }
 
@@ -1405,11 +1392,11 @@ public partial class MainWindow : Window
         string text = box.Text.Trim();
         if (text.Length == 0)
         {
-            _engine.SetSpellDurationOverride(row.Spell, null);
+            _session.SetSpellDurationOverride(row.Spell, null);
         }
         else if (TryReadSpellDuration(text, out double seconds))
         {
-            _engine.SetSpellDurationOverride(row.Spell, seconds);
+            _session.SetSpellDurationOverride(row.Spell, seconds);
         }
         else
         {
@@ -1419,7 +1406,7 @@ public partial class MainWindow : Window
         }
 
         _durationsSignature = "";
-        _ = SaveQuietlyAsync(_tracking.SaveSpellDurationsAsync(_engine));
+        _ = SaveQuietlyAsync(_session.SaveSpellDurationsAsync(_tracking));
     }
 
     private Task _periodicSave = Task.CompletedTask;
@@ -1450,7 +1437,7 @@ public partial class MainWindow : Window
     /// </summary>
     private Task<PersistenceResult> StartSaves()
     {
-        return _persistence.SaveAsync(_settings, _engine, _mobResistances, _npcCompendium, _mobSaveEnabled, _npcSaveEnabled);
+        return _persistence.SaveAsync(_settings, _session);
     }
 
     /// <summary>Saves window layout, settings and everything learned. Runs every few seconds, on close and before updating.</summary>
@@ -1678,13 +1665,13 @@ public partial class MainWindow : Window
 
     private void ResetSession_Click(object sender, RoutedEventArgs e)
     {
-        _engine.ResetSession();
+        _session.ResetSession();
     }
 
     private void ResetOnLogin_Click(object sender, RoutedEventArgs e)
     {
         _settings.ResetOnLogin = ResetOnLoginBox.IsChecked == true;
-        _engine.ResetOnLogin = _settings.ResetOnLogin;
+        _session.SetResetOnLogin(_settings.ResetOnLogin);
     }
 
     private void ResetPositions_Click(object sender, RoutedEventArgs e)
@@ -1768,9 +1755,8 @@ public partial class MainWindow : Window
 
     private void RebuildTriggers()
     {
-        var matcher = new TriggerMatcher(_triggers, _characterName);
-        _matcher = matcher;
-        TriggerStatusText.Text = matcher.Errors.Count == 0 ? "" : "Invalid regex (trigger skipped): " + string.Join("; ", matcher.Errors);
+        var errors = _session.ConfigureTriggers(_triggers, _characterName);
+        TriggerStatusText.Text = errors.Count == 0 ? "" : "Invalid regex (trigger skipped): " + string.Join("; ", errors);
         _settings.Triggers = [.. _triggers];
         SaveSettingsInBackground(error => TriggerStatusText.Text += $" Could not save alert triggers: {error}");
     }
@@ -1921,7 +1907,7 @@ public partial class MainWindow : Window
     {
         CommitTriggerEdits();
         RebuildTriggers();
-        var alerts = _matcher.Match([TestLineBox.Text]);
+        var alerts = _session.MatchTriggers([TestLineBox.Text]);
         double previewSeconds = alerts.Count == 0 ? 8 :
             alerts.Max(a => a.Trigger.Seconds > 0 ? a.Trigger.Seconds : 8);
         _alertTestVisibleUntil = DateTime.Now.AddSeconds(previewSeconds + 1);
@@ -2003,40 +1989,10 @@ public partial class MainWindow : Window
             snapshot = [.. _rawLines];
         }
 
-        Func<string, bool> keep = _ => true;
         string filter = RawFilterBox.Text;
-        string status = "";
-        if (filter.Length > 0)
-        {
-            if (RegexFilterBox.IsChecked == true)
-            {
-                if (TriggerMatcher.TryCompile(filter, _characterName, out var regex, out string? error))
-                {
-                    keep = raw =>
-                    {
-                        string message = LogLine.TryParse(raw, out var l) ? l.Message : raw;
-                        try
-                        {
-                            return regex.IsMatch(message);
-                        }
-                        catch (System.Text.RegularExpressions.RegexMatchTimeoutException)
-                        {
-                            return false;
-                        }
-                    };
-                }
-                else
-                {
-                    status = $"Invalid regex: {error}  ";
-                }
-            }
-            else
-            {
-                keep = raw => raw.Contains(filter, StringComparison.OrdinalIgnoreCase);
-            }
-        }
-
-        var shown = snapshot.Where(keep).TakeLast(RawDisplayMax).ToArray();
+        var selection = RawLogQueries.Filter(snapshot, filter, RegexFilterBox.IsChecked == true, _characterName, RawDisplayMax);
+        string status = selection.Error is { } error ? error + "  " : "";
+        var shown = selection.Lines.ToArray();
         object? selected = RawLinesList.SelectedItem;
         RawLinesList.ItemsSource = shown;
         if (selected is not null && Array.IndexOf(shown, selected) >= 0)
@@ -2101,11 +2057,11 @@ public partial class MainWindow : Window
             return;
         }
 
-        string message = LogLine.TryParse(raw, out var line) ? line.Message : raw.Trim();
+        string message = RawLogQueries.Message(raw);
         var trigger = new AlertTrigger
         {
             Name = message.Length > 30 ? message[..30] : message,
-            Pattern = TriggerMatcher.PatternFromMessage(message, _characterName),
+            Pattern = RawLogQueries.TriggerPattern(message, _characterName),
             Text = "",
         };
         _triggers.Add(trigger);
@@ -2123,13 +2079,10 @@ public partial class MainWindow : Window
             return;
         }
 
-        string? zone = _engine.SpawnZone;
+        var query = _session.SpawnQueries(ShowAllMobsBox.IsChecked == true);
+        string? zone = query.SpawnZone;
         bool all = ShowAllMobsBox.IsChecked == true;
-        var list = _engine.SpawnCandidates()
-            .Where(c => all || c.LikelyNamed || c.Info?.Tracked == true)
-            .OrderByDescending(c => c.Info?.Tracked == true)
-            .ThenBy(c => c.Mob, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var list = query.SpawnCandidates;
         string signature = zone + "|" + all + "|" + string.Join('|', list.Select(c => $"{c.Mob}:{c.Kills}:{c.LastKilled:O}:{c.Info?.Samples}:{c.Info?.LearnedSeconds}:{c.Info?.WikiSeconds}:{c.Info?.OverrideSeconds}:{c.Info?.Tracked}"));
         if (!force && signature == _spawnsSignature)
         {
@@ -2170,9 +2123,9 @@ public partial class MainWindow : Window
     {
         if (sender is FrameworkElement { DataContext: SpawnRow row } && sender is CheckBox box)
         {
-            _engine.SetSpawnTracked(row.Zone, row.Mob, box.IsChecked == true);
+            _session.SetSpawnTracked(row.Zone, row.Mob, box.IsChecked == true);
             CheckSpawnWiki();
-            _ = SaveQuietlyAsync(_tracking.SaveSpawnsAsync(_engine));
+            _ = SaveQuietlyAsync(_session.SaveSpawnsAsync(_tracking));
         }
     }
 
@@ -2194,10 +2147,10 @@ public partial class MainWindow : Window
             return;
         }
 
-        _engine.RelearnSpawn(row.Zone, row.Mob);
+        _session.RelearnSpawn(row.Zone, row.Mob);
         CheckSpawnWiki();
         RefreshSpawns(force: true);
-        _ = SaveQuietlyAsync(_tracking.SaveSpawnsAsync(_engine));
+        _ = SaveQuietlyAsync(_session.SaveSpawnsAsync(_tracking));
     }
 
     private void Spawns_CellEditEnding(object? sender, DataGridCellEditEndingEventArgs e)
@@ -2210,11 +2163,11 @@ public partial class MainWindow : Window
         string text = box.Text.Trim();
         if (text.Length == 0)
         {
-            _engine.SetSpawnOverride(row.Zone, row.Mob, null);
+            _session.SetSpawnOverride(row.Zone, row.Mob, null);
         }
-        else if (SpawnStore.TryParseDuration(text, out double seconds))
+        else if (GameSession.TryReadSpawnDuration(text, out double seconds))
         {
-            _engine.SetSpawnOverride(row.Zone, row.Mob, seconds);
+            _session.SetSpawnOverride(row.Zone, row.Mob, seconds);
         }
         else
         {
@@ -2224,7 +2177,7 @@ public partial class MainWindow : Window
         }
 
         _spawnsSignature = "";
-        _ = SaveQuietlyAsync(_tracking.SaveSpawnsAsync(_engine));
+        _ = SaveQuietlyAsync(_session.SaveSpawnsAsync(_tracking));
     }
 
     /// <summary>Settings save for UI handlers that can't await; <paramref name="onError"/> receives the failure message.</summary>

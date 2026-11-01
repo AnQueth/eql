@@ -19,11 +19,11 @@ public static class ThemeManager
 
     public static void Apply(ThemePalette theme)
     {
-        theme.Validate();
+        ThemeQueries.Validate(theme);
         var resources = System.Windows.Application.Current.Resources;
         foreach (string key in ThemePalette.AllColorKeys)
         {
-            var color = (Color)ColorConverter.ConvertFromString(theme.GetColor(key));
+            var color = (Color)ColorConverter.ConvertFromString(ThemeQueries.Color(theme, key));
             resources[key] = new SolidColorBrush(color);
         }
 

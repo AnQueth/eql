@@ -49,7 +49,7 @@ public partial class MainWindow
         }
         try
         {
-            await _wikiRepository.ResetCachesAsync(() => Dispatcher.InvokeAsync(async () =>
+            await _session.ResetWikiCachesAsync(_wikiRepository, () => Dispatcher.InvokeAsync(async () =>
             {
                 await Task.WhenAll(lookups.Select(lookup => lookup.Completion));
                 ResetWikiCacheStatus.Text = "Clearing wiki caches from memory and disk...";
@@ -85,7 +85,7 @@ public partial class MainWindow
                 _spawnsSignature = "";
                 _durationsSignature = "";
                 RefreshMergeView();
-            }).Task.Unwrap(), _engine, _tracking);
+            }).Task.Unwrap(), _tracking);
             ResetWikiCacheStatus.Text = "All wiki caches reset. Next lookups fetch fresh information; tracking history and settings are unchanged.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException)

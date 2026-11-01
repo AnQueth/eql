@@ -28,7 +28,7 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
         get;
     }
     public long Revision { get; private set; } = -1;
-    public QuestInventory State { get; private set; } = new();
+    public InventoryReadModel State { get; private set; } = InventoryReadModel.Empty;
     public InventoryExportSnapshot? Export
     {
         get; private set;
@@ -88,7 +88,7 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
     public void Apply(InventorySnapshot snapshot, string? character)
     {
         Revision = snapshot.Revision;
-        State = snapshot.State;
+        State = snapshot.ReadModel;
         Export = snapshot.Export;
         var rows = snapshot.Items.Where(item => item.Character.Equals(character, StringComparison.OrdinalIgnoreCase)).ToArray();
         for (int index = 0; index < rows.Length; index++)
@@ -99,7 +99,7 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
                 Items.Add(DisplayItem(row));
             }
             else if (Items[index].Character.Equals(row.Character, StringComparison.OrdinalIgnoreCase) &&
-                ItemNames.Comparer.Equals(Items[index].Item, row.Item))
+                ItemPresentation.Comparer.Equals(Items[index].Item, row.Item))
             {
                 var existing = Items[index];
                 existing.Item = row.Item;
@@ -147,8 +147,8 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
             Copies = InventoryQueries.CopyLocations(Export.Rows, SelectedItem.Item);
             string freshness = $"Last export: {Export.Stamp.Written.ToLocalTime():g}. Counts and locations use this export only. Run /outputfile inventory after looting, merging, or moving items.";
             CopyStatus = Copies.Count == 0
-                ? $"No copies of {ItemNames.Normalize(SelectedItem.Item)} in the last export. {freshness}"
-                : $"{ItemNames.Normalize(SelectedItem.Item)}: {Copies.Sum(copy => copy.Quantity):N0} copies across {Copies.Count:N0} exported entries, including collections and installed augments. {freshness}";
+                ? $"No copies of {ItemPresentation.Name(SelectedItem.Item)} in the last export. {freshness}"
+                : $"{ItemPresentation.Name(SelectedItem.Item)}: {Copies.Sum(copy => copy.Quantity):N0} copies across {Copies.Count:N0} exported entries, including collections and installed augments. {freshness}";
         }
         Notify(nameof(Copies));
         Notify(nameof(CopyStatus));

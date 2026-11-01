@@ -44,19 +44,7 @@ public partial class MainWindow
         {
             get; init;
         }
-        public required SpellDurationStore Durations
-        {
-            get; init;
-        }
-        public required SpawnStore Spawns
-        {
-            get; init;
-        }
-        public required MoteStore Motes
-        {
-            get; init;
-        }
-        public MobResistanceStore? MobResistances
+        public required GameSession Session
         {
             get; init;
         }
@@ -64,15 +52,11 @@ public partial class MainWindow
         {
             get; init;
         }
-        public NpcCompendium? NpcCompendium
-        {
-            get; init;
-        }
         public Exception? NpcCompendiumError
         {
             get; init;
         }
-        public QuestInventory? QuestInventory
+        public required InventoryService Inventory
         {
             get; init;
         }
@@ -115,14 +99,10 @@ public partial class MainWindow
                 TrackingFailures = tracking.Result.Failures,
                 Themes = themes.Result.Value ?? [],
                 ThemesError = themes.Result.Error,
-                Durations = tracking.Result.Durations,
-                Spawns = tracking.Result.Spawns,
-                Motes = tracking.Result.Motes,
-                MobResistances = tracking.Result.Mobs,
+                Session = new GameSession(tracking.Result),
                 MobResistancesError = tracking.Result.Failures.FirstOrDefault(failure => failure.Store == "mobs")?.Error,
-                NpcCompendium = tracking.Result.Npcs,
                 NpcCompendiumError = tracking.Result.Failures.FirstOrDefault(failure => failure.Store == "npcs")?.Error,
-                QuestInventory = inventory.Result.Value,
+                Inventory = InventoryComposition.CreateService(inventory.Result.Value ?? new(), inventory.Result.Error),
                 QuestInventoryError = inventory.Result.Error,
                 QuestCache = wiki.Result.Quests.Value ?? [],
                 QuestCacheError = wiki.Result.Quests.Error,

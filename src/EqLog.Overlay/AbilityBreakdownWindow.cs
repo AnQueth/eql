@@ -124,7 +124,7 @@ public sealed class AbilityBreakdownWindow : Window
         foreach (var lane in lanes)
         {
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(24) });
-            var segments = DamageTimeline.Segments(lane.Points);
+            var segments = CombatQueries.Segments(lane.Points);
             long damage = lane.Points.Sum(p => p.Amount);
             var name = new TextBlock
             {
@@ -198,7 +198,7 @@ public sealed class AbilityBreakdownWindow : Window
 
     private static FrameworkElement BuildTimeline(IReadOnlyList<DamageTimelinePoint> points, double seconds, DateTime? start)
     {
-        var buckets = DamageTimeline.Bucket(points, seconds, MaxTimelineBars);
+        var buckets = CombatQueries.Buckets(points, seconds, MaxTimelineBars);
         int width = buckets.Count == 0 ? 1 : buckets[0].EndSecond - buckets[0].StartSecond;
         long peak = buckets.Count == 0 ? 0 : buckets.Max(b => b.Amount);
         var panel = new DockPanel { Margin = new Thickness(8) };

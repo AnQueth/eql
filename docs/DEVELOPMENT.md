@@ -36,6 +36,12 @@ Add fake-port workflow tests to Application, pure rule/tracker tests to Core,
 temporary-file/fake-HTTP tests to Infrastructure and binding/presenter tests to Overlay.
 Presenters receive `EngineQuerySnapshot`, never the live `LogEngine`.
 `LayerBoundaryTests` verify both source access and actual/project references.
+Use `GameSession` commands for engine changes and Application inventory, Sky,
+combat, mote and NPC queries for rule-derived values. Do not retain live Core
+engines/stores or call domain helpers from views. Portable snapshot records/enums
+may be shared, but calculated domain getters must be evaluated in Application.
+`PresentationBoundaryTests` inspect compiled calls, including lambdas, to enforce
+this distinction. Keep display formatting, sorting/paging and chart geometry in WPF.
 
 Application tests use fake ports to exercise stabilization, superseded sessions,
 cancellation, detached snapshots, ordered saves, retries and confirmed counts.

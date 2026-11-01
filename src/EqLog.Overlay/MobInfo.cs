@@ -16,7 +16,6 @@ namespace EqLog.Overlay;
 
 public partial class MainWindow
 {
-    private MobResistanceStore _mobResistances = new();
     private bool _mobSaveEnabled = true;
     private readonly ConcurrentQueue<(LogEvent Event, string Zone)> _mobEvents = new();
     private ConsiderEvent? _consideredMob;
@@ -37,17 +36,8 @@ public partial class MainWindow
         {
             return;
         }
-        foreach (var candidate in _engine.SpawnCandidates().Where(c => c.Info is
-        { Tracked: true, LearnedSeconds: null, OverrideSeconds: null }))
+        foreach (string mob in _session.SpawnWikiRequests(DateTime.UtcNow))
         {
-            string mob = candidate.Mob;
-            var cached = _mobResistances.Get("", mob).Wiki;
-            if (cached is not null && DateTime.UtcNow - cached.CheckedUtc < TimeSpan.FromDays(1))
-            {
-                _engine.SetSpawnWikiRespawn(mob,
-                    SpawnStore.TryParseWikiRespawn(cached.Stats?.RespawnTime, out double seconds) ? seconds : null);
-                continue;
-            }
             if (_spawnWikiRetry.GetValueOrDefault(mob) <= DateTime.UtcNow && _spawnWikiPending.Add(mob))
             {
                 _ = LookupSpawnWikiAsync(mob);
@@ -57,14 +47,17 @@ public partial class MainWindow
 
     private async Task LookupSpawnWikiAsync(string mob)
     {
+        long generation = _session.Revision;
         using var lookup = BeginWikiLookup();
         var token = lookup.Token;
         try
         {
             var wiki = await _wikiRepository.GetMobAsync(mob, WikiPriority.Background, false, token);
             token.ThrowIfCancellationRequested();
-            _engine.SetSpawnWikiRespawn(mob,
-                SpawnStore.TryParseWikiRespawn(wiki.Stats?.RespawnTime, out double seconds) ? seconds : null);
+            if (generation == _session.Revision)
+            {
+                _session.ApplySpawnWiki(mob, wiki);
+            }
             _spawnsSignature = "";
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -92,9 +85,8 @@ public partial class MainWindow
 
     private void InitializeMobInfo(StartupState state)
     {
-        if (state.MobResistances is { } mobs)
+        if (_session.MobsWritable)
         {
-            _mobResistances = mobs;
             MobInfoStatusText.Text = "Only mob and spell names are sent to EQLWiki; no log files are uploaded.";
         }
         else
@@ -109,7 +101,7 @@ public partial class MainWindow
             MobInfoStatusText.Text += " Invalid display timeout reset to 5 seconds.";
         }
         MobTimeoutBox.Text = _settings.MobInfoTimeoutSeconds.ToString(CultureInfo.CurrentCulture);
-        _wikiRepository = WikiComposition.CreateService(_mobResistances, _mobSaveEnabled);
+        _wikiRepository = WikiComposition.CreateService(_session);
         _wikiRepository.CacheWriteFailed += (operation, error) =>
         {
             Dispatcher.BeginInvoke(() =>
@@ -237,8 +229,8 @@ public partial class MainWindow
             result.Visibility = Visibility.Visible;
             try
             {
-                _mobResistances.ResetResistances(zone, mob, DateTime.Now);
-                await _tracking.SaveMobsAsync(_mobResistances);
+                _session.ResetResistances(zone, mob, DateTime.Now);
+                await _session.SaveMobsAsync(_tracking);
                 result.Text = $"Resistance history reset for {mob} in {zone}. Learning from new events only.";
                 MobInfoStatusText.Text = result.Text;
             }
@@ -274,7 +266,7 @@ public partial class MainWindow
 
     private void OpenMobWiki(string mob, string zone, Action<string> report)
     {
-        string url = _mobResistances.Get(zone, mob).Wiki?.Url ?? QuestLookup.PageUrl(mob);
+        string url = _session.GetMob(zone, mob).Wiki?.Url ?? WikiLinks.PageUrl(mob);
         try
         {
             Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
@@ -392,7 +384,7 @@ public partial class MainWindow
             await Task.Delay(250, token);
             string status = await Task.Run(async () =>
             {
-                var info = _mobResistances.Get(zone, mob);
+                var info = _session.GetMob(zone, mob);
                 await _wikiRepository.GetMobAsync(mob, priority, force, token);
                 foreach (string spell in info.Spells)
                 {
@@ -401,9 +393,9 @@ public partial class MainWindow
                 }
                 if (_mobSaveEnabled)
                 {
-                    await _tracking.SaveMobsAsync(_mobResistances, token);
+                    await _session.SaveMobsAsync(_tracking, token);
                 }
-                var wikiInfo = _mobResistances.Get(zone, mob).Wiki;
+                var wikiInfo = _session.GetMob(zone, mob).Wiki;
                 return wikiInfo?.Found == true
                     ? "EQLWiki cached. Missing stats are unknown, not zero."
                     : "No exact mob page found on EQLWiki. Local observations are shown separately.";
@@ -440,7 +432,7 @@ public partial class MainWindow
     private OverlayContent BuildMobInfoContent(string mob, string zone, ConsiderEvent? con, string? assessment, string wikiStatus,
         bool compact = false)
     {
-        var info = _mobResistances.Get(zone, mob);
+        var info = _session.GetMob(zone, mob);
         var rows = new List<OverlayRow>();
         if (con is not null)
         {
@@ -543,7 +535,7 @@ public partial class MainWindow
             rows.Add(new("Persistent mob storage unavailable; this session is NOT being saved. See General.",
                 Wrap: true, Foreground: Brushes.Coral, Scale: 0.85));
         }
-        return new(mob, zone, rows, QuestLookup.SearchUrl(mob));
+        return new(mob, zone, rows, WikiLinks.SearchUrl(mob));
     }
 
     internal static IReadOnlyList<OverlayRow> MobQuestRows(MobWikiInfo? wiki)

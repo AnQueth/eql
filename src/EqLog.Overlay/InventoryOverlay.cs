@@ -186,7 +186,7 @@ public partial class MainWindow
             return;
         }
 
-        var groups = InventoryExport.MergeGroups(_inventoryRows);
+        var groups = InventoryQueries.MergeGroups(_inventoryRows);
         string filter = _mergeFilter.Text.Trim();
         var shown = filter.Length == 0
             ? groups

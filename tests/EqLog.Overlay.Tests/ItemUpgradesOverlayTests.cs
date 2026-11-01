@@ -19,7 +19,7 @@ public sealed class ItemUpgradesOverlayTests
                 new("Other", "Shield", 0, 1, written.AddMinutes(1)),
             ],
         };
-        var view = new OverlayView(new HashSet<ChatChannel>(), [], Inventory: inventory, CharacterName: "Que");
+        var view = new OverlayView(new HashSet<ChatChannel>(), [], Inventory: new EqLog.Application.Inventory.InventoryReadModel(inventory), CharacterName: "Que");
         var presenter = Assert.Single(OverlayPresenters.All, definition => definition.Key == "itemupgrades");
 
         var content = presenter.Render(null!, null!, view);

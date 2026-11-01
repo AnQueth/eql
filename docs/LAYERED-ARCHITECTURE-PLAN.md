@@ -6,6 +6,10 @@ enrichment, detached presenter queries and boundary enforcement are implemented.
 Automated validation is recorded below; isolated full-window manual review remains
 explicitly separate and has not been performed.
 
+The initial extraction separated file access and workflows but still allowed
+direct UI-to-Core rule calls. The user subsequently authorized the stricter
+presentation boundary below; the original dependency checks did not prove it.
+
 ## Objective
 
 Separate game-file access, application workflows, domain rules, persistence, and
@@ -72,7 +76,7 @@ database migration, version bump, or publication is included.
 - The app version remains 1.0.34. No release tag, publication or real-profile app
   startup is part of this branch.
 
-## Final automated validation
+## Initial layered extraction validation
 
 - Release solution build: zero warnings and errors.
 - All 694 tests passed: 369 Core, 27 Application, 185 Infrastructure and 113 Overlay;
@@ -359,6 +363,37 @@ Dependency: all migrated slices pass their gates.
 - [x] Update architecture/development docs and cross-reference this completed plan.
 - [x] Inspect packaging/update-smoke references for assemblies moved across projects.
 - [x] Verify publishing includes new assemblies without a version bump or release.
+
+### Phase 8: Finish the strict presentation boundary
+
+Authorized after reviewing the remaining direct domain calls.
+
+- [x] Adopt engines/tracking stores in Application `GameSession`; route UI
+  changes through commands and detached queries rather than live state.
+- [x] Hide inventory domain state behind `InventoryReadModel`.
+- [x] Move combined Sky shortages, NPC damage/rating evidence, mote planning and
+  combat aggregation out of WPF; retain formatting, visual sorting and paging.
+- [x] Route item identity, navigation, freshness, theme validation and raw-log
+  parsing through Application queries.
+- [x] Add compiled-call checks rejecting direct domain rule calls/calculated
+  getters, plus source/field checks rejecting live engines/stores in views.
+- [x] Validate all regressions, publishing and package/update checks for this
+  stricter boundary, then commit it on the existing refactoring branch.
+
+### Strict presentation boundary validation
+
+- Release solution build: zero warnings and errors.
+- All 744 tests passed: 369 Core, 71 Application, 188 Infrastructure and 116
+  Overlay; none failed or were skipped. Coverage includes compiled domain-call
+  enforcement, detached queries, initial tracking-store adoption before a log
+  is selected, independent write protection and stale session callbacks.
+- Changed C# style/whitespace formatting and `git diff --check` passed.
+- Self-contained Windows x64 publish and local Velopack package validation
+  passed; the actual full package contains Core, Application and Infrastructure.
+- All five isolated update-smoke cases passed; the no-UI install hook exited 0.
+- Version remains 1.0.34. No release, tag, push, installation or normal
+  real-profile app startup was performed.
+- Hands-on full-window review in a disposable account/VM remains pending.
 
 ## Validation commands
 
