@@ -12,6 +12,8 @@ Use Windows and the .NET 10 SDK.
 dotnet restore EqLogOverlay.slnx
 dotnet build EqLogOverlay.slnx -c Release
 dotnet test tests\EqLog.Core.Tests\EqLog.Core.Tests.csproj -c Release
+dotnet test tests\EqLog.Application.Tests\EqLog.Application.Tests.csproj -c Release
+dotnet test tests\EqLog.Infrastructure.Tests\EqLog.Infrastructure.Tests.csproj -c Release
 dotnet test tests\EqLog.Overlay.Tests\EqLog.Overlay.Tests.csproj -c Release
 dotnet run --project src\EqLog.Overlay
 dotnet run --project src\EqLog.Overlay -- "C:\path\to\eqlog_Name_server.txt"
@@ -19,6 +21,34 @@ dotnet run --project src\EqLog.Overlay -- "C:\path\to\eqlog_Name_server.txt"
 
 Running the app normally uses your real `%AppData%\EqLogOverlay` data. Use a disposable
 Windows account or VM for destructive tests, installer tests, and full update/restart tests.
+
+## Layered inventory development
+
+Inventory uses Core rules, Application-owned state and workflows, Infrastructure
+input/storage adapters, and Overlay view-model bindings. Construct concrete adapters
+only in `InventoryComposition`; views must not open inventory files or save domain
+objects directly. See the [implementation checkpoint](LAYERED-ARCHITECTURE-PLAN.md).
+
+Application tests use fake ports to exercise stabilization, superseded sessions,
+cancellation, detached snapshots, ordered saves, retries and confirmed counts.
+Infrastructure tests create/delete explicitly owned temporary directories and verify
+legacy JSON, rank history, locked/partial exports and end-to-end import/save.
+Overlay tests exercise the actual inventory XAML bindings, read-only columns,
+selection retention, filters, copy-location refresh, splitter and long-list scrolling.
+These do not start the real app or write to your profile.
+
+If shared build outputs are damaged, use one isolated artifact directory for both
+build and tests. Allow restore on the first build: a new artifact directory has no
+`project.assets.json`. Do not run simultaneous builds against shared outputs.
+
+```powershell
+dotnet build EqLogOverlay.slnx -c Release --artifacts-path artifacts\layered-baseline
+dotnet test EqLogOverlay.slnx -c Release --artifacts-path artifacts\layered-baseline --no-build
+```
+
+Before approving the next migration, manually check docked/floating inventory,
+character switching and final saves in a disposable account/VM. Automated binding
+tests are not a substitute for this full-window review.
 
 ## C# formatting
 

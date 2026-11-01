@@ -273,18 +273,6 @@ public static class InventoryExport
             root.AsSpan(prefix.Length).IndexOfAnyExceptInRange('0', '9') < 0;
     }
 
-    public static string PathForLog(string logPath)
-    {
-        string name = Path.GetFileNameWithoutExtension(logPath);
-        if (!name.StartsWith("eqlog_", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new ArgumentException("Expected an eqlog_ log filename.", nameof(logPath));
-        }
-
-        string folder = Path.GetDirectoryName(Path.GetFullPath(logPath))!;
-        return Path.Combine(Directory.GetParent(folder)!.FullName, name[6..] + "-Inventory.txt");
-    }
-
     public static IReadOnlyList<InventoryExportItem> Parse(string text)
     {
         using var reader = new StringReader(text);

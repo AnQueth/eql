@@ -193,7 +193,7 @@ public partial class MainWindow : Window
         UpdateLockState();
         CreateChatToggles();
 
-        Application.Current.SessionEnding += (_, _) => SaveAllBlocking();
+        System.Windows.Application.Current.SessionEnding += (_, _) => SaveAllBlocking();
         _renderTimer.Tick += async (_, _) => await RenderAsync();
         _houseTimer.Tick += (_, _) => Housekeeping();
         _gameTimer.Tick += (_, _) => CheckGameVisible();
@@ -206,10 +206,10 @@ public partial class MainWindow : Window
         _dock.Closed += (_, _) =>
         {
             Close();
-            Application.Current.Shutdown();
+            System.Windows.Application.Current.Shutdown();
         };
         new WindowInteropHelper(this).EnsureHandle();
-        Application.Current.MainWindow = _dock;
+        System.Windows.Application.Current.MainWindow = _dock;
         _dock.Show();
         if (_dock.WindowState == WindowState.Normal)
         {
@@ -985,6 +985,10 @@ public partial class MainWindow : Window
         };
         _currentFile = path;
         _characterName = info.CharacterName;
+        _inventoryService.SelectSession(path, _characterName ?? "");
+        _inventoryView.ImportStatus = "Waiting for this character's inventory export. Create/update it in game with /outputfile inventory.";
+        _questSelectionVersion++;
+        SynchronizeInventoryView();
         _matcher = new TriggerMatcher(_triggers, _characterName);
         _followBaseline = DateTime.Now;
         _settings.LogPath = path;
@@ -1029,7 +1033,7 @@ public partial class MainWindow : Window
             if (loot.Looter == Names.You && loot.SoldFor is null && !loot.Stored)
             {
                 bool newLoot = live;
-                _questLoot.Enqueue(() => _questInventory.NoteLoot(questCharacter, path, lineNumber, loot.Item, loot.Quantity, newLoot, loot.Time.ToUniversalTime()));
+                _inventoryService.ObserveLoot(new(questCharacter, path, lineNumber, loot.Item, loot.Quantity, newLoot, loot.Time.ToUniversalTime()));
             }
         };
         _tailTask = Task.Run(() => tailer.RunAsync(
@@ -1519,7 +1523,6 @@ public partial class MainWindow : Window
             {
                 if (error is not null)
                 {
-                    _questDirty = true;
                     QuestLookupStatus.Text = $"Could not save quest inventory: {error}";
                 }
             }),

@@ -4,8 +4,10 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using EqLog.Application.Inventory;
 using EqLog.Core;
 using EqLog.Core.Parsing;
+using EqLog.Overlay.ViewModels;
 
 namespace EqLog.Overlay;
 
@@ -31,21 +33,20 @@ public partial class MainWindow
         }
     }
 
-    private QuestInventory _questInventory = new();
-    private static string QuestInventoryPath
+    private InventoryService _inventoryService = null!;
+    private readonly InventoryViewModel _inventoryView = new();
+    private QuestInventory _questInventory
     {
         get
         {
-            return Path.Combine(AppSettings.Folder, "quest-inventory.json");
+            return _inventoryView.State;
         }
     }
 
-    private readonly System.Collections.Concurrent.ConcurrentQueue<Action> _questLoot = new();
     private readonly SemaphoreSlim _questSaveGate = new(1, 1);
     private readonly HashSet<string> _questAttempted = new(StringComparer.OrdinalIgnoreCase);
     private int _questCacheCursor;
     private bool _questWorking;
-    private bool _questDirty;
     private string _questProgress = "Waiting for loot.";
     private string? _questActiveItem;
     private readonly HashSet<string> _questFailed = new(StringComparer.OrdinalIgnoreCase);
@@ -53,46 +54,31 @@ public partial class MainWindow
     private ContentControl? _questProgressText;
     private OverlayTable? _questProgressTable;
     private TextBlock? _questCurrentText;
-    private readonly System.Collections.ObjectModel.ObservableCollection<QuestInventoryItem> _ownedQuestItems = [];
+    private System.Collections.ObjectModel.ObservableCollection<QuestInventoryItem> _ownedQuestItems
+    {
+        get
+        {
+            return _inventoryView.Items;
+        }
+    }
 
     private void InitializeQuestInventory(StartupState state)
     {
-        if (state.QuestInventory is { } inventory)
-        {
-            _questInventory = inventory;
-        }
+        _inventoryService = InventoryComposition.CreateService(state.QuestInventory ?? new(), state.QuestInventoryError);
         if (state.QuestInventoryError is { } error)
         {
             QuestLookupStatus.Text = $"Could not load quest inventory: {error.Message}";
         }
 
-        QuestOwnedGrid.ItemsSource = _ownedQuestItems;
-        ConfigureInventoryItemFilter(QuestOwnedGrid, InventoryItemFilter);
+        LootQuestsContent.DataContext = _inventoryView;
+        SynchronizeInventoryView();
     }
 
     private void PumpQuestLoot()
     {
-        bool changed = !_questLoot.IsEmpty;
-        var budget = Stopwatch.StartNew();
-        while (budget.ElapsedMilliseconds < 5 && _questLoot.TryDequeue(out var note))
-        {
-            note();
-            _questDirty = true;
-        }
-
-        var items = _questInventory.Items.Where(i => i.Character.Equals(_characterName, StringComparison.OrdinalIgnoreCase)).ToArray();
-        if (!_ownedQuestItems.SequenceEqual(items))
-        {
-            _ownedQuestItems.Clear();
-            foreach (var item in items)
-            {
-                _ownedQuestItems.Add(item);
-            }
-        }
-        else if (changed && !QuestOwnedGrid.IsKeyboardFocusWithin)
-        {
-            QuestOwnedGrid.Items.Refresh();
-        }
+        _inventoryService.ProcessPending(TimeSpan.FromMilliseconds(5));
+        SynchronizeInventoryView();
+        var items = _ownedQuestItems.ToArray();
 
         var cacheBudget = Stopwatch.StartNew();
         int cacheHits = 0;
@@ -401,70 +387,25 @@ public partial class MainWindow
     private sealed record QuestWorkProgress(int Total, int Completed, string Summary, IReadOnlyList<string> Queued,
         int Cached = 0, int QueuedCount = 0, int Failed = 0);
 
-    private readonly SemaphoreSlim _questInventorySaveGate = new(1, 1);
-    private long _questInventorySaveSequence;
-
     private async Task SaveQuestInventoryAsync()
     {
         try
         {
             await StartQuestInventorySave();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            _questDirty = true;
+            UsageTelemetry.TrackError(ex, UsageErrorSource.InventoryImport);
             QuestLookupStatus.Text = $"Could not save quest inventory: {ex.Message}";
         }
     }
 
     /// <summary>
-    /// Applies queued loot in short slices, then snapshots the inventory for an asynchronous write.
-    /// The caller marks the inventory dirty again if the write fails.
+    /// Delegates draining, snapshot capture, retries and ordered writes to the state owner.
     /// </summary>
-    private async Task StartQuestInventorySave()
+    private Task StartQuestInventorySave()
     {
-        await DrainQuestLootAsync();
-        if (!_questDirty)
-        {
-            return;
-        }
-
-        var snapshot = _questInventory.Clone();
-        _questDirty = false;
-        await WriteQuestInventoryAsync(snapshot, Interlocked.Increment(ref _questInventorySaveSequence)).ConfigureAwait(false);
-    }
-
-    private async Task DrainQuestLootAsync()
-    {
-        var budget = Stopwatch.StartNew();
-        while (_questLoot.TryDequeue(out var note))
-        {
-            note();
-            _questDirty = true;
-            // Session-ending saves run on a worker while the dispatcher is parked.
-            if (budget.ElapsedMilliseconds >= 5 && Dispatcher.CheckAccess())
-            {
-                await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
-                budget.Restart();
-            }
-        }
-    }
-
-    private async Task WriteQuestInventoryAsync(QuestInventory snapshot, long sequence)
-    {
-        await _questInventorySaveGate.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            // A newer snapshot is already queued behind this one; writing this would only be overwritten.
-            if (sequence == Interlocked.Read(ref _questInventorySaveSequence))
-            {
-                await AtomicFile.WriteJsonAsync(QuestInventoryPath, snapshot).ConfigureAwait(false);
-            }
-        }
-        finally
-        {
-            _questInventorySaveGate.Release();
-        }
+        return _inventoryService.SaveAsync();
     }
 
     private async void CompleteQuest_Click(object sender, RoutedEventArgs e)
@@ -474,14 +415,8 @@ public partial class MainWindow
             QuestLookupStatus.Text = "Select a quest reference first.";
             return;
         }
-        string key = QuestInventory.CompletionKey(_characterName ?? "", quest.Title);
-        bool completed = _questInventory.Completed.Add(key);
-        if (!completed)
-        {
-            _questInventory.Completed.Remove(key);
-        }
-
-        _questDirty = true;
+        bool completed = _inventoryService.ToggleCompletion(_characterName ?? "", quest.Title);
+        SynchronizeInventoryView();
         QuestLookupStatus.Text = completed ? "Quest marked completed. Run /outputfile inventory after turning items in to refresh counts." : "Quest marked incomplete.";
         await SaveQuestInventoryAsync();
     }
@@ -545,19 +480,9 @@ public partial class MainWindow
     {
         UsageTelemetry.TrackFeature(UsageFeature.LootQuestLookup);
         ShowInventoryOverlay();
-        var selected = _questInventory.Items.FirstOrDefault(i =>
-            i.Character.Equals(_characterName, StringComparison.OrdinalIgnoreCase) && ItemNames.Comparer.Equals(i.Item, item));
-        if (selected is null)
-        {
-            // Other players' visible loot can be inspected without claiming ownership.
-            selected = new QuestInventoryItem { Character = _characterName ?? "", Item = item };
-            _questInventory.Items.Add(selected);
-            _questDirty = true;
-        }
-        if (!_ownedQuestItems.Contains(selected))
-        {
-            _ownedQuestItems.Add(selected);
-        }
+        _inventoryService.TrackItem(_characterName ?? "", item);
+        SynchronizeInventoryView();
+        var selected = _ownedQuestItems.First(i => ItemNames.Comparer.Equals(i.Item, item));
 
         if (ReferenceEquals(QuestOwnedGrid.SelectedItem, selected))
         {

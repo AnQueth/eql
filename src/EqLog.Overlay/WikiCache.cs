@@ -59,7 +59,7 @@ public partial class MainWindow
                 _questCacheCursor = 0;
                 _questSelectionVersion++;
                 QuestResults.ItemsSource = null;
-                foreach (var item in _questInventory.Items)
+                foreach (var item in _ownedQuestItems)
                 {
                     item.HasQuestReferences = false;
                 }

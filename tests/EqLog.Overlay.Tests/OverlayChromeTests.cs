@@ -22,7 +22,7 @@ public sealed class OverlayChromeTests
         {
             try
             {
-                var application = new Application();
+                var application = new System.Windows.Application();
                 foreach (string key in new[] { "NightBackground", "NightBorder", "Pumpkin", "NightRaised" })
                 {
                     application.Resources[key] = Brushes.Gray;

@@ -1,10 +1,14 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/EqLog.Application/EqLog.Application.csproj" />
     <Project Path="src/EqLog.Core/EqLog.Core.csproj" />
+    <Project Path="src/EqLog.Infrastructure/EqLog.Infrastructure.csproj" />
     <Project Path="src/EqLog.Overlay/EqLog.Overlay.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/EqLog.Application.Tests/EqLog.Application.Tests.csproj" />
     <Project Path="tests/EqLog.Core.Tests/EqLog.Core.Tests.csproj" />
+    <Project Path="tests/EqLog.Infrastructure.Tests/EqLog.Infrastructure.Tests.csproj" />
     <Project Path="tests/EqLog.Overlay.Tests/EqLog.Overlay.Tests.csproj" />
     <Project Path="tests/EqLog.UpdateSmoke/EqLog.UpdateSmoke.csproj" />
   </Folder>

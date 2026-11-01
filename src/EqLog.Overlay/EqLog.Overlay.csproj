@@ -6,6 +6,8 @@
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.20.1" />
     <PackageReference Include="Velopack" Version="1.2.161" />
     <ProjectReference Include="..\EqLog.Core\EqLog.Core.csproj" />
+    <ProjectReference Include="..\EqLog.Application\EqLog.Application.csproj" />
+    <ProjectReference Include="..\EqLog.Infrastructure\EqLog.Infrastructure.csproj" />
     <Resource Include="AppIcon.ico" />
     <Content Include="Themes\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>

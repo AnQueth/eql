@@ -1,6 +1,8 @@
 # Refactor Plan: Layered application architecture
 
-Status: Proposed; implementation requires approval.
+Status: Implementation authorized on `refactor/layered-architecture`; inventory
+checkpoint implemented. Automated validation and isolated full-window review are
+recorded below. Remaining migrations await the inventory review gate.
 
 ## Objective
 
@@ -9,10 +11,33 @@ WPF presentation without changing shipped behavior or rewriting the application.
 Implement one complete inventory vertical slice first, then apply the proven
 boundaries to log sessions, tracking, wiki enrichment, and other overlays.
 
-This document is the implementation plan, not authorization to implement or release.
-No framework upgrade, database migration, version bump, or publication is included.
+The user authorized implementing this plan on a new branch. No framework upgrade,
+database migration, version bump, or publication is included.
 
-## Current state
+## Inventory checkpoint
+
+- Baseline: released commit `7f419b3` (v1.0.34), clean worktree at branch creation;
+  Release build and 517 Core + 115 Overlay tests passed.
+- Added Application/Infrastructure and xUnit projects with the planned reference directions.
+- Migrated inventory input, reconciliation/state, save sequencing and load normalization.
+  The old WPF direct export read/save queue is removed.
+- Bound an inventory view model; existing Sky/Mote/quest consumers use detached
+  domain snapshots, while inventory bindings use immutable summaries.
+- Preserved document shape, legacy fields, atomic writes, read-only columns and
+  confirmed ownership; corrupt inventory storage disables writes until restart.
+- Kept JSON attributes/shared `AtomicFile` in Core temporarily; the general
+  persistence phase removes these alongside the other stores, not piecemeal.
+- Validation: Release build (0 warnings/errors), 657 tests (514 Core, 12 Application,
+  14 Infrastructure, 117 Overlay), plus real XAML bindings, isolated file import/save,
+  character-switch races, cancellation, save ordering/retry and legacy normalization.
+- Release CI explicitly includes both new suites; app version stays 1.0.34.
+- Self-contained Windows x64 publish succeeded and includes both new layer assemblies;
+  no app startup, installer publication, version change or new release tag was performed.
+- Still required at the gate: manual full-window docked/floating inventory review
+  in an isolated account/VM. No normal startup against the user's real data.
+- Phases 3-7 have not started.
+
+## Baseline state (before this refactor)
 
 - `EqLog.Core` contains parsing and tracking, but also file tailing, JSON storage,
   HTTP clients, cache scheduling, and storage migrations.
@@ -32,8 +57,8 @@ Existing strengths to retain: atomic writes, detached snapshots, ordered saves,
 dirty-state recovery, stable-export checks, cancellation and stale-result guards,
 short processing batches, incremental rendering, and virtualized lists.
 
-The working tree already includes recent inventory and overlay changes. Establish
-the refactoring baseline from that state; do not revert those changes.
+The inventory and overlay changes were released as v1.0.34 before branch creation.
+They remain the behavior baseline; do not revert them.
 
 ## Target state
 
@@ -133,12 +158,12 @@ Paths below are relative to the repository root. New directories are proposed.
 
 ### Phase 0: Establish baseline and characterization
 
-- [ ] Review existing uncommitted changes and preserve them as the baseline.
-- [ ] Record successful Release build and existing test results.
-- [ ] Characterize import, save, shutdown, character-switch and corruption behavior.
+- [x] Review existing uncommitted changes and preserve them as the baseline.
+- [x] Record successful Release build and existing test results.
+- [x] Characterize import, save, shutdown, character-switch and corruption behavior.
 - [ ] Inventory every storage document/path and its compatibility requirements.
-- [ ] Capture current threading/ownership guarantees and error presentation.
-- [ ] Correct architecture documentation that still describes newer loot increasing
+- [x] Capture current threading/ownership guarantees and error presentation.
+- [x] Correct architecture documentation that still describes newer loot increasing
   inventory ownership; current confirmed-export behavior is the baseline.
 
 Verify: existing suites pass before refactoring. Record pre-existing failures
@@ -146,15 +171,15 @@ separately rather than expanding scope to unrelated fixes.
 
 ### Phase 1: Contracts and project boundaries
 
-- [ ] Create Application and Infrastructure class libraries using SDK tooling.
-- [ ] Add projects to the solution and establish the reference directions above.
-- [ ] Define focused inventory contracts: `IInventoryExportSource`,
+- [x] Create Application and Infrastructure class libraries using SDK tooling.
+- [x] Add projects to the solution and establish the reference directions above.
+- [x] Define focused inventory contracts: `IInventoryExportSource`,
   `IQuestInventoryRepository`, and an inventory application service/query boundary.
-- [ ] Define export metadata, import outcome, item-summary and copy-location models.
-- [ ] Use `TimeProvider` where time affects polling, recency or retries.
-- [ ] Define ownership, cancellation, disposal and error contracts explicitly.
-- [ ] Add test projects following the repository's xUnit conventions.
-- [ ] Wire construction at the WPF composition root without switching behavior yet.
+- [x] Define export metadata, import outcome, item-summary and copy-location models.
+- [x] Use `TimeProvider` where time affects polling, recency or retries.
+- [x] Define ownership, cancellation, disposal and error contracts explicitly.
+- [x] Add test projects following the repository's xUnit conventions.
+- [x] Wire construction at the WPF composition root without switching behavior yet.
 
 Verify: build all projects; Core/Application load and test without WPF. No new
 runtime dependency packages unless actually needed.
@@ -163,18 +188,18 @@ runtime dependency packages unless actually needed.
 
 Dependency: Phase 1.
 
-- [ ] Implement the stable export reader in Infrastructure using current sharing,
+- [x] Implement the stable export reader in Infrastructure using current sharing,
   metadata checks, partial-write handling and character/log identity validation.
-- [ ] Retain `InventoryExport.Parse` and copy-location rules as pure functions.
-- [ ] Implement the inventory repository using current file names and document shape.
-- [ ] Move saved-data normalization into an explicit load mapping/normalization step.
-- [ ] Implement serialized inventory application state and import reconciliation.
-- [ ] Preserve last-good inventory on read/parse failure; expose the failure and retry state.
-- [ ] Move save sequencing and snapshot creation out of WPF code-behind.
-- [ ] Create an inventory view model and wire filters, item selection, copy locations,
+- [x] Retain `InventoryExport.Parse` and copy-location rules as pure functions.
+- [x] Implement the inventory repository using current file names and document shape.
+- [x] Move saved-data normalization into an explicit load mapping/normalization step.
+- [x] Implement serialized inventory application state and import reconciliation.
+- [x] Preserve last-good inventory on read/parse failure; expose the failure and retry state.
+- [x] Move save sequencing and snapshot creation out of WPF code-behind.
+- [x] Create an inventory view model and wire filters, item selection, copy locations,
   quest references, completion operations and freshness/error messages.
-- [ ] Refresh selection details when the committed export changes.
-- [ ] Remove the old direct read/write path only after callers use the new service.
+- [x] Refresh selection details when the committed export changes.
+- [x] Remove the old direct read/write path only after callers use the new service.
 
 Required invariants:
 

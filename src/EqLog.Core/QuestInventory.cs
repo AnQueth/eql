@@ -3,14 +3,14 @@ using System.Text.Json.Serialization;
 
 namespace EqLog.Core;
 
-public sealed class QuestInventory : IJsonOnDeserialized
+public sealed class QuestInventory
 {
     public List<QuestInventoryItem> Items { get; set; } = [];
 
     /// <summary>Highest loot line counted per character and log, so replaying a log never counts loot twice.</summary>
     public Dictionary<string, ResistanceWatermark> LootWatermarks { get; set; } = [];
 
-    /// <summary>Legacy per-line keys ("character\tlog\tline"); converted to <see cref="LootWatermarks"/> when loaded.</summary>
+    /// <summary>Legacy per-line keys ("character\tlog\tline"); the repository converts these on load.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public HashSet<string>? ImportedLines
     {
@@ -37,38 +37,6 @@ public sealed class QuestInventory : IJsonOnDeserialized
             ItemRanks = [.. ItemRanks],
             RecentUpgrades = [.. RecentUpgrades],
         };
-    }
-
-    void IJsonOnDeserialized.OnDeserialized()
-    {
-        LootWatermarks ??= [];
-        ItemRanks ??= [];
-        RecentUpgrades ??= [];
-        foreach (var item in Items)
-        {
-            item.Owned = item.Carried + item.Bank + item.Hoard + item.Depot + item.OtherStorage;
-        }
-        if (ImportedLines is null)
-        {
-            return;
-        }
-
-        // The old keys carry no time, so stamp them "now": any replayed line is no newer, and new lines have higher numbers.
-        var now = DateTime.UtcNow;
-        foreach (string imported in ImportedLines)
-        {
-            int last = imported.LastIndexOf('\t');
-            if (last <= 0 || !long.TryParse(imported.AsSpan(last + 1), out long line))
-            {
-                continue;
-            }
-            string key = imported[..last].ToUpperInvariant();
-            if (!LootWatermarks.TryGetValue(key, out var watermark) || line > watermark.Line)
-            {
-                LootWatermarks[key] = new(now, line);
-            }
-        }
-        ImportedLines = null;
     }
 
     /// <summary>

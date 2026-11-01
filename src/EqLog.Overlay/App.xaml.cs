@@ -4,7 +4,7 @@ using EqLog.Core;
 
 namespace EqLog.Overlay;
 
-public partial class App : Application
+public partial class App : System.Windows.Application
 {
     public App()
     {

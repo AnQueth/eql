@@ -33,7 +33,7 @@ public static class ThemeManager
     public static void Apply(ThemePalette theme)
     {
         theme.Validate();
-        var resources = Application.Current.Resources;
+        var resources = System.Windows.Application.Current.Resources;
         foreach (string key in ThemePalette.AllColorKeys)
         {
             var color = (Color)ColorConverter.ConvertFromString(theme.GetColor(key));

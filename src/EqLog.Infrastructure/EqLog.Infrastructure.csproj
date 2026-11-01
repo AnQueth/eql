@@ -1,0 +1,13 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EqLog.Application\EqLog.Application.csproj" />
+    <ProjectReference Include="..\EqLog.Core\EqLog.Core.csproj" />
+  </ItemGroup>
+</Project>

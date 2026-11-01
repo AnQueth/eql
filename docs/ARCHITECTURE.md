@@ -2,12 +2,25 @@
 
 ## Projects
 
-- `src\EqLog.Core`: log parsing, file tailing, trackers, and `LogEngine`.
-- `src\EqLog.Overlay`: .NET 10 Windows WPF application.
+- `src\EqLog.Core`: parsing, reconciliation, trackers, and `LogEngine`; non-inventory
+  file/storage/wiki implementations remain here until later migration phases.
+- `src\EqLog.Application`: platform-neutral inventory workflows, state ownership,
+  detached queries, and input/persistence contracts; references Core only.
+- `src\EqLog.Infrastructure`: inventory game-file input and JSON persistence adapters;
+  references Application and Core.
+- `src\EqLog.Overlay`: .NET 10 Windows WPF application, inventory view model and
+  composition root. Only `InventoryComposition` constructs inventory adapters.
 - `tests\EqLog.Core.Tests`: xUnit regression tests.
+- `tests\EqLog.Application.Tests`: fake-adapter inventory workflow/concurrency tests.
+- `tests\EqLog.Infrastructure.Tests`: isolated inventory input/storage integration tests.
 - `tests\EqLog.Overlay.Tests`: Windows WPF/xUnit presentation, settings, and telemetry regression tests.
 - `tests\EqLog.UpdateSmoke`: console validation of release discovery, download, staging,
   and version policy using an isolated Velopack locator.
+
+The [layered implementation plan](LAYERED-ARCHITECTURE-PLAN.md) tracks the inventory-first
+checkpoint and remaining migrations. This is not yet a fully layered application:
+tracking storage, log-session lifecycle, wiki enrichment and other presenters still
+use their existing implementations.
 
 ## Windows and presentation
 
@@ -50,15 +63,18 @@ Log-switch, close and session-ending saves still run.
 
 After catch-up, inventory export parsing and tracker save preparation run on the thread pool.
 Inventory reconciliation indexes existing items by normalized name rather than rescanning the
-whole inventory per export row. Saves and export reconciliation drain queued loot in 5 ms
-dispatcher slices, preserving loot order without one unbounded UI-thread catch-up pass.
+whole inventory per export row. `InventoryService` serializes mutations under its own
+lock; the UI pumps typed loot observations in 5 ms budgets. Import reconciliation,
+save draining and snapshot serialization run on workers without dispatcher callbacks.
+Queued loot retains its observed character/log identity across session changes.
 
 ## Quest processing and inventory
 
 Quest references come from EQLWiki's public MediaWiki API: quest-category pages that link to
 or transclude the item's page, including redirects. References are not verified turn-in requirements.
 Automatic lookups use the shared wiki repository's background priority and are cached for seven days. Wiki response processing
-and cache serialization/writes run off the UI thread; historical loot is applied in short UI batches.
+and cache serialization/writes run off the UI thread; historical loot is applied through
+the inventory state owner in short batches.
 Selection versioning prevents older lookup responses from replacing the latest selected item's results.
 The Sky catalog has a separate one-day cache used by the Sky quest tracker overlay (the only Sky UI).
 
@@ -91,6 +107,40 @@ The inventory grid displays the highest exported rank per combined item, with re
 counts and no Owned or History column. Selection opens Copy locations with all exported ranks,
 quantities, and readable locations; quest references remain in a separate tab. Inventory, Loot,
 and Item upgrades have item-name filters, while Motes remains unfiltered.
+
+### Inventory ownership and persistence boundary
+
+`InventoryExportSource` resolves the export above Logs and performs read-only
+metadata/content access. The application requires matching metadata across two
+polls, checks it again after reading/draining, and rejects an import when the selected
+log session changes or cancellation occurs. Read/parse errors retain the last-good
+export and confirmed counts; a missing export clears location availability but keeps
+the last confirmed counts.
+
+`InventoryService` owns reconciliation, loot observations, lookup-only item tracking,
+quest completion, dirty versions and save ordering. Views never mutate its live
+`QuestInventory`. Query snapshots contain immutable item summaries and read-only export
+rows; a detached domain copy remains available for existing Sky/Mote/quest calculations.
+Export object identity remains stable between imports so dependent location/planner
+caches do not rebuild every frame.
+
+`InventoryViewModel` owns item filters, selection, copy-location summaries and status
+bindings. It updates display rows in place across rank/count changes and refreshes the
+selected item's locations from committed exports. Wiki markers remain presentation-only.
+Wiki lookup orchestration stays in its existing code pending the wiki migration.
+
+`QuestInventoryRepository` retains `%AppData%\EqLogOverlay\quest-inventory.json`,
+the existing compact JSON property names, watermark/rank/upgrade/completion history and
+atomic temp-file replacement. Load normalization explicitly migrates legacy line keys
+using `TimeProvider` and recalculates confirmed ownership; it no longer runs as a domain
+deserialization callback. Saves take their snapshot after acquiring the service save
+gate, so earlier requests cannot overwrite a later state; failed/canceled writes remain
+dirty for retry. If startup loading fails, saving stays disabled until restart after
+repairing the file, rather than overwriting corrupt data with empty state.
+
+Transitional compatibility: inventory JSON attributes and the shared `AtomicFile`
+helper remain in Core until the general persistence migration. They are not new
+Application or view dependencies on concrete storage.
 
 The `exaltations` overlay searches effects before item names. `Exaltations.Locate` maps each
 physical `(Exaltation)` row to its nearest preceding host using both the full export path and

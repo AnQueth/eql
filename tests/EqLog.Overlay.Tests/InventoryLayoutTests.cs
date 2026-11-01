@@ -4,8 +4,13 @@ using System.Windows;
 using System.Windows.Automation.Peers;
 using System.Windows.Automation.Provider;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Markup;
+using System.Windows.Media;
 using System.Xml.Linq;
+using EqLog.Application.Inventory;
+using EqLog.Core;
+using EqLog.Overlay.ViewModels;
 using Xunit;
 
 namespace EqLog.Overlay.Tests;
@@ -75,6 +80,7 @@ public sealed class InventoryLayoutTests
         var copies = Assert.IsType<DataGrid>(grid.FindName("InventoryCopiesGrid"));
         Assert.True(copies.IsReadOnly);
         Assert.Equal(["Item", "Rank", "Qty", "Location", "Kind"], copies.Columns.Select(column => column.Header));
+        VerifyBindings(grid, owned, filter, copies);
         details.SelectedIndex = 1;
         var results = Assert.IsType<ListBox>(grid.FindName("QuestResults"));
         var status = Assert.IsAssignableFrom<FrameworkElement>(grid.FindName("QuestLookupStatus"));
@@ -135,5 +141,58 @@ public sealed class InventoryLayoutTests
         grid.Measure(new Size(1000, 600));
         grid.Arrange(new Rect(0, 0, 1000, 600));
         grid.UpdateLayout();
+    }
+
+    private static void VerifyBindings(Grid grid, DataGrid owned, TextBox filter, DataGrid copies)
+    {
+        var model = new InventoryViewModel();
+        var at = new DateTime(2026, 11, 1, 12, 0, 0, DateTimeKind.Utc);
+        InventoryExportItem[] rows =
+        [
+            new("Held", "Sword +3", 1, 2, InventoryStorage.Carried),
+            new("Bank1", "Other item", 2, 1, InventoryStorage.Bank),
+        ];
+        var state = new QuestInventory();
+        state.ApplyExport("Que", rows, at);
+        model.Apply(new(1, state.Clone(), new("Que", new("export", 2, at), Array.AsReadOnly(rows))), "Que");
+        grid.DataContext = model;
+        Layout(grid);
+        Assert.Equal(2, owned.Items.Count);
+        owned.SelectedItem = owned.Items[0];
+        Layout(grid);
+        Assert.Same(owned.SelectedItem, model.SelectedItem);
+        Assert.Equal(2, Assert.Single(copies.Items.Cast<InventoryItemLocation>()).Quantity);
+        filter.Text = "sword";
+        Layout(grid);
+        Assert.Equal("sword", model.Filter);
+        Assert.Single(owned.Items.Cast<QuestInventoryItem>());
+        rows = [new("Bank2", "Sword +10", 1, 1, InventoryStorage.Bank)];
+        state.ApplyExport("Que", rows, at.AddMinutes(1));
+        model.Apply(new(2, state.Clone(), new("Que", new("export", 1, at.AddMinutes(1)), Array.AsReadOnly(rows))), "Que");
+        Layout(grid);
+        Assert.Same(owned.SelectedItem, model.SelectedItem);
+        Assert.Equal("Sword +10", Assert.Single(copies.Items.Cast<InventoryItemLocation>()).Item);
+        Assert.Equal("1", Assert.IsType<TextBlock>(owned.Columns[2].GetCellContent(owned.SelectedItem)).Text);
+        var cell = owned.Columns[0].GetCellContent(owned.SelectedItem);
+        Assert.Contains(TextBlocks(cell).SelectMany(block => block.Inlines.OfType<Hyperlink>())
+            .SelectMany(link => link.Inlines.OfType<Run>()), run => run.Text == "Sword +10");
+        Assert.Contains("1 copies", Assert.IsType<TextBlock>(grid.FindName("InventoryCopiesStatus")).Text);
+        filter.Text = "";
+        grid.DataContext = null;
+    }
+
+    private static IEnumerable<TextBlock> TextBlocks(DependencyObject parent)
+    {
+        if (parent is TextBlock text)
+        {
+            yield return text;
+        }
+        for (int index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+        {
+            foreach (var child in TextBlocks(VisualTreeHelper.GetChild(parent, index)))
+            {
+                yield return child;
+            }
+        }
     }
 }

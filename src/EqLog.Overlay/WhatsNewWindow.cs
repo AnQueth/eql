@@ -23,7 +23,7 @@ public sealed class WhatsNewWindow : Window
         SetResourceReference(BackgroundProperty, "NightBackground");
         SetResourceReference(ForegroundProperty, "NightText");
 
-        var document = (FlowDocument)Application.LoadComponent(
+        var document = (FlowDocument)System.Windows.Application.LoadComponent(
             new Uri("/EqLogOverlay;component/Help/WhatsNew.xaml", UriKind.Relative));
         var viewer = new FlowDocumentScrollViewer
         {

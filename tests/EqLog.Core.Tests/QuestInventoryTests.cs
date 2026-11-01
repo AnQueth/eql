@@ -77,28 +77,6 @@ public class QuestInventoryTests
     }
 
     [Fact]
-    public void LegacyImportedLinesBecomeWatermarksAndZeroCountsAreNotWritten()
-    {
-        string json = """
-            {"Items":[{"Character":"Que","Item":"Gnoll Fang","Owned":0,"Historical":2,"Carried":0,"Bank":0}],
-             "ImportedLines":["Que\tC:\\logs\\eq.txt\t5","Que\tC:\\logs\\eq.txt\t9","Que\tC:\\logs\\eq.txt\tbad"]}
-            """;
-        var loaded = System.Text.Json.JsonSerializer.Deserialize<QuestInventory>(json)!;
-
-        Assert.Null(loaded.ImportedLines);
-        Assert.Equal(9, Assert.Single(loaded.LootWatermarks).Value.Line);
-        loaded.NoteLoot("Que", @"C:\logs\eq.txt", 9, "Gnoll Fang", 2, false, DateTime.UtcNow.AddDays(-1));
-        Assert.Equal(2, loaded.Items.Single().Historical);
-        loaded.NoteLoot("Que", @"C:\logs\eq.txt", 10, "Gnoll Fang", 1, false, DateTime.UtcNow.AddDays(-1));
-        Assert.Equal(3, loaded.Items.Single().Historical);
-
-        string saved = System.Text.Json.JsonSerializer.Serialize(loaded);
-        Assert.DoesNotContain("ImportedLines", saved);
-        Assert.DoesNotContain("\"Bank\"", saved);
-        Assert.Contains("\"Historical\":3", saved);
-    }
-
-    [Fact]
     public void RotatedLogWithRestartedLineNumbersIsStillCounted()
     {
         var at = DateTime.UtcNow;
@@ -160,28 +138,6 @@ public class QuestInventoryTests
         inventory.ApplyExport("QUE", [], written.AddMinutes(2));
         Assert.Equal(0, item.Owned);
         Assert.Empty(inventory.RecentLoot);
-    }
-
-    [Fact]
-    public void SavedEstimatedOwnedCountsAreReconciledToExportedStorageCountsOnLoad()
-    {
-        string json = """
-            {"Items":[
-              {"Character":"Que","Item":"Umbral Platemail Bracer +10","Owned":3,"Carried":2},
-              {"Character":"Que","Item":"Umbral Platemail Gauntlets +9","Owned":2,"Collection":1},
-              {"Character":"Other","Item":"Sword","Owned":99,"Carried":1,"Bank":2,"Hoard":3,"Depot":4,"OtherStorage":5,"Installed":6}
-            ],"RecentLoot":[{"Character":"Que","Item":"Umbral Platemail Bracer","Quantity":1,"TimeUtc":"2026-11-01T18:00:00Z"}]}
-            """;
-
-        var loaded = System.Text.Json.JsonSerializer.Deserialize<QuestInventory>(json)!;
-
-        Assert.Equal(2, loaded.Items[0].Owned);
-        Assert.Equal(0, loaded.Items[1].Owned);
-        Assert.Equal(1, loaded.Items[1].Collection);
-        Assert.Equal(15, loaded.Items[2].Owned);
-        var reloaded = System.Text.Json.JsonSerializer.Deserialize<QuestInventory>(
-            System.Text.Json.JsonSerializer.Serialize(loaded))!;
-        Assert.Equal([2, 0, 15], reloaded.Items.Select(item => item.Owned));
     }
 
     [Fact]

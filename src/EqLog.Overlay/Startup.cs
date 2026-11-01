@@ -81,7 +81,7 @@ public partial class MainWindow
             var motes = Task.Run(() => MoteStore.LoadAsync(AppSettings.MotesPath));
             var mobs = Attempt(() => MobResistanceStore.LoadAsync(MobResistancePath));
             var npcs = Attempt(() => NpcCompendium.LoadAsync(NpcCompendiumFolder, LegacyNpcCompendiumPath));
-            var inventory = Attempt(LoadQuestInventoryAsync);
+            var inventory = Attempt(InventoryComposition.LoadAsync);
             var questCache = Attempt(LoadQuestCacheAsync);
             var itemEffects = Attempt(LoadItemEffectsAsync);
             await Task.WhenAll(settings, themes, durations, spawns, motes, mobs, npcs, inventory, questCache, itemEffects);
@@ -131,16 +131,6 @@ public partial class MainWindow
                 themes.Add(await ThemeManager.LoadAsync(path).ConfigureAwait(false));
             }
             return themes;
-        }
-
-        private static async Task<QuestInventory?> LoadQuestInventoryAsync()
-        {
-            if (!File.Exists(QuestInventoryPath))
-            {
-                return null;
-            }
-            return await AtomicFile.ReadJsonAsync<QuestInventory>(QuestInventoryPath).ConfigureAwait(false)
-                ?? throw new JsonException("Empty quest inventory.");
         }
 
         private static Task<IReadOnlyList<QuestLookupResult>> LoadQuestCacheAsync()

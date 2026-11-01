@@ -154,13 +154,6 @@ public class InventoryExportTests
     }
 
     [Fact]
-    public void ResolvesMatchingCharacterAndServerAboveLogs()
-    {
-        Assert.Equal(@"C:\EverQuest\Quethrosar_qeynos-Inventory.txt",
-            InventoryExport.PathForLog(@"C:\EverQuest\Logs\eqlog_Quethrosar_qeynos.txt"));
-    }
-
-    [Fact]
     public void InvalidRowsDoNotProducePartialSnapshot()
     {
         Assert.Throws<FormatException>(() => InventoryExport.Parse(
