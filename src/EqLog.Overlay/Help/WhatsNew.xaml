@@ -1,7 +1,77 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.34" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.35" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.35
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released November 1, 2026 at 4:13 PM CT.
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Search large lists more smoothly and keep your mote planner search when choosing an item.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            More responsive text searches
+        </Paragraph>
+        <Paragraph>
+            Enable overlays under Settings &gt; General &gt; Overlays. Type part of a name
+            in Quest opportunities, Inventory &amp; loot quests, Sky quest tracker,
+            Exaltations, or the Mote upgrade planner to narrow matching entries.
+            Inventory merge filtering, saved NPC searches, and the raw-log filter
+            also prepare matches in the background. Loot and Item upgrades wait briefly
+            after typing before applying their filters.
+        </Paragraph>
+        <Paragraph>
+            Searches wait approximately a fifth of a second after typing so intermediate
+            keystrokes do not repeatedly rebuild the list. Only the newest result is applied.
+            Large quest lists update in a batch and remain virtualized; merge results render
+            in small batches. The previous matches may remain visible while a search finishes.
+            Unlock floating overlays with Ctrl+Shift+L to type, and clear the filter to show all entries.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Pick a planner item without replacing your search
+        </Paragraph>
+        <Paragraph>
+            In Mote upgrade planner &gt; Equipment, type a partial item name and choose a match
+            from the inventory dropdown below. The textbox keeps your search, letting you
+            choose another match without retyping. The plan uses the selected item and sets
+            Current to its highest exported rank. Editing the search clears the selection;
+            inventory refreshes preserve it while that item still matches.
+        </Paragraph>
+        <Paragraph>
+            Spell plans continue to use the typed spell name. Planning does not change your
+            actual items. Run /outputfile inventory in game after moving, merging, or spending
+            items so ranks, spare copies, and owned motes reflect the latest export.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Easier overlay setup and cached Sky classes
+        </Paragraph>
+        <Paragraph>
+            Settings &gt; General &gt; Overlays now lists visibility checkboxes alphabetically.
+            Per-overlay appearance options use the same alphabetical ordering; existing overlay
+            placement is unchanged. Sky quest tracker's class dropdown now includes classes
+            from cached quests immediately at startup, without requiring a network refresh.
+            A valid saved class selection is preserved.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Internal separation with existing data retained
+        </Paragraph>
+        <Paragraph>
+            Inventory, quest, combat, mote, and NPC workflows now have clearer boundaries
+            between game rules, application state, file and wiki access, and display formatting.
+            Existing settings and recorded data remain compatible; no manual data migration
+            is required. Wiki lookups still need a connection, and inventory ownership still
+            depends on exports rather than estimated loot-log counts.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.34
     </Paragraph>
