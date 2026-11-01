@@ -887,7 +887,16 @@ counted, so reading the same log again on the next launch doesn't count drops tw
 ### Mote upgrade planner
 
 The **Mote upgrade planner** overlay (hidden and docked by default) works out what it takes to get an item or spell
-to +10. Going from +N to +N+1 takes 2^N points (1, 2, 4 … 512), and extra points carry into the next step.
+to a chosen rank up to +10. Going from +N to +N+1 takes 2^N points (1, 2, 4 … 512), and extra points carry into the next step.
+
+Use **Stop at** beside **Current** and **Points** to choose your target, from your current rank
+through +10 (the default). It applies to **Upgrade**, **Farm copies**, **What if**, and **Math**,
+including spare-copy feeding. No steps or farming targets above it are planned, and no resources
+are spent when Current already equals the target. If Current rises above your selected target,
+the target rises to match. Motes and merges add fixed amounts, so the final resource can leave
+extra points; stop adding resources once you reach the target.
+On the final step, if spare copies alone finish the target, the planner skips motes that would
+only add unnecessary progress beyond it.
 
 Choose a task tab:
 - **Upgrade**: instructions using your actual inventory and selected owned motes.
@@ -898,7 +907,7 @@ Choose a task tab:
   apply only to this tab, not Upgrade or Farm copies.
 - **Math**: detailed tables for the actual-inventory Upgrade plan.
 
-The item, **Current**, and **Points** are shared. The resource and feeding checkboxes are always
+The item, **Current**, **Points**, and **Stop at** are shared. The resource and feeding checkboxes are always
 visible above the tabs so you can change which motes and inventory copies are used, or whether
 spare copies are raised first. Equipment-only controls are hidden in Spell mode.
 **Feed copies with motes first** is unchecked by default; enable it explicitly to spend motes

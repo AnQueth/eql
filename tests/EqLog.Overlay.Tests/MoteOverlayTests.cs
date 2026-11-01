@@ -10,6 +10,39 @@ namespace EqLog.Overlay.Tests;
 public sealed class MoteOverlayTests
 {
     [Fact]
+    public void StopAtSelectorDefaultsToTenAndRetainsTargetsWithinCurrentRankRange()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var selector = new ComboBox();
+                Assert.Equal(10, MainWindow.UpdatePlanTargetRanks(selector, 0));
+                Assert.Equal(Enumerable.Range(0, 11), selector.Items.Cast<int>());
+                selector.SelectedItem = 7;
+                Assert.Equal(7, MainWindow.UpdatePlanTargetRanks(selector, 4));
+                Assert.Equal(Enumerable.Range(4, 7), selector.Items.Cast<int>());
+                Assert.Equal(7, MainWindow.UpdatePlanTargetRanks(selector, 6));
+                Assert.Equal(8, MainWindow.UpdatePlanTargetRanks(selector, 8));
+                Assert.Equal(10, MainWindow.UpdatePlanTargetRanks(selector, 10));
+                Assert.Equal([10], selector.Items.Cast<int>());
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure is not null)
+        {
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+    }
+
+    [Fact]
     public void PlannerTargets_IncludeEveryExportedItem_WhileCopiesIncludeEquipmentStorage()
     {
         var rows = InventoryExport.Parse(

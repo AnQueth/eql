@@ -8,6 +8,96 @@ public class MoteUpgradeTests
     private static readonly Dictionary<int, int> NoMotes = [];
 
     [Theory]
+    [InlineData(UpgradeKind.Equipment)]
+    [InlineData(UpgradeKind.Spell)]
+    public void SelectedTargetStopsStepsAndResourceSpendingAtEveryRank(UpgradeKind kind)
+    {
+        var owned = Enumerable.Range(1, 10).ToDictionary(rank => rank, _ => 1000);
+        for (int target = 0; target <= 10; target++)
+        {
+            var plan = MoteUpgradePlanner.Plan(kind, 0, 0, owned, [], targetRank: target);
+
+            Assert.Equal(target, plan.Steps.Count);
+            Assert.All(plan.Steps, step => Assert.True(step.ToRank <= target));
+            Assert.All(plan.MotesUsed.Keys, rank => Assert.True(rank <= target));
+            Assert.Empty(plan.Missing);
+        }
+        Assert.All(owned.Values, count => Assert.Equal(1000, count));
+    }
+
+    [Theory]
+    [InlineData(UpgradeKind.Equipment)]
+    [InlineData(UpgradeKind.Spell)]
+    public void AlreadyAtSelectedTargetSpendsNothingIncludingFeeding(UpgradeKind kind)
+    {
+        var owned = Enumerable.Range(1, 10).ToDictionary(rank => rank, _ => 1000);
+        var plan = MoteUpgradePlanner.Plan(kind, 5, 10, owned, [0, 4],
+            new FeedOptions(FodderCopies: 2), targetRank: 5);
+
+        Assert.Empty(plan.Steps);
+        Assert.Empty(plan.FedCopies);
+        Assert.Empty(plan.MotesUsed);
+        Assert.Empty(plan.CopiesUsed);
+        Assert.Equal(0, MoteUpgradePlanner.MinimumAdditionalCopiesToFinish(
+            5, 10, owned, [0, 4], new FeedOptions(), targetRank: 5));
+    }
+
+    [Fact]
+    public void LowerTargetFeedsOnlyEnoughCopiesForThatTarget()
+    {
+        var owned = Enumerable.Range(1, 10).ToDictionary(rank => rank, _ => 1000);
+        owned.Remove(5);
+        var capped = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 4, 0, owned, [0],
+            new FeedOptions(), targetRank: 5);
+        var full = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 4, 0, owned, [0], new FeedOptions());
+
+        Assert.Single(capped.Steps);
+        Assert.NotEmpty(capped.FedCopies);
+        Assert.All(capped.FedCopies, copy => Assert.InRange(copy.EndRank, copy.StartRank, 5));
+        Assert.All(capped.MotesUsed.Keys, rank => Assert.InRange(rank, 1, 5));
+        Assert.True(capped.MotesUsed.Values.Sum() < full.MotesUsed.Values.Sum());
+        Assert.Equal(5, capped.Steps[^1].ToRank);
+    }
+
+    [Fact]
+    public void FinalTargetDoesNotSpendMotesJustToCarryPointsBeyondIt()
+    {
+        var plan = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 4, 0,
+            new Dictionary<int, int> { [5] = 2 }, [4], targetRank: 5);
+
+        var step = Assert.Single(plan.Steps);
+        Assert.Equal([new UpgradeUse(4, 1, IsCopy: true)], step.Used);
+        Assert.Empty(plan.MotesUsed);
+        Assert.Equal(0, step.CarryAfter);
+    }
+
+    [Fact]
+    public void TargetTenKeepsTheDefaultPlan()
+    {
+        var owned = new Dictionary<int, int> { [1] = 2, [3] = 5, [7] = 20 };
+        var original = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 4, 0, owned, [0, 3], new FeedOptions());
+        var explicitTarget = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 4, 0, owned, [0, 3],
+            new FeedOptions(), targetRank: 10);
+
+        Assert.Equal(original.MissingPoints, explicitTarget.MissingPoints);
+        Assert.Equal(original.MotesUsed, explicitTarget.MotesUsed);
+        Assert.Equal(original.CopiesUsed, explicitTarget.CopiesUsed);
+        Assert.Equal(original.Steps.Select(s => s.ToRank), explicitTarget.Steps.Select(s => s.ToRank));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(3)]
+    [InlineData(11)]
+    public void InvalidTargetIsRejected(int target)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 4, 0, NoMotes, [], targetRank: target));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            MoteUpgradePlanner.MinimumAdditionalCopiesToFinish(4, 0, NoMotes, [], new FeedOptions(), target));
+    }
+
+    [Theory]
     [InlineData(6, 7, 2)]
     [InlineData(7, 8, 4)]
     [InlineData(8, 9, 8)]

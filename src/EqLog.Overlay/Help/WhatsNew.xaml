@@ -1,7 +1,50 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.31" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.32" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.32
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released October 31, 2026 at 9:10 PM CT.
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Choose where to stop your mote upgrade plan instead of always planning to +10.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Stop at your chosen upgrade rank
+        </Paragraph>
+        <Paragraph>
+            Enable Mote upgrade planner under Settings &gt; General &gt; Overlays.
+            Choose your equipment or spell and Current rank, then use Stop at beside
+            Current and Points to pick a target up to +10. The default remains +10.
+            Unlock floating overlays with Ctrl+Shift+L to use the controls.
+        </Paragraph>
+        <Paragraph>
+            The target applies to Upgrade, Farm copies, What if, and Math, including
+            spare-copy feeding. Steps, farming targets, and resource totals stop at
+            that rank. If Current already equals the target, no points are needed.
+            Raising Current above your selected target raises the target to match.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Avoid unnecessary points after the final step
+        </Paragraph>
+        <Paragraph>
+            If spare copies alone finish the final target step, the planner skips
+            motes that would only add unnecessary progress beyond it. Feeding also
+            stops once copies supply enough merge points for the chosen target,
+            and copies are not fed above the target rank.
+        </Paragraph>
+        <Paragraph>
+            Motes and merges add fixed amounts, so the last resource can still leave
+            extra points. The instructions show that carry and tell you to stop
+            adding resources when you reach your target. Plans do not change your
+            actual inventory or perform upgrades in the game.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.31
     </Paragraph>

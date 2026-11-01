@@ -7,7 +7,7 @@ using EqLog.Core.Tracking;
 namespace EqLog.Overlay;
 
 /// <summary>
-/// The "Mote upgrade planner" overlay: pick an item or spell and its current +rank, and see what each step to +10 takes,
+/// The "Mote upgrade planner" overlay: pick an item or spell, its current +rank, and a target up to +10,
 /// spending owned motes and (for equipment) spare inventory copies first.
 /// </summary>
 public partial class MainWindow
@@ -18,6 +18,8 @@ public partial class MainWindow
     private string? _planNameFilter;
     private bool _refreshingPlanNames;
     private ComboBox? _planRank;
+    private ComboBox? _planTargetRank;
+    private bool _refreshingPlanTarget;
     private TextBox? _planPoints;
     private CheckBox? _planUseMotes;
     private CheckBox? _planUseCopies;
@@ -82,6 +84,14 @@ public partial class MainWindow
             VerticalContentAlignment = VerticalAlignment.Center,
             ToolTip = "Points already put toward the next rank (0 if unknown). Going from +N to +N+1 takes 2^N points.",
         };
+        _planTargetRank = new ComboBox
+        {
+            ItemStringFormat = "+{0}",
+            MinWidth = 56,
+            Margin = new Thickness(4, 0, 10, 0),
+            ToolTip = "Stop planning at this rank. Applies to Upgrade, Farm copies, What if, Math, and spare-copy feeding.",
+        };
+        UpdatePlanTargetRanks(_planTargetRank, 0);
         _planUseMotes = new CheckBox
         {
             Content = "Use owned motes",
@@ -142,6 +152,7 @@ public partial class MainWindow
         optionsRow.Children.Add(_planRank);
         optionsRow.Children.Add(PlanLabel("Points"));
         optionsRow.Children.Add(_planPoints);
+        optionsRow.Children.Add(PlanGroup("Stop at", _planTargetRank));
         var resourcesRow = new WrapPanel { Margin = new Thickness(0, 4, 0, 4) };
         resourcesRow.Children.Add(_planUseMotes);
         resourcesRow.Children.Add(_planUseCopies);
@@ -219,6 +230,13 @@ public partial class MainWindow
         };
         _planName.TextChanged += (_, _) => RefreshMotePlan();
         _planRank.SelectionChanged += (_, _) => RefreshMotePlan();
+        _planTargetRank.SelectionChanged += (_, _) =>
+        {
+            if (!_refreshingPlanTarget)
+            {
+                RefreshMotePlan();
+            }
+        };
         _planPoints.TextChanged += (_, _) => RefreshMotePlan();
         _planUseMotes.Click += (_, _) => RefreshMotePlan();
         _planUseCopies.Click += (_, _) => RefreshMotePlan();
@@ -470,7 +488,7 @@ public partial class MainWindow
     private void RefreshMotePlan()
     {
         if (_planHost is null || _planSummary is null || _planKind is null || _planName is null || _planRank is null ||
-            _planPoints is null || _planUseMotes is null || _planUseCopies is null)
+            _planPoints is null || _planUseMotes is null || _planUseCopies is null || _planTargetRank is null)
         {
             return;
         }
@@ -519,6 +537,16 @@ public partial class MainWindow
                 fodderOk && activeTab == 1 ? fodder : 0, fodderRank)
             : null;
         int startRank = Math.Max(0, _planRank.SelectedIndex);
+        _refreshingPlanTarget = true;
+        int targetRank;
+        try
+        {
+            targetRank = UpdatePlanTargetRanks(_planTargetRank, startRank);
+        }
+        finally
+        {
+            _refreshingPlanTarget = false;
+        }
         int maxPoints = startRank >= MoteValues.MaxRank ? 0 : MoteValues.PointsToNext(startRank) - 1;
         _planPoints.IsEnabled = startRank < MoteValues.MaxRank;
         bool pointsOk = int.TryParse(_planPoints.Text.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int points) &&
@@ -551,7 +579,7 @@ public partial class MainWindow
             ? (activeTab == 2 ? _planHypotheticalCopies.ToList() : copies)
             : [];
         var plannerMotes = _planUseMotes.IsChecked == true ? owned : new Dictionary<int, int>();
-        var plan = MoteUpgradePlanner.Plan(kind, startRank, pointsOk ? points : 0, plannerMotes, spare, feed);
+        var plan = MoteUpgradePlanner.Plan(kind, startRank, pointsOk ? points : 0, plannerMotes, spare, feed, targetRank);
 
         var notes = new List<string>();
         if (hypothetical)
@@ -610,7 +638,7 @@ public partial class MainWindow
         double fontSize = _planPanel?.FontSize ?? 13;
         if (plan.Steps.Count == 0)
         {
-            _planHost.Children.Add(new TextBlock { Text = "Already +10.", Margin = new Thickness(2, 6, 0, 0) });
+            _planHost.Children.Add(new TextBlock { Text = $"Already at the +{targetRank} target. No points needed.", Margin = new Thickness(2, 6, 0, 0) });
             return;
         }
 
@@ -624,7 +652,7 @@ public partial class MainWindow
         {
             AddGuideHeading($"How many +{fodderRank} copies should I farm?");
             AddGuideLine($"Your item starts at +{startRank}. Pick the level you want:", muted: true);
-            for (int target = startRank + 1; target <= MoteValues.MaxRank; target++)
+            for (int target = startRank + 1; target <= targetRank; target++)
             {
                 int additional = MoteUpgradePlanner.MinimumAdditionalCopiesToFinish(startRank, pointsOk ? points : 0,
                     plannerMotes, spare, feed, targetRank: target);
@@ -654,7 +682,7 @@ public partial class MainWindow
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(2, 4, 0, 4),
             });
-            for (int rank = startRank; rank < MoteValues.MaxRank; rank++)
+            for (int rank = startRank; rank < targetRank; rank++)
             {
                 int count = (MoteValues.PointsToNext(rank) + copyPoints - 1) / copyPoints;
                 copiesOnly.Children.Add(new TextBlock
@@ -757,7 +785,7 @@ public partial class MainWindow
                 totals.Add(("Points wasted feeding", wasted.ToString("N0")));
             }
         }
-        totals.Add(("Points to +10", plan.Steps.Sum(s => s.Needed).ToString("N0") +
+        totals.Add(($"Points to +{targetRank}", plan.Steps.Sum(s => s.Needed).ToString("N0") +
             (startRank > 0 || points > 0 ? $" (from +{startRank}, {(pointsOk ? points : 0):N0} in)" : "")));
         details.Children.Add(OverlayPanel.BuildTable(OverlayTable.Pairs(totals), fontSize));
     }
@@ -773,8 +801,9 @@ public partial class MainWindow
         bool equipment = plan.Kind == UpgradeKind.Equipment;
         string thing = equipment ? "item" : "spell";
         int total = plan.Steps.Sum(s => s.Needed) - plan.Steps[0].StartPoints;
+        int targetRank = plan.Steps[^1].ToRank;
         AddGuideHeading("What to do");
-        AddGuideLine($"Your {thing} is +{startRank}. It needs {total:N0} more points to reach +10.", muted: true);
+        AddGuideLine($"Your {thing} is +{startRank}. It needs {total:N0} more points to reach +{targetRank}.", muted: true);
 
         int number = 1;
         if (plan.FedCopies.Count > 0)
@@ -805,7 +834,8 @@ public partial class MainWindow
             var motes = step.Used.Where(u => !u.IsCopy).ToList();
             var copiesUsed = step.Used.Where(u => u.IsCopy).ToList();
             int copyPoints = copiesUsed.Sum(u => MoteValues.CopyPoints(u.Rank) * u.Count);
-            if (motes.Count > 0 && copiesUsed.Count > 0 && step.StartPoints + copyPoints >= step.Needed)
+            if (motes.Count > 0 && copiesUsed.Count > 0 && step.StartPoints + copyPoints >= step.Needed &&
+                step.ToRank < targetRank)
             {
                 // The copies alone finish this rank; the motes only go in first because they stop working after it.
                 int motePoints = motes.Sum(u => MoteValues.ItemPoints(u.Rank) * u.Count);
@@ -837,6 +867,13 @@ public partial class MainWindow
             }
 
             AddGuideLine($"• +{step.FromRank} → +{step.ToRank}: {string.Join(", then ", parts)}", indent: true);
+        }
+
+        AddGuideLine($"Stop at +{targetRank}. No further upgrades are planned.", muted: true);
+        if (plan.Steps[^1].CarryAfter > 0)
+        {
+            AddGuideLine($"The last mote or merge leaves {plan.Steps[^1].CarryAfter:N0} extra points. " +
+                "Resources add fixed amounts; do not add more points after reaching your target.", muted: true);
         }
 
         var missingSteps = plan.Steps.Where(s => s.Missing > 0).ToList();
@@ -881,6 +918,19 @@ public partial class MainWindow
             }
 
         }
+    }
+
+    internal static int UpdatePlanTargetRanks(ComboBox selector, int currentRank)
+    {
+        int target = selector.SelectedItem is int selected ? selected : MoteValues.MaxRank;
+        target = Math.Clamp(target, currentRank, MoteValues.MaxRank);
+        var ranks = Enumerable.Range(currentRank, MoteValues.MaxRank - currentRank + 1).ToArray();
+        if (selector.ItemsSource is not int[] existing || !existing.SequenceEqual(ranks))
+        {
+            selector.ItemsSource = ranks;
+        }
+        selector.SelectedItem = target;
+        return target;
     }
 
     private void AddGuideHeading(string text)
