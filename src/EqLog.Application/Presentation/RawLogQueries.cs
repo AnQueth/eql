@@ -3,7 +3,14 @@ using EqLog.Core.Triggers;
 
 namespace EqLog.Application.Presentation;
 
-public sealed record RawLogSelection(IReadOnlyList<string> Lines, string? Error);
+public enum RawLogFilterStatus
+{
+    Success,
+    InvalidRegex,
+    TimedOut,
+}
+
+public sealed record RawLogSelection(IReadOnlyList<string> Lines, RawLogFilterStatus Status, string? Diagnostic = null);
 
 /// <summary>Log-message parsing and trigger syntax stay behind the Application query boundary.</summary>
 public static class RawLogQueries
@@ -21,7 +28,8 @@ public static class RawLogQueries
     public static RawLogSelection Filter(IReadOnlyList<string> lines, string filter, bool useRegex, string? character, int maximum)
     {
         Func<string, bool> keep = _ => true;
-        string? error = null;
+        var status = RawLogFilterStatus.Success;
+        string? diagnostic = null;
         if (filter.Length > 0)
         {
             if (useRegex)
@@ -37,14 +45,15 @@ public static class RawLogQueries
                         }
                         catch (System.Text.RegularExpressions.RegexMatchTimeoutException)
                         {
-                            error = "Regex filter timed out; some lines could not be checked.";
+                            status = RawLogFilterStatus.TimedOut;
                             return false;
                         }
                     };
                 }
                 else
                 {
-                    error = $"Invalid regex: {compileError}";
+                    status = RawLogFilterStatus.InvalidRegex;
+                    diagnostic = compileError;
                 }
             }
             else
@@ -53,6 +62,6 @@ public static class RawLogQueries
             }
         }
         var selected = lines.Where(keep).TakeLast(maximum).ToArray();
-        return new(selected, error);
+        return new(selected, status, diagnostic);
     }
 }

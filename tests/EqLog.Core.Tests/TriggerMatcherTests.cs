@@ -12,13 +12,13 @@ public class TriggerMatcherTests
         var matcher = new TriggerMatcher(AlertTrigger.Defaults(), "Quethrosar");
 
         var alert = Assert.Single(matcher.Match([Fell, "[Tue Oct 27 12:00:06 2026] Xath has fallen to the ground."]));
-        Assert.Equal("FEIGN DEATH FAILED!", alert.Text);
+        Assert.Equal("FEIGN DEATH FAILED!", alert.Trigger.Text);
         Assert.Equal(new DateTime(2026, 10, 27, 12, 0, 5), alert.LogTime);
         Assert.True(alert.Trigger.Sound);
     }
 
     [Fact]
-    public void CapturedGroupsAndNameAreSubstitutedIntoText()
+    public void CapturedGroupsAndCharacterAreReturnedWithoutFormattingText()
     {
         var matcher = new TriggerMatcher(
         [
@@ -32,14 +32,16 @@ public class TriggerMatcherTests
             "[Tue Oct 27 12:00:06 2026] Jagon tells you, 'inc'",
         ]);
 
-        Assert.Equal(["Quethrosar: FD broken by a spell hit you", "Tell from Jagon"], alerts.Select(a => a.Text));
+        Assert.Equal("a spell hit you", alerts[0].Captures.Groups[1].Value);
+        Assert.Equal("Jagon", alerts[1].Captures.Groups["who"].Value);
+        Assert.All(alerts, alert => Assert.Equal("Quethrosar", alert.CharacterName));
     }
 
     [Fact]
     public void MatchingIsCaseInsensitiveAndEmptyTextShowsTheMessage()
     {
         var matcher = new TriggerMatcher([new AlertTrigger { Pattern = "FALLEN TO THE GROUND" }], null);
-        Assert.Equal("Quethrosar has fallen to the ground.", Assert.Single(matcher.Match([Fell])).Text);
+        Assert.Equal("Quethrosar has fallen to the ground.", Assert.Single(matcher.Match([Fell])).Message);
     }
 
     [Fact]
@@ -53,7 +55,8 @@ public class TriggerMatcherTests
         ], "Quethrosar");
 
         Assert.Equal(1, matcher.Count);
-        Assert.StartsWith("bad:", Assert.Single(matcher.Errors));
+        Assert.Equal("bad", Assert.Single(matcher.Errors).Name);
+        Assert.NotEmpty(Assert.Single(matcher.Errors).Diagnostic);
         Assert.Equal("ok", Assert.Single(matcher.Match([Fell])).Trigger.Name);
     }
 
@@ -83,8 +86,9 @@ public class TriggerMatcherTests
             new AlertTrigger { Simple = "nope", Pattern = "nope", Text = "neither" },
         ], null);
 
-        var texts = matcher.Match([Fell]).Select(a => a.Text).ToList();
-        Assert.Equal(["Quethrosar fell", "regex only", "simple only"], texts);
+        var alerts = matcher.Match([Fell]);
+        Assert.Equal(["$1 fell", "regex only", "simple only"], alerts.Select(a => a.Trigger.Text));
+        Assert.Equal("Quethrosar", alerts[0].Captures.Groups[1].Value);
     }
 
     [Fact]
@@ -92,7 +96,7 @@ public class TriggerMatcherTests
     {
         var matcher = new TriggerMatcher([new AlertTrigger { Name = "mixed", Simple = "fallen", Pattern = "fallen(" }], null);
 
-        Assert.StartsWith("mixed:", Assert.Single(matcher.Errors));
+        Assert.Equal("mixed", Assert.Single(matcher.Errors).Name);
         Assert.Single(matcher.Match([Fell]));
     }
 
@@ -112,5 +116,18 @@ public class TriggerMatcherTests
     {
         var matcher = new TriggerMatcher(AlertTrigger.Defaults(), null);
         Assert.Single(matcher.Match(["[Tue Oct 27 12:00:06 2026] Xath has fallen to the ground."]));
+    }
+
+    [Fact]
+    public void MatchedTemplatesAreDetachedFromEditsAndOtherAlerts()
+    {
+        var trigger = new AlertTrigger { Pattern = "fallen", Text = "original" };
+        var matcher = new TriggerMatcher([trigger], "Que");
+        var first = Assert.Single(matcher.Match([Fell]));
+        trigger.Text = "edited";
+        first.Trigger.Text = "changed result";
+        var second = Assert.Single(matcher.Match([Fell]));
+        Assert.Equal("original", second.Trigger.Text);
+        Assert.Equal("Que", first.CharacterName);
     }
 }

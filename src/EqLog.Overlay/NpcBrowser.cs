@@ -401,7 +401,7 @@ public partial class MainWindow
             OverlayTable? spells = spellRows.Length > 0
                 ? new OverlayTable(["Spell", "Damage", "Landings", "Resists"], spellRows)
                 : null;
-            rows.Add(new($"{encounter.Start:g}  /  {encounter.Outcome}",
+            rows.Add(new($"{encounter.Start:g}  /  {NpcOutcomeText(encounter)}",
                 $"{encounter.YourDps:N1} DPS",
                 Table: OverlayTable.Pairs(
                 [
@@ -422,6 +422,21 @@ public partial class MainWindow
             "Same-name NPCs can merge if an ending event is missing. No raw lines are stored.", Stacked: true));
     }
 
+    internal static string NpcOutcomeText(NpcEncounterDetails encounter)
+    {
+        return encounter.Outcome switch
+        {
+            NpcEncounterOutcome.Active => "Active",
+            NpcEncounterOutcome.LoadoutChanged => "Loadout changed",
+            NpcEncounterOutcome.PlayerDied => "You died",
+            NpcEncounterOutcome.NpcDied => "NPC died",
+            NpcEncounterOutcome.Zoned => "Zoned",
+            NpcEncounterOutcome.Login => "Login",
+            NpcEncounterOutcome.Unknown => $"Unknown outcome ({encounter.UnrecognizedOutcome})",
+            _ => throw new ArgumentOutOfRangeException(nameof(encounter)),
+        };
+    }
+
     private void AddNpcSpellRows(List<OverlayRow> rows, MobDetails resistanceInfo, string zone, string mob)
     {
         rows.Add(new("Spell resistance history", Bold: true, QuestHeading: true));
@@ -432,8 +447,9 @@ public partial class MainWindow
         }
         foreach (var card in _session.NpcSpellDetails(zone, mob))
         {
-            rows.Add(new(card.Spell, card.Result, Table: OverlayTable.Pairs(card.Evidence, pairsPerRow: 3),
-                Details: card.Explanation, Stacked: true));
+            var presentation = ResistancePresentation.Spell(card);
+            rows.Add(new(card.Spell, presentation.Result, Table: OverlayTable.Pairs(presentation.Evidence, pairsPerRow: 3),
+                Details: presentation.Explanation, Stacked: true));
         }
         rows.Add(new("About damage ratings", Details:
             "Only explicit resists enter the resist percentage for verified single-target instant damage (including lifetaps). " +

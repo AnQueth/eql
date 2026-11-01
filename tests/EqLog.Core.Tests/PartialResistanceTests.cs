@@ -21,7 +21,7 @@ public class PartialResistanceTests
         Assert.Equal(landed, fire.Landed);
         Assert.Equal(partial, fire.EstimatedPartial);
         Assert.Equal(0, fire.Resisted);
-        Assert.Equal("Not Resistant", fire.Status);
+        Assert.Equal(ResistanceStatus.NotResistant, fire.Status);
     }
 
     [Fact]
@@ -32,11 +32,11 @@ public class PartialResistanceTests
         store.Record("trial", 2, "Sky", "Target", "Conflagration X", false, T0, "Tester", 1000);
         Assert.Equal(2, Fire(store).UnassessedDamage);
         Assert.Equal(2, Fire(store).Landed);
-        Assert.Equal("Not Resistant", Fire(store).Status);
+        Assert.Equal(ResistanceStatus.NotResistant, Fire(store).Status);
         store.Record("trial", 3, "Sky", "Target", "Conflagration X", false, T0, "Tester", 1000);
         Assert.Equal(0, Fire(store).UnassessedDamage);
         Assert.Equal(1, Fire(store).EstimatedPartial);
-        Assert.Equal("Not Resistant", Fire(store).Status);
+        Assert.Equal(ResistanceStatus.NotResistant, Fire(store).Status);
     }
 
     [Fact]
@@ -45,13 +45,13 @@ public class PartialResistanceTests
         var store = CreateStore();
         store.Record("trial", 1, "Sky", "Target", "Conflagration X", true, T0);
         store.Record("trial", 2, "Sky", "Target", "Conflagration X", false, T0, "Tester", 500);
-        Assert.Equal("Partially Resistant", Fire(store).Status);
+        Assert.Equal(ResistanceStatus.PartiallyResistant, Fire(store).Status);
         Assert.Equal(1, Fire(store).Landed);
         Assert.Equal(1, Fire(store).Resisted);
         Learn(store, "Tester", "Conflagration X", 1000);
         Assert.Equal(0, Fire(store).UnassessedDamage);
         Assert.Equal(1, Fire(store).EstimatedPartial);
-        Assert.Equal("Partially Resistant", Fire(store).Status);
+        Assert.Equal(ResistanceStatus.PartiallyResistant, Fire(store).Status);
     }
 
     [Fact]
@@ -88,7 +88,9 @@ public class PartialResistanceTests
         Assert.Equal(3, fire.Landed);
         Assert.Equal(0, fire.Resisted);
         Assert.Equal(0, fire.EstimatedPartial);
-        Assert.Equal("Not Resistant \u2014 0% (0/3)", fire.DisplayText);
+        Assert.Equal(ResistanceStatus.NotResistant, fire.Status);
+        Assert.Equal(0m, fire.ResistPercent);
+        Assert.Equal(3m, fire.AssessedOutcomes);
     }
 
     [Fact]
@@ -218,7 +220,7 @@ public class PartialResistanceTests
         }
         Assert.Equal(4, Fire(store).Landed);
         Assert.Equal(1, Fire(store).EstimatedPartial);
-        Assert.Equal("Not Resistant", Fire(store).Status);
+        Assert.Equal(ResistanceStatus.NotResistant, Fire(store).Status);
     }
 
     private static MobResistanceStore CreateStore()

@@ -258,24 +258,46 @@ public static class OverlayPresenters
     {
         var rows = new List<OverlayRow>();
         var model = (view.MoteInventory ?? MoteInventoryReadModel.Empty).Prepare(s.Motes, s.Now);
+        string inventoryTip = (model.ExportTime is DateTime exported
+            ? $"Export {exported.ToLocalTime():g}; owned counts are confirmed by this export."
+            : "No inventory export: export inventory to confirm owned counts.") +
+            "\nOwned excludes collection, installed items and historical drops." +
+            "\nLoot logs do not change Owned. Run /outputfile inventory after looting, spending, or moving motes to refresh.";
+        string valuesTip =
+            "A mote adds points to gear and spells. In the Gear/Spell column, the first number is for gear; the second is for spells.\n" +
+            "The ≤+N part means this mote works on gear at +N or lower. Motes work on spells at any rank.\n" +
+            "Example: 5/16 ≤+4 means 5 gear points at +4 or lower, or 16 spell points at any rank. " +
+            "Values are from the EQLWiki Mote Guide.";
         rows.Add(new("Tier", "session (all)", Foreground: Header, Bold: true,
-            ExtraColumn: "Owned", ToolTip: model.HeaderToolTip, ValueColumn: "Gear/Spell"));
+            ExtraColumn: "Owned", ToolTip: valuesTip + "\n\n" + inventoryTip, ValueColumn: "Gear/Spell"));
         foreach (var tier in model.Tiers)
         {
-            rows.Add(new(tier.Tier, tier.Count, Foreground: tier.HasSessionDrops ? Good : Dim,
-                LootItem: tier.ItemName, ExtraColumn: tier.Owned, ToolTip: tier.ToolTip, ValueColumn: tier.Value));
+            string value = tier.Rank.HasValue
+                ? $"{tier.EquipmentPoints}/{tier.SpellPoints} ≤+{tier.MaximumEquipmentRank}" : "?";
+            string tip = tier.Rank.HasValue
+                ? $"{tier.ItemName} (rank {tier.Rank})\n" +
+                    $"Adds {tier.EquipmentPoints} points to gear at +{tier.MaximumEquipmentRank} or lower.\n" +
+                    $"Adds {tier.SpellPoints} points to spells at any rank.\n\n" + inventoryTip
+                : $"No upgrade value is known for {tier.Tier}.\n\n{inventoryTip}";
+            rows.Add(new(tier.Tier, $"{tier.SessionCount}  ({tier.AllTimeCount})",
+                Foreground: tier.SessionCount > 0 ? Good : Dim,
+                LootItem: tier.ItemName, ExtraColumn: tier.Owned?.ToString("N0") ?? "?",
+                ToolTip: tip, ValueColumn: value));
         }
 
-        rows.Add(new("Total", model.TotalCount, Bold: true,
-            ExtraColumn: model.OwnedTotal, ToolTip: model.InventoryToolTip, ValueColumn: ""));
+        rows.Add(new("Total", $"{model.SessionTotal}  ({model.AllTimeTotal})", Bold: true,
+            ExtraColumn: model.OwnedTotal?.ToString("N0") ?? "?", ToolTip: inventoryTip, ValueColumn: ""));
 
         if (model.Recent.Count > 0)
         {
             rows.Add(new("Recent", "", Foreground: Header, Bold: true));
             foreach (var recent in model.Recent)
             {
-                rows.Add(new(recent.Text, recent.Time,
-                    Foreground: recent.IsYou ? null : Dim, LootItem: recent.ItemName));
+                bool isYou = recent.Looter == Names.You;
+                string who = isYou ? "" : $"[{recent.Looter}] ";
+                string quantity = recent.Quantity > 1 ? $" x{recent.Quantity}" : "";
+                rows.Add(new($"{who}{recent.Tier}{quantity}  {recent.Source}", recent.Time.ToString("HH:mm"),
+                    Foreground: isYou ? null : Dim, LootItem: recent.ItemName));
             }
         }
 
@@ -284,11 +306,12 @@ public static class OverlayPresenters
             rows.Add(new("Drops here", "drops / kills", Foreground: Header, Bold: true));
             foreach (var r in model.ZoneRates)
             {
-                rows.Add(new(r.Mob, r.Rate, Link: WikiLinks.SearchUrl(r.Mob)));
+                string rate = r.DropRate is double value ? $"  {value:P0}" : "";
+                rows.Add(new(r.Mob, $"{r.Drops}/{r.Kills}{rate}", Link: WikiLinks.SearchUrl(r.Mob)));
             }
         }
 
-        return new("Motes", model.Subtitle, rows);
+        return new("Motes", $"{model.SessionTotal} this session  {model.PerHour:0.#}/hr", rows);
     }
 
     private static OverlayContent Spawns(EngineSnapshot s, EngineQuerySnapshot queries, OverlayView __)

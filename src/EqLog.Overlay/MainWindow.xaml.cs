@@ -1695,7 +1695,12 @@ public partial class MainWindow : Window
         while (_pendingAlerts.TryDequeue(out var a))
         {
             double seconds = a.Trigger.Seconds > 0 ? a.Trigger.Seconds : 8;
-            _activeAlerts.Add(new ActiveAlert(a.Text, AlertBrush(a.Trigger.Color), now.AddSeconds(seconds), a.Trigger.Effect));
+            var text = TriggerPresentation.Format(a);
+            if (text.Error is not null)
+            {
+                TriggerStatusText.Text = $"Invalid alert text template: {text.Error.Message}. Showing the template without capture substitutions.";
+            }
+            _activeAlerts.Add(new ActiveAlert(text.Text, AlertBrush(a.Trigger.Color), now.AddSeconds(seconds), a.Trigger.Effect));
             sound |= a.Trigger.Sound;
         }
 
@@ -1756,7 +1761,8 @@ public partial class MainWindow : Window
     private void RebuildTriggers()
     {
         var errors = _session.ConfigureTriggers(_triggers, _characterName);
-        TriggerStatusText.Text = errors.Count == 0 ? "" : "Invalid regex (trigger skipped): " + string.Join("; ", errors);
+        TriggerStatusText.Text = errors.Count == 0 ? "" : "Invalid regex (trigger skipped): " +
+            string.Join("; ", errors.Select(TriggerPresentation.CompileError));
         _settings.Triggers = [.. _triggers];
         SaveSettingsInBackground(error => TriggerStatusText.Text += $" Could not save alert triggers: {error}");
     }
@@ -1991,7 +1997,13 @@ public partial class MainWindow : Window
 
         string filter = RawFilterBox.Text;
         var selection = RawLogQueries.Filter(snapshot, filter, RegexFilterBox.IsChecked == true, _characterName, RawDisplayMax);
-        string status = selection.Error is { } error ? error + "  " : "";
+        string status = selection.Status switch
+        {
+            RawLogFilterStatus.Success => "",
+            RawLogFilterStatus.InvalidRegex => $"Invalid regex: {selection.Diagnostic}  ",
+            RawLogFilterStatus.TimedOut => "Regex filter timed out; some lines could not be checked.  ",
+            _ => throw new ArgumentOutOfRangeException(nameof(selection)),
+        };
         var shown = selection.Lines.ToArray();
         object? selected = RawLinesList.SelectedItem;
         RawLinesList.ItemsSource = shown;

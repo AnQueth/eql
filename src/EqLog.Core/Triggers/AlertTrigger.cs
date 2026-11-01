@@ -42,7 +42,10 @@ public sealed class AlertTrigger
 
     /// <summary>Trigger settings from a newer version, kept so saving does not delete them.</summary>
     [JsonExtensionData]
-    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+    public Dictionary<string, JsonElement>? ExtensionData
+    {
+        get; set;
+    }
 
     public AlertTrigger Clone()
     {
@@ -88,8 +91,9 @@ public enum AlertEffect
     Glow,
 }
 
-/// <summary>An alert produced by a trigger match.</summary>
-public sealed record TriggerAlert(AlertTrigger Trigger, string Text, DateTime LogTime, string Message);
+/// <summary>Matched input and captures; presentation applies the user-authored text template.</summary>
+public sealed record TriggerAlert(AlertTrigger Trigger, Match Captures, string CharacterName, DateTime LogTime, string Message);
+public sealed record TriggerCompileError(string Name, string Pattern, string Diagnostic);
 
 /// <summary>Compiled set of enabled triggers for one character.</summary>
 public sealed class TriggerMatcher
@@ -102,8 +106,9 @@ public sealed class TriggerMatcher
     public TriggerMatcher(IEnumerable<AlertTrigger> triggers, string? characterName)
     {
         _characterName = characterName ?? "";
-        foreach (var t in triggers)
+        foreach (var source in triggers)
         {
+            var t = source.Clone();
             bool hasPattern = !string.IsNullOrWhiteSpace(t.Pattern);
             bool hasSimple = !string.IsNullOrWhiteSpace(t.Simple);
             if (!t.Enabled || (!hasPattern && !hasSimple))
@@ -115,7 +120,7 @@ public sealed class TriggerMatcher
             if (hasPattern && !TryCompile(t.Pattern, characterName, out regex, out string? error))
             {
                 regex = null;
-                Errors.Add($"{(t.Name.Length > 0 ? t.Name : t.Pattern)}: {error}");
+                Errors.Add(new(t.Name, t.Pattern, error!));
             }
 
             Regex? simple = hasSimple ? CompileSimple(t.Simple, characterName) : null;
@@ -129,7 +134,7 @@ public sealed class TriggerMatcher
     public static TriggerMatcher Empty { get; } = new([], null);
 
     /// <summary>Triggers that were skipped because their pattern is not a valid regex.</summary>
-    public List<string> Errors { get; } = [];
+    public List<TriggerCompileError> Errors { get; } = [];
 
     public int Count
     {
@@ -196,7 +201,7 @@ public sealed class TriggerMatcher
                 var m = TryMatch(regex, message) ?? TryMatch(simple, message);
                 if (m is not null)
                 {
-                    alerts.Add(new TriggerAlert(trigger, Format(trigger, m, message), time, message));
+                    alerts.Add(new TriggerAlert(trigger.Clone(), m, _characterName, time, message));
                 }
             }
         }
@@ -229,23 +234,4 @@ public sealed class TriggerMatcher
         }
     }
 
-    private string Format(AlertTrigger trigger, Match m, string message)
-    {
-        if (string.IsNullOrWhiteSpace(trigger.Text))
-        {
-            return message;
-        }
-
-        string text;
-        try
-        {
-            text = m.Result(trigger.Text);
-        }
-        catch (ArgumentException)
-        {
-            text = trigger.Text;
-        }
-
-        return text.Replace("{C}", _characterName, StringComparison.Ordinal);
-    }
 }

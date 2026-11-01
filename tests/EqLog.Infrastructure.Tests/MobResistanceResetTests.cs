@@ -27,7 +27,7 @@ public sealed class MobResistanceResetTests
         Assert.Equal(0, reset.Unclassified);
         Assert.All(reset.Observations, observation =>
         {
-            Assert.Equal("Unknown", observation.Status);
+            Assert.Equal(ResistanceStatus.Unknown, observation.Status);
             Assert.Equal(0, observation.OtherResisted);
             Assert.Equal(0, observation.UnassessedDamage);
         });

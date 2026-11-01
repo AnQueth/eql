@@ -198,8 +198,7 @@ public sealed partial class GameSession
     {
         var info = Mobs.Get(zone, mob);
         return new(info.Wiki, info.Unclassified, info.Spells,
-            info.Observations.Select(observation => new ResistanceDetails(observation.Type, observation.DisplayText,
-                observation.OtherResisted, observation.EstimatedPartial, observation.UnassessedDamage)).ToArray());
+            info.Observations.Select(ResistanceDetails.From).ToArray());
     }
 
     public void ResetResistances(string zone, string mob, DateTime now)
@@ -217,11 +216,11 @@ public sealed partial class GameSession
         return wiki.ResetCachesAsync(refresh, Engine, tracking);
     }
 
-    public IReadOnlyList<string> ConfigureTriggers(IEnumerable<AlertTrigger> triggers, string? character)
+    public IReadOnlyList<TriggerCompileError> ConfigureTriggers(IEnumerable<AlertTrigger> triggers, string? character)
     {
         var matcher = new TriggerMatcher(triggers, character);
         _triggers = matcher;
-        return matcher.Errors;
+        return matcher.Errors.AsReadOnly();
     }
 
     public IReadOnlyList<TriggerAlert> MatchTriggers(IReadOnlyList<string> lines)
@@ -241,7 +240,18 @@ public sealed partial class GameSession
     }
 }
 
-public sealed record ResistanceDetails(ResistanceType Type, string DisplayText, long OtherResisted,
-    long EstimatedPartial, long UnassessedDamage);
+public sealed record ResistanceDetails(ResistanceType Type, ResistanceStatus Status, long Landed, long Resisted,
+    decimal AssessedOutcomes, decimal? ResistPercent, long OtherResisted, long EstimatedPartial, long UnassessedDamage)
+{
+    public int MinimumDamageSamples { get; } = MobResistanceStore.MinimumDamageSamples;
+    public decimal ReducedDamageThresholdPercent { get; } = MobResistanceStore.ReducedDamageRatio * 100;
+
+    internal static ResistanceDetails From(ResistanceObservation observation)
+    {
+        return new(observation.Type, observation.Status, observation.Landed, observation.Resisted,
+            observation.AssessedOutcomes, observation.ResistPercent, observation.OtherResisted,
+            observation.EstimatedPartial, observation.UnassessedDamage);
+    }
+}
 public sealed record MobDetails(MobWikiInfo? Wiki, long Unclassified, IReadOnlyList<string> Spells,
     IReadOnlyList<ResistanceDetails> Observations);

@@ -33,8 +33,8 @@ public sealed class MotePlanningTests
     [Fact]
     public void TargetSelectionAndProgressBoundsMatchTheCurrentControls()
     {
-        Assert.Equal(Enumerable.Range(0, 11).Select(r => $"+{r}"), MotePlanningQueries.RankLabels);
-        Assert.Equal(Enumerable.Range(0, 10).Select(r => $"+{r}"), MotePlanningQueries.FodderRankLabels);
+        Assert.Equal(Enumerable.Range(0, 11), MotePlanningQueries.Ranks);
+        Assert.Equal(Enumerable.Range(0, 10), MotePlanningQueries.FodderRanks);
         Assert.Equal(10, MotePlanningQueries.TargetRanks(0, null).Selected);
         Assert.Equal(7, MotePlanningQueries.TargetRanks(4, 7).Selected);
         Assert.Equal(8, MotePlanningQueries.TargetRanks(8, 7).Selected);
@@ -51,16 +51,22 @@ public sealed class MotePlanningTests
     public void EmptyEquipmentPlanRetainsMatchingMotesAndCarriesFixedOvershoot()
     {
         var model = MotePlanningService.Prepare(Request(4, 6), new Dictionary<int, int>(), []);
-        var steps = StepTable(model);
-        Assert.Equal(["Step", "Need", "Have", "Use", "Missing", "Carry"], steps.Headers);
-        Assert.Equal(["+4 → +5", "16", "0", "", "Major ×4", "4"], steps.Rows[0]);
-        Assert.Equal(["+5 → +6", "32", "4", "", "Greater ×5", "2"], steps.Rows[1]);
-        var totals = Totals(model);
-        Assert.Equal("none", totals["Owned motes used"]);
-        Assert.Equal("Major ×4, Greater ×5", totals["Still missing"]);
-        Assert.Equal("48 (from +4, 0 in)", totals["Points to +6"]);
-        Assert.Null(model.Blocks.OfType<MotePlanTable>().Last().Headers);
-        Assert.True(model.Blocks.OfType<MotePlanTable>().Last().RowLabels);
+        Assert.Collection(model.Steps,
+            step =>
+            {
+                AssertStep(step, 4, 5, 16, 0, 4, 4);
+                Assert.Equal("Major", step.MissingTier);
+                Assert.Equal(MoteMissingReason.SmallestUsableEquipmentTier, step.MissingReason);
+            },
+            step =>
+            {
+                AssertStep(step, 5, 6, 32, 4, 5, 2);
+                Assert.Equal("Greater", step.MissingTier);
+            });
+        Assert.Empty(model.MotesUsed);
+        Assert.Equal([new MoteResourceCount(5, "Major", 4), new MoteResourceCount(6, "Greater", 5)], model.Missing);
+        Assert.Equal(48, model.TotalRequiredPoints);
+        Assert.Equal(48, model.RemainingPoints);
     }
 
     [Fact]
@@ -69,9 +75,12 @@ public sealed class MotePlanningTests
         var owned = new Dictionary<int, int> { [5] = 2 };
         InventoryExportItem[] rows = [Copy(4, count: 2)];
         var model = MotePlanningService.Prepare(Request(4, 5), owned, rows);
-        Assert.Equal(["+4 → +5", "16", "0", "copy +4", "", "0"], Assert.Single(StepTable(model).Rows));
-        Assert.Equal("none", Totals(model)["Owned motes used"]);
-        Assert.Equal("+4 ×1", Totals(model)["Copies merged"]);
+        var step = Assert.Single(model.Steps);
+        AssertStep(step, 4, 5, 16, 0, 0, 0);
+        Assert.Equal(new MoteResourceUse(4, 1, true, 16), Assert.Single(step.Used));
+        Assert.Empty(model.MotesUsed);
+        Assert.Equal(4, Assert.Single(model.CopiesUsed).Rank);
+        Assert.Equal(1, Assert.Single(model.CopiesUsed).Count);
         Assert.Equal(2, owned[5]);
         Assert.Equal(2, rows[0].Count);
 
@@ -79,23 +88,24 @@ public sealed class MotePlanningTests
         {
             Points = "15",
         }, new Dictionary<int, int>(), []);
-        Assert.Equal(["+4 → +5", "16", "15", "", "Major ×1", "4"], Assert.Single(StepTable(progress).Rows));
-        Assert.Equal("16 (from +4, 15 in)", Totals(progress)["Points to +5"]);
+        AssertStep(Assert.Single(progress.Steps), 4, 5, 16, 15, 1, 4);
+        Assert.Equal(16, progress.TotalRequiredPoints);
+        Assert.Equal(1, progress.RemainingPoints);
     }
 
     [Fact]
-    public void GuideExplainsOutgrownMotesBeforeACopyThatAloneFinishesTheStep()
+    public void ClassifiesOutgrownMotesBeforeACopyThatAloneFinishesTheStep()
     {
         var request = Request(6, 8) with
         {
             Page = MotePlanPage.Upgrade,
         };
         var model = MotePlanningService.Prepare(request, new Dictionary<int, int> { [7] = 7 }, [Copy(6, count: 2)]);
-        Assert.Contains("• +6 → +7: merge your +6 copy (that alone makes +7). " +
-            "Use your Superior ×7 first anyway: they stop working at +7, " +
-            "so their 49 points carry into +7 → +8", Lines(model));
-        Assert.Contains("Stop at +8. No further upgrades are planned.", Lines(model));
-        Assert.Contains("Your item is +6. It needs 192 more points to reach +8.", Lines(model));
+        Assert.Equal(MoteStepClassification.OutgrownMotesBeforeSufficientCopies, model.Steps[0].Classification);
+        Assert.Equal(49, model.Steps[0].MotePoints);
+        Assert.Equal(64, model.Steps[0].CopyPoints);
+        Assert.Equal(192, model.RemainingPoints);
+        Assert.Equal(8, model.Steps[^1].ToRank);
     }
 
     [Fact]
@@ -107,27 +117,33 @@ public sealed class MotePlanningTests
         };
         var owned = new Dictionary<int, int> { [1] = 5, [2] = 10, [3] = 10 };
         var model = MotePlanningService.Prepare(request, owned, [Copy(4), Copy(0, count: 2)]);
-        var fed = Assert.Single(model.Blocks.OfType<MotePlanTable>(), t => t.Headers?.FirstOrDefault() == "Copy");
-        Assert.Equal(2, fed.Rows.Count);
-        Assert.All(fed.Rows, row =>
+        Assert.Equal(2, model.FedCopies.Count);
+        Assert.All(model.FedCopies, copy =>
         {
-            Assert.Equal(["+0", "+3", "Infinitesimal ×1, Minor ×2, Lesser ×2", "8", ""], row);
+            Assert.Equal(0, copy.StartRank);
+            Assert.Equal(3, copy.EndRank);
+            Assert.Equal(8, copy.MergePoints);
+            Assert.Equal(0, copy.Wasted);
+            Assert.False(copy.IsFodder);
+            Assert.Equal([new MoteResourceUse(1, 1, false, 1), new MoteResourceUse(2, 2, false, 2),
+                new MoteResourceUse(3, 2, false, 4)], copy.Motes);
         });
-        Assert.Equal(["+4 → +5", "16", "0", "copy +3 ×2", "", "0"], Assert.Single(StepTable(model).Rows));
-        var totals = Totals(model);
-        Assert.Equal("Infinitesimal ×2, Minor ×4, Lesser ×4", totals["Owned motes used"]);
-        Assert.Equal("+3 ×2", totals["Copies merged"]);
-        Assert.Equal("Major ×3", totals["Feeding saves"]);
-        Assert.Equal("Infinitesimal ×2, Minor ×4, Lesser ×4", totals["…by spending"]);
-        Assert.Equal("none", totals["Still missing"]);
+        AssertStep(Assert.Single(model.Steps), 4, 5, 16, 0, 0, 0);
+        Assert.Equal(new MoteResourceUse(3, 2, true, 16), Assert.Single(model.Steps[0].Used));
+        Assert.Equal([new MoteResourceCount(1, "Infinitesimal", 2), new MoteResourceCount(2, "Minor", 4),
+            new MoteResourceCount(3, "Lesser", 4)], model.MotesUsed);
+        Assert.Equal(new MoteResourceCount(5, "Major", 3), Assert.Single(model.FeedingSavings));
+        Assert.Equal(model.MotesUsed, model.FeedingCosts);
+        Assert.Empty(model.Missing);
+        Assert.Equal(MoteFeedingStatus.Used, model.FeedingStatus);
         Assert.Equal(5, owned[1]);
 
         var guide = MotePlanningService.Prepare(request with
         {
             Page = MotePlanPage.Upgrade,
         }, owned, [Copy(4), Copy(0, count: 2)]);
-        Assert.Contains("• 2 +0 items: feed Infinitesimal ×1, Minor ×2, Lesser ×2 each → +3", Lines(guide));
-        Assert.Contains("Leveling copies saves you Major ×3 by using Infinitesimal ×2, Minor ×4, Lesser ×4 instead.", Lines(guide));
+        Assert.Equal(model.FedCopies.Select(copy => copy.MergePoints), guide.FedCopies.Select(copy => copy.MergePoints));
+        Assert.Equal(model.FeedingSavings, guide.FeedingSavings);
     }
 
     [Fact]
@@ -138,9 +154,13 @@ public sealed class MotePlanningTests
         {
             Feeding = true,
         }, owned, [Copy(5), Copy(4)]);
-        var fed = Assert.Single(model.Blocks.OfType<MotePlanTable>(), t => t.Headers?.FirstOrDefault() == "Copy");
-        Assert.Equal(["+4", "+5", "Major ×4", "32", "4"], Assert.Single(fed.Rows));
-        Assert.Equal("4", Totals(model)["Points wasted feeding"]);
+        var fed = Assert.Single(model.FedCopies);
+        Assert.Equal(4, fed.StartRank);
+        Assert.Equal(5, fed.EndRank);
+        Assert.Equal(32, fed.MergePoints);
+        Assert.Equal(new MoteResourceUse(5, 4, false, 20), Assert.Single(fed.Motes));
+        Assert.Equal(4, fed.Wasted);
+        Assert.Equal(4, model.FeedingWaste);
     }
 
     [Fact]
@@ -153,10 +173,10 @@ public sealed class MotePlanningTests
             HypotheticalCopies = new[] { 5, 5 },
         };
         var model = MotePlanningService.Prepare(request, new Dictionary<int, int>(), inventory);
-        Assert.Contains("WHAT IF: spare merge value 3 to 64 points before feeding; main item stays +6. Inventory is unchanged.",
-            model.Summary);
-        Assert.Contains("• +6 → +7: merge your copies 2 × +5", Lines(model));
-        Assert.Contains("You already have everything you need!", Lines(model));
+        Assert.Equal(new MoteWhatIfCalculation(3, 64), model.WhatIf);
+        Assert.Equal(6, model.StartRank);
+        Assert.Equal(new MoteResourceUse(5, 2, true, 64), Assert.Single(Assert.Single(model.Steps).Used));
+        Assert.Empty(model.Missing);
         Assert.Equal([6, 0, 1], inventory.Select(row => InventoryExport.SplitRank(row.Name).Rank));
         Assert.Equal([5, 5], request.HypotheticalCopies);
 
@@ -164,7 +184,10 @@ public sealed class MotePlanningTests
         {
             Page = MotePlanPage.Math,
         }, new Dictionary<int, int>(), inventory);
-        Assert.Equal(["+6 → +7", "64", "0", "copy +0, copy +1", "Superior ×9", "2"], Assert.Single(StepTable(actual).Rows));
+        Assert.Null(actual.WhatIf);
+        var actualStep = Assert.Single(actual.Steps);
+        AssertStep(actualStep, 6, 7, 64, 0, 9, 2);
+        Assert.Equal([new MoteResourceUse(0, 1, true, 1), new MoteResourceUse(1, 1, true, 2)], actualStep.Used);
     }
 
     [Fact]
@@ -177,19 +200,15 @@ public sealed class MotePlanningTests
             Feeding = true,
         };
         var model = MotePlanningService.Prepare(request, new Dictionary<int, int> { [8] = 3, [9] = 2 }, []);
-        var targets = model.Blocks.OfType<MotePlanLine>().Where(line => line.Bold).Select(line => line.Text);
-        Assert.Equal(["Reach +8: farm 7 more +4 copies.", "Reach +9: farm 22 more +4 copies.",
-            "Reach +10: farm 54 more +4 copies."], targets);
-        var comparison = Assert.Single(model.Blocks.OfType<MotePlanComparison>());
-        Assert.Equal("Compare: copies only, one level at a time", comparison.Heading);
-        Assert.Equal(["+7 to +8: 8 copies at +4.", "+8 to +9: 16 copies at +4.",
-            "+9 to +10: 32 copies at +4."], comparison.Lines.Skip(1));
+        Assert.Equal([new MoteFarmTarget(8, 7), new MoteFarmTarget(9, 22), new MoteFarmTarget(10, 54)], model.FarmTargets);
+        Assert.Equal([new MoteCopyOnlyStep(7, 8, 8), new MoteCopyOnlyStep(8, 9, 16),
+            new MoteCopyOnlyStep(9, 10, 32)], model.CopyOnlySteps);
     }
 
     [Theory]
-    [InlineData(false, "Reach +7: farm 2 more +5 copies.")]
-    [InlineData(true, "Reach +7: farm 1 more +5 copy.")]
-    public void FarmCanFeedSelectedRankCopiesWithOwnedMotes(bool feeding, string expected)
+    [InlineData(false, 2)]
+    [InlineData(true, 1)]
+    public void FarmCanFeedSelectedRankCopiesWithOwnedMotes(bool feeding, int expected)
     {
         var request = Request(6, 7) with
         {
@@ -198,7 +217,8 @@ public sealed class MotePlanningTests
             Feeding = feeding,
         };
         var model = MotePlanningService.Prepare(request, new Dictionary<int, int> { [6] = 6 }, []);
-        Assert.Contains(expected, Lines(model));
+        Assert.Equal(new MoteFarmTarget(7, expected), Assert.Single(model.FarmTargets));
+        Assert.Equal(5, model.FodderRank);
     }
 
     [Fact]
@@ -211,7 +231,7 @@ public sealed class MotePlanningTests
             Points = "32",
         };
         var model = MotePlanningService.Prepare(request, new Dictionary<int, int>(), [Copy(6), Copy(5)]);
-        Assert.Contains("Reach +7: no more copies needed.", Lines(model));
+        Assert.Equal(new MoteFarmTarget(7, 0), Assert.Single(model.FarmTargets));
 
         var extra = MotePlanningService.Prepare(Request(9, 10) with
         {
@@ -219,8 +239,8 @@ public sealed class MotePlanningTests
             FodderRank = 4,
             Fodder = "1",
         }, new Dictionary<int, int> { [10] = 16 }, []);
-        Assert.Contains("Reach +10: farm 21 more +4 copies.", Lines(extra));
-        Assert.Contains("The 1 extra copies you entered are already counted. Only copies beyond those are listed here.", Lines(extra));
+        Assert.Equal(new MoteFarmTarget(10, 21), Assert.Single(extra.FarmTargets));
+        Assert.Equal(1, extra.FodderCopies);
     }
 
     [Fact]
@@ -233,12 +253,16 @@ public sealed class MotePlanningTests
             Fodder = "10",
         };
         var model = MotePlanningService.Prepare(request, new Dictionary<int, int> { [1] = 3 }, [Copy(5)]);
-        Assert.Equal(["+0 → +1", "1", "0", "Infinitesimal ×1", "", "0"], StepTable(model).Rows[0]);
-        Assert.Equal(["+1 → +2", "2", "0", "Infinitesimal ×2", "", "0"], StepTable(model).Rows[1]);
-        Assert.Equal(["+2 → +3", "4", "0", "", "Lesser ×1", "0"], StepTable(model).Rows[2]);
-        Assert.DoesNotContain("Copies merged", Totals(model).Keys);
-        Assert.DoesNotContain(model.Blocks.OfType<MotePlanTable>(), t => t.Headers?.FirstOrDefault() == "Copy");
-        Assert.Empty(model.Summary);
+        AssertStep(model.Steps[0], 0, 1, 1, 0, 0, 0);
+        Assert.Equal(new MoteResourceUse(1, 1, false, 1), Assert.Single(model.Steps[0].Used));
+        AssertStep(model.Steps[1], 1, 2, 2, 0, 0, 0);
+        Assert.Equal(new MoteResourceUse(1, 2, false, 2), Assert.Single(model.Steps[1].Used));
+        AssertStep(model.Steps[2], 2, 3, 4, 0, 1, 0);
+        Assert.Equal(MoteMissingReason.ExactSpellValue, model.Steps[2].MissingReason);
+        Assert.Empty(model.CopiesUsed);
+        Assert.Empty(model.FedCopies);
+        Assert.Equal(MoteFeedingStatus.NotApplicable, model.FeedingStatus);
+        Assert.Empty(model.CopySelection.Spares);
     }
 
     [Theory]
@@ -246,14 +270,45 @@ public sealed class MotePlanningTests
     [InlineData("16")]
     [InlineData("1.5")]
     [InlineData("not points")]
-    public void InvalidProgressKeepsExactWarningAndPlansWithZero(string points)
+    public void InvalidProgressReturnsValidationStatusAndPlansWithZero(string points)
     {
         var model = MotePlanningService.Prepare(Request(4, 5) with
         {
             Points = points,
         }, new Dictionary<int, int>(), []);
-        Assert.Contains("Points must be a whole number from 0 to 15 at +4; using 0.", model.Summary);
-        Assert.Equal("0", Assert.Single(StepTable(model).Rows)[2]);
+        Assert.Equal(MoteInputStatus.Invalid, model.PointsStatus);
+        Assert.Equal(15, model.MaximumProgress);
+        Assert.Equal(0, model.Progress);
+        Assert.Equal(0, Assert.Single(model.Steps).StartPoints);
+    }
+
+    [Theory]
+    [InlineData("", 0)]
+    [InlineData("  ", 0)]
+    [InlineData(" 15 ", 15)]
+    public void ValidProgressIsParsedWithoutFormatting(string text, int expected)
+    {
+        var model = MotePlanningService.Prepare(Request(4, 5) with
+        {
+            Points = text,
+        }, new Dictionary<int, int>(), []);
+        Assert.Equal(MoteInputStatus.Valid, model.PointsStatus);
+        Assert.Equal(expected, model.Progress);
+        Assert.Equal(expected, model.ParsedPoints);
+    }
+
+    [Fact]
+    public void InvalidNumericProgressRetainsParsedValueButUsesZeroInCalculations()
+    {
+        var model = MotePlanningService.Prepare(Request(0, 1) with
+        {
+            Points = "1",
+        }, new Dictionary<int, int>(), []);
+        Assert.Equal(MoteInputStatus.Invalid, model.PointsStatus);
+        Assert.Equal(1, model.ParsedPoints);
+        Assert.Equal(0, model.Progress);
+        Assert.Equal(0, model.MaximumProgress);
+        Assert.Equal(1023, model.MaximumFodderCopies);
     }
 
     [Fact]
@@ -266,8 +321,13 @@ public sealed class MotePlanningTests
             Page = MotePlanPage.Farm,
             Feeding = true,
         }, new Dictionary<int, int> { [1] = 100 }, [Copy(5), Copy(0)]);
-        Assert.Contains("Extra copies must be a whole number from 0 to 1023; using 0.", model.Summary);
-        Assert.Equal("Already at the +5 target. No points needed.", Assert.IsType<MotePlanComplete>(Assert.Single(model.Blocks)).Text);
+        Assert.Equal(MoteInputStatus.Invalid, model.FodderStatus);
+        Assert.Equal(0, model.FodderCopies);
+        Assert.Empty(model.Steps);
+        Assert.Empty(model.MotesUsed);
+        Assert.Empty(model.CopiesUsed);
+        Assert.Empty(model.FarmTargets);
+        Assert.Equal(0, model.RemainingPoints);
     }
 
     [Fact]
@@ -279,9 +339,12 @@ public sealed class MotePlanningTests
             UseCopies = false,
         };
         var model = MotePlanningService.Prepare(request, new Dictionary<int, int> { [5] = 100 }, [Copy(4, count: 2), Copy(9)]);
-        Assert.Contains("1 spare copy in inventory: +4 (one +4 is the item being upgraded).", model.Summary);
-        Assert.Contains("You already have a +9 copy, so it isn't counted as a spare. Set Current to +9 to plan from it.", model.Summary);
-        Assert.Equal(["+4 → +5", "16", "0", "", "Major ×4", "4"], Assert.Single(StepTable(model).Rows));
+        Assert.Equal([4], model.CopySelection.Spares);
+        Assert.True(model.CopySelection.RemovedTarget);
+        Assert.Equal([9], model.CopySelection.HigherCopies);
+        AssertStep(Assert.Single(model.Steps), 4, 5, 16, 0, 4, 4);
+        Assert.Empty(model.MotesUsed);
+        Assert.Empty(model.CopiesUsed);
     }
 
     private static MotePlanningRequest Request(int startRank, int targetRank)
@@ -295,18 +358,14 @@ public sealed class MotePlanningTests
         return new InventoryExportItem("Bank1", $"Cloak +{rank}", 1, count, InventoryStorage.Bank);
     }
 
-    private static MotePlanTable StepTable(MotePlanReadModel model)
+    private static void AssertStep(
+        MoteUpgradeStep step, int from, int to, int needed, int progress, int missing, int carry)
     {
-        return Assert.Single(model.Blocks.OfType<MotePlanTable>(), table => table.Headers?.FirstOrDefault() == "Step");
-    }
-
-    private static Dictionary<string, string> Totals(MotePlanReadModel model)
-    {
-        return model.Blocks.OfType<MotePlanTable>().Last().Rows.ToDictionary(row => row[0], row => row[1]);
-    }
-
-    private static IEnumerable<string> Lines(MotePlanReadModel model)
-    {
-        return model.Blocks.OfType<MotePlanLine>().Select(line => line.Text);
+        Assert.Equal(from, step.FromRank);
+        Assert.Equal(to, step.ToRank);
+        Assert.Equal(needed, step.Needed);
+        Assert.Equal(progress, step.StartPoints);
+        Assert.Equal(missing, step.Missing);
+        Assert.Equal(carry, step.CarryAfter);
     }
 }

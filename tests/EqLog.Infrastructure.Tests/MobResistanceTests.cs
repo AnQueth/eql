@@ -313,7 +313,7 @@ public class MobResistanceTests
         Assert.Equal(duration, info.Duration);
         Assert.False(info.SingleTargetDirectDamage);
         Assert.True(info.DamageOverTime);
-        Assert.StartsWith("Damage-over-time spell", info.AssessmentNote);
+        Assert.Equal(SpellAssessmentKind.DamageOverTime, info.AssessmentKind);
     }
 
     [Fact]
@@ -323,7 +323,7 @@ public class MobResistanceTests
             "{{Spellpage|\n| slots = \n{{SpellSlotRow | 1 | Decrease Movement by 40% }}\n| duration = 2 Min\n| target_type = Single\n| resist = Magic\n}}")));
         var info = await new MobWikiClient(http).FindSpellAsync("Clinging Darkness");
         Assert.False(info.DamageOverTime);
-        Assert.StartsWith("Duration spell", info.AssessmentNote);
+        Assert.Equal(SpellAssessmentKind.Duration, info.AssessmentKind);
     }
 
     [Fact]
@@ -340,7 +340,7 @@ public class MobResistanceTests
         var metadata = await new MobWikiClient(http).FindSpellAsync("Life Leech X");
         Assert.True(metadata.SingleTargetDirectDamage);
         Assert.Equal("Lifetap", metadata.TargetType);
-        Assert.Null(metadata.AssessmentNote);
+        Assert.Equal(SpellAssessmentKind.DirectDamage, metadata.AssessmentKind);
         Assert.False(metadata.NeedsRefresh);
         var store = new MobResistanceStore();
         store.Record("log", 1, "Fear", "A warder", "Life Leech X", false, T0);
@@ -350,26 +350,27 @@ public class MobResistanceTests
             SingleTargetDirectDamage = false,
             MetadataVersion = 0
         });
-        Assert.Equal("Unknown", store.Get("Fear", "A warder").Observations.Single(o => o.Type == ResistanceType.Magic).Status);
+        Assert.Equal(ResistanceStatus.Unknown, store.Get("Fear", "A warder").Observations.Single(o => o.Type == ResistanceType.Magic).Status);
         store.SetSpell(metadata);
         var observation = store.Get("Fear", "A warder").Observations.Single(o => o.Type == ResistanceType.Magic);
-        Assert.Equal("Partially Resistant \u2014 50% (1/2)", observation.DisplayText);
+        Assert.Equal(ResistanceStatus.PartiallyResistant, observation.Status);
+        Assert.Equal(50m, observation.ResistPercent);
     }
 
     [Theory]
-    [InlineData("Targeted AE", "Instant", "Magic", "Area-effect")]
-    [InlineData("PB AE", "Instant", "Cold", "Area-effect")]
-    [InlineData("Single", "3 ticks", "Poison", "Duration spell")]
-    [InlineData("Group", "Instant", "Magic", "Wiki target: Group")]
+    [InlineData("Targeted AE", "Instant", "Magic", SpellAssessmentKind.AreaEffect)]
+    [InlineData("PB AE", "Instant", "Cold", SpellAssessmentKind.AreaEffect)]
+    [InlineData("Single", "3 ticks", "Poison", SpellAssessmentKind.Duration)]
+    [InlineData("Group", "Instant", "Magic", SpellAssessmentKind.UnverifiedTarget)]
     public async Task Wiki_NonComparableSpell_PreservesSchoolAndSpecificAssessmentReason(
-        string target, string duration, string school, string reason)
+        string target, string duration, string school, SpellAssessmentKind reason)
     {
         using var http = new HttpClient(new Handler(_ => Page(
             $"{{{{Spellpagesmart\n| duration = {duration}\n| target_type = {target}\n| slots = Decrease Hitpoints by 250\n| resist = {school} (-10)\n}}}}")));
         var metadata = await new MobWikiClient(http).FindSpellAsync("Test spell");
         Assert.Equal(Enum.Parse<ResistanceType>(school), metadata.Type);
         Assert.False(metadata.SingleTargetDirectDamage);
-        Assert.Contains(reason, metadata.AssessmentNote);
+        Assert.Equal(reason, metadata.AssessmentKind);
         Assert.False(metadata.NeedsRefresh);
     }
 
@@ -379,7 +380,7 @@ public class MobResistanceTests
         var old = JsonSerializer.Deserialize<SpellResistanceInfo>(
             """{"Spell":"Life Leech X","Type":0,"Detail":"Magic (-200)","CheckedUtc":"2099-01-01T00:00:00Z","SingleTargetDirectDamage":false}""")!;
         Assert.True(old.NeedsRefresh);
-        Assert.Contains("missing", old.AssessmentNote);
+        Assert.Equal(SpellAssessmentKind.MissingDetails, old.AssessmentKind);
         var refreshed = old with
         {
             SingleTargetDirectDamage = true,
@@ -390,7 +391,7 @@ public class MobResistanceTests
         };
         var loaded = JsonSerializer.Deserialize<SpellResistanceInfo>(JsonSerializer.Serialize(refreshed))!;
         Assert.False(loaded.NeedsRefresh);
-        Assert.Null(loaded.AssessmentNote);
+        Assert.Equal(SpellAssessmentKind.DirectDamage, loaded.AssessmentKind);
         Assert.True((loaded with
         {
             CheckedUtc = DateTime.UtcNow.AddDays(-8)

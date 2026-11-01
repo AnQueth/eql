@@ -10,9 +10,9 @@ public sealed class MoteInventoryReadModelTests
     private static readonly DateTime Now = new(2026, 11, 1, 19, 0, 0, DateTimeKind.Utc);
 
     [Theory]
-    [InlineData(false, "?")]
-    [InlineData(true, "0")]
-    public void EmptyInventoryAlwaysPreparesEveryKnownTierWithExportDependentOwnedCounts(bool exported, string expected)
+    [InlineData(false, null)]
+    [InlineData(true, 0)]
+    public void EmptyInventoryAlwaysPreparesEveryKnownTierWithExportDependentOwnedCounts(bool exported, int? expected)
     {
         var inventory = MoteInventoryReadModel.Capture([], "Queth", exported ? Now : null);
         var model = inventory.Prepare(Snapshot(), Now);
@@ -21,16 +21,14 @@ public sealed class MoteInventoryReadModelTests
         Assert.All(model.Tiers, tier =>
         {
             Assert.Equal(expected, tier.Owned);
-            Assert.Equal("0  (0)", tier.Count);
-            Assert.False(tier.HasSessionDrops);
+            Assert.Equal(0, tier.SessionCount);
+            Assert.Equal(0, tier.AllTimeCount);
         });
         Assert.Equal(expected, model.OwnedTotal);
-        Assert.Equal("0 this session  0/hr", model.Subtitle);
-        Assert.Equal("0  (0)", model.TotalCount);
-        Assert.Contains("Owned excludes collection, installed items and historical drops.", model.InventoryToolTip);
-        Assert.StartsWith(exported
-            ? $"Export {Now.ToLocalTime():g}; owned counts are confirmed by this export."
-            : "No inventory export: export inventory to confirm owned counts.", model.InventoryToolTip);
+        Assert.Equal(0, model.PerHour);
+        Assert.Equal(0, model.SessionTotal);
+        Assert.Equal(0, model.AllTimeTotal);
+        Assert.Equal(exported ? Now : (DateTime?)null, model.ExportTime);
     }
 
     [Fact]
@@ -48,11 +46,11 @@ public sealed class MoteInventoryReadModelTests
         var captured = MoteInventoryReadModel.Capture(items, "queth");
         items[0] = Item("Queth", "Mote of Major Potential", 900);
         var model = captured.Prepare(Snapshot(), Now);
-        Assert.Equal("5", Assert.Single(model.Tiers, t => t.Tier == "Major").Owned);
-        Assert.Equal("0", Assert.Single(model.Tiers, t => t.Tier == "Minor").Owned);
-        Assert.Equal("?", Assert.Single(model.Tiers, t => t.Tier == "Greater").Owned);
-        Assert.Equal("4", Assert.Single(model.Tiers, t => t.Tier == "Condensing").Owned);
-        Assert.Equal("9", model.OwnedTotal);
+        Assert.Equal(5, Assert.Single(model.Tiers, t => t.Tier == "Major").Owned);
+        Assert.Equal(0, Assert.Single(model.Tiers, t => t.Tier == "Minor").Owned);
+        Assert.Null(Assert.Single(model.Tiers, t => t.Tier == "Greater").Owned);
+        Assert.Equal(4, Assert.Single(model.Tiers, t => t.Tier == "Condensing").Owned);
+        Assert.Equal(9, model.OwnedTotal);
         Assert.Equal(new Dictionary<int, int> { [5] = 5 }, captured.OwnedByRank);
         Assert.Throws<NotSupportedException>(() =>
         {
@@ -61,22 +59,20 @@ public sealed class MoteInventoryReadModelTests
     }
 
     [Theory]
-    [InlineData("Infinitesimal", "Mote of Infinitesimal Potential", "1/1 ≤+0", 1, 0, 1)]
-    [InlineData("Potential", "Mote of Potential", "4/8 ≤+3", 4, 3, 8)]
-    [InlineData("Major", "Mote of Major Potential", "5/16 ≤+4", 5, 4, 16)]
-    [InlineData("Infinite", "Mote of Infinite Potential", "10/512 ≤+9", 10, 9, 512)]
-    public void KnownTiersHaveExactPreparedValuesAndExplanations(
-        string name, string item, string expectedValue, int points, int limit, int spellPoints)
+    [InlineData("Infinitesimal", "Mote of Infinitesimal Potential", 1, 0, 1)]
+    [InlineData("Potential", "Mote of Potential", 4, 3, 8)]
+    [InlineData("Major", "Mote of Major Potential", 5, 4, 16)]
+    [InlineData("Infinite", "Mote of Infinite Potential", 10, 9, 512)]
+    public void KnownTiersHaveTypedUpgradeValues(
+        string name, string item, int points, int limit, int spellPoints)
     {
         var model = MoteInventoryReadModel.Empty.Prepare(Snapshot(), Now);
         var tier = Assert.Single(model.Tiers, t => t.Tier == name);
         Assert.Equal(item, tier.ItemName);
-        Assert.Equal(expectedValue, tier.Value);
-        Assert.Equal($"{item} (rank {points})\n" +
-            $"Adds {points} points to gear at +{limit} or lower.\n" +
-            $"Adds {spellPoints} points to spells at any rank.\n\n" + model.InventoryToolTip, tier.ToolTip);
-        Assert.Contains("Example: 5/16 ≤+4 means 5 gear points at +4 or lower, or 16 spell points at any rank.",
-            model.HeaderToolTip);
+        Assert.Equal(points, tier.Rank);
+        Assert.Equal(points, tier.EquipmentPoints);
+        Assert.Equal(limit, tier.MaximumEquipmentRank);
+        Assert.Equal(spellPoints, tier.SpellPoints);
     }
 
     [Fact]
@@ -90,12 +86,14 @@ public sealed class MoteInventoryReadModelTests
         };
         var model = inventory.Prepare(snapshot, Now);
         Assert.Equal(["Condensing", "Mystery", "Void-Touched"], model.Tiers.Skip(10).Select(t => t.Tier));
-        Assert.Equal("3  (12)", Assert.Single(model.Tiers, t => t.Tier == "Major").Count);
-        Assert.True(Assert.Single(model.Tiers, t => t.Tier == "Major").HasSessionDrops);
+        Assert.Equal(3, Assert.Single(model.Tiers, t => t.Tier == "Major").SessionCount);
+        Assert.Equal(12, Assert.Single(model.Tiers, t => t.Tier == "Major").AllTimeCount);
         Assert.All(model.Tiers.Skip(10), tier =>
         {
-            Assert.Equal("?", tier.Value);
-            Assert.Equal($"No upgrade value is known for {tier.Tier}.\n\n{model.InventoryToolTip}", tier.ToolTip);
+            Assert.Null(tier.Rank);
+            Assert.Null(tier.EquipmentPoints);
+            Assert.Null(tier.SpellPoints);
+            Assert.Null(tier.MaximumEquipmentRank);
         });
     }
 
@@ -114,15 +112,16 @@ public sealed class MoteInventoryReadModelTests
             ZoneRates = new[] { new MoteMobRate("a rat", 2, 1, []), new MoteMobRate("a chest", 0, 2, []) },
         };
         var model = MoteInventoryReadModel.Empty.Prepare(snapshot, Now);
-        Assert.Equal("6 this session  3/hr", model.Subtitle);
-        Assert.Equal("6  (10)", model.TotalCount);
+        Assert.Equal(3, model.PerHour);
+        Assert.Equal(6, model.SessionTotal);
+        Assert.Equal(10, model.AllTimeTotal);
         Assert.Equal(5, model.Recent.Count);
-        Assert.Equal(new MoteRecentReadModel("Major x2  a rat", Now.ToString("HH:mm"), true,
+        Assert.Equal(new MoteRecentReadModel("Major", Names.You, 2, "a rat", Now,
             "Mote of Major Potential"), model.Recent[0]);
-        Assert.Equal(new MoteRecentReadModel("[Other] Minor  a rat", Now.AddMinutes(-1).ToString("HH:mm"), false,
+        Assert.Equal(new MoteRecentReadModel("Minor", "Other", 1, "a rat", Now.AddMinutes(-1),
             "Mote of Minor Potential"), model.Recent[1]);
-        Assert.Equal($"1/2  {0.5:P0}", model.ZoneRates[0].Rate);
-        Assert.Equal("2/0", model.ZoneRates[1].Rate);
+        Assert.Equal(new MoteRateReadModel("a rat", 1, 2, 0.5), model.ZoneRates[0]);
+        Assert.Equal(new MoteRateReadModel("a chest", 2, 0, null), model.ZoneRates[1]);
     }
 
     private static InventoryItemSummary Item(string character, string name, int owned)

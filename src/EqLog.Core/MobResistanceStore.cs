@@ -13,6 +13,25 @@ public enum ResistanceType
     Disease,
 }
 
+public enum ResistanceStatus
+{
+    Unknown,
+    Resists,
+    Partial,
+    PartiallyResistant,
+    NotResistant,
+}
+
+public enum SpellAssessmentKind
+{
+    DirectDamage,
+    DamageOverTime,
+    AreaEffect,
+    Duration,
+    MissingDetails,
+    UnverifiedTarget,
+}
+
 /// <summary>
 /// Resisted counts every explicit resist. DotLanded/DotResisted are the assessed outcomes of damage-over-time casts
 /// (first tick after a cast, or its resist), kept apart so older resist-only history doesn't skew DoT rates.
@@ -28,42 +47,45 @@ public sealed record SpellOutcome(string Spell, long Landed, long Resisted,
 public sealed record ResistanceObservation(ResistanceType Type, long Landed, long Resisted, long OtherResisted,
     long EstimatedPartial = 0, long UnassessedDamage = 0)
 {
-    public string DisplayText
+    public decimal AssessedOutcomes
     {
         get
         {
-            decimal total = (decimal)Landed + Resisted;
-            if (total == 0)
-            {
-                return $"{Status} \u2014 no assessed outcomes";
-            }
-            return $"{Status} \u2014 {100m * Resisted / total:0.#}% ({Resisted}/{total})";
+            return (decimal)Landed + Resisted;
         }
     }
 
-    public string Status
+    public decimal? ResistPercent
+    {
+        get
+        {
+            return AssessedOutcomes == 0 ? null : 100m * Resisted / AssessedOutcomes;
+        }
+    }
+
+    public ResistanceStatus Status
     {
         get
         {
             decimal total = (decimal)Landed + Resisted;
             if (total == 0)
             {
-                return "Unknown";
+                return ResistanceStatus.Unknown;
             }
             if (Resisted == total)
             {
-                return "Resists";
+                return ResistanceStatus.Resists;
             }
             decimal rate = Resisted / total;
             if (rate > 0.5m)
             {
-                return "Partial";
+                return ResistanceStatus.Partial;
             }
             if (rate >= 0.2m)
             {
-                return "Partially Resistant";
+                return ResistanceStatus.PartiallyResistant;
             }
-            return "Not Resistant";
+            return ResistanceStatus.NotResistant;
         }
     }
 }
@@ -90,32 +112,32 @@ public sealed record SpellResistanceInfo(string Spell, ResistanceType? Type, str
     }
 
     [JsonIgnore]
-    public string? AssessmentNote
+    public SpellAssessmentKind AssessmentKind
     {
         get
         {
             if (SingleTargetDirectDamage)
             {
-                return null;
+                return SpellAssessmentKind.DirectDamage;
             }
             if (DamageOverTime)
             {
-                return "Damage-over-time spell: each cast counts once (its first tick landed, or it was resisted); ticks don't give a full/partial damage rating.";
+                return SpellAssessmentKind.DamageOverTime;
             }
             if (TargetType?.Contains("AE", StringComparison.OrdinalIgnoreCase) == true ||
                 TargetType?.Contains("Area", StringComparison.OrdinalIgnoreCase) == true)
             {
-                return "Area-effect spell: hits and resists are recorded, but multiple targets or waves prevent a reliable full/partial damage rating.";
+                return SpellAssessmentKind.AreaEffect;
             }
             if (Duration is not null && !string.Equals(Duration, "Instant", StringComparison.OrdinalIgnoreCase))
             {
-                return "Duration spell: damage ticks are not separate cast successes, so a full/partial damage rating is unavailable.";
+                return SpellAssessmentKind.Duration;
             }
             if (TargetType is null)
             {
-                return "Wiki target/damage details are missing. Refresh wiki to retry; recorded outcomes are preserved.";
+                return SpellAssessmentKind.MissingDetails;
             }
-            return $"Wiki target: {TargetType}. No verified single-target instant damage profile; recorded outcomes are preserved.";
+            return SpellAssessmentKind.UnverifiedTarget;
         }
     }
 }
@@ -134,6 +156,9 @@ public sealed record MobResistancePersistenceSnapshot(
 /// <summary>Thread-safe persistent observations keyed by zone and mob name, not individual NPC instances.</summary>
 public sealed class MobResistanceStore
 {
+    public const int MinimumDamageSamples = 3;
+    public const decimal ReducedDamageRatio = 0.9m;
+
     private readonly object _gate = new();
     private Data _data = new();
     private long _version;
@@ -270,7 +295,7 @@ public sealed class MobResistanceStore
                             {
                                 unknown += count;
                             }
-                            else if ((decimal)amount < baseline.Value * 0.9m)
+                            else if ((decimal)amount < baseline.Value * ReducedDamageRatio)
                             {
                                 partial += count;
                             }
@@ -315,7 +340,7 @@ public sealed class MobResistanceStore
             .Where(s => MobKey(s.Spell) == spell && s.DamageSamples?.ContainsKey(character) == true)
             .SelectMany(s => s.DamageSamples![character]).ToArray();
         long total = samples.Sum(sample => sample.Value);
-        if (total < 3)
+        if (total < MinimumDamageSamples)
         {
             _damageBaselines[key] = null;
             return null;

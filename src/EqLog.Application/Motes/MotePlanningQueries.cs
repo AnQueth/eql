@@ -10,17 +10,17 @@ public sealed record MoteTargetRanks(int Selected, IReadOnlyList<int> Ranks);
 /// <summary>Inventory selection and input bounds for the mote planner.</summary>
 public static class MotePlanningQueries
 {
-    public static IReadOnlyList<string> RankLabels
+    public static IReadOnlyList<int> Ranks
     {
         get;
     } =
-        Array.AsReadOnly(Enumerable.Range(0, MoteValues.MaxRank + 1).Select(r => $"+{r}").ToArray());
+        Array.AsReadOnly(Enumerable.Range(0, MoteValues.MaxRank + 1).ToArray());
 
-    public static IReadOnlyList<string> FodderRankLabels
+    public static IReadOnlyList<int> FodderRanks
     {
         get;
     } =
-        Array.AsReadOnly(Enumerable.Range(0, MoteValues.MaxRank).Select(r => $"+{r}").ToArray());
+        Array.AsReadOnly(Enumerable.Range(0, MoteValues.MaxRank).ToArray());
 
     public static int MaximumProgress(int startRank)
     {

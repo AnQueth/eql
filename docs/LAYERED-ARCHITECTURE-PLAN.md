@@ -395,6 +395,23 @@ Authorized after reviewing the remaining direct domain calls.
   real-profile app startup was performed.
 - Hands-on full-window review in a disposable account/VM remains pending.
 
+### Typed results and presentation-owned wording
+
+The user clarified that rule separation must not move text generation into
+Application. Calculations/classifications remain inward; generated sentences,
+explanations, headings, tables and tooltips belong to Overlay. Application returns
+typed resistance/spell evidence, encounter outcomes, raw-filter statuses and mote
+planning results. Imported names/wiki text, user templates and stored identifiers
+remain data. Trigger template substitution is presentation formatting.
+
+Validation: Release build succeeded with zero warnings/errors; all 803 tests passed
+(370 Core, 84 Application, 192 Infrastructure, 157 Overlay), with none skipped.
+Typed-value tests and Overlay wording regressions cover resistance thresholds,
+spell evidence, encounter outcomes, trigger substitutions and mote plans.
+Application query formatting guards and compiled presentation boundaries passed.
+Changed-file formatting and diff whitespace checks passed. No release or normal
+real-profile app startup was performed; isolated full-window review remains pending.
+
 ## Validation commands
 
 Run builds/tests sequentially when they share project outputs; concurrent builds

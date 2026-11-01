@@ -74,6 +74,23 @@ public sealed class LayerBoundaryTests
         }
     }
 
+    [Theory]
+    [InlineData("Inventory")]
+    [InlineData("Motes")]
+    [InlineData("Presentation")]
+    [InlineData("Sessions")]
+    public void ApplicationQueriesReturnDataInsteadOfFormattingDisplayText(string area)
+    {
+        foreach (string path in SourceFiles(Path.Combine(FindRoot(), "src", "EqLog.Application", area)))
+        {
+            string code = StripComments(File.ReadAllText(path));
+            Assert.False(Regex.IsMatch(code, "\\$@?\"|\\.ToString\\(\\s*\"|\\bstring\\.Format\\s*\\("),
+                path + " generates formatted presentation text.");
+            Assert.False(Regex.IsMatch(code, @"\.(DisplayText|AssessmentNote)\b"),
+                path + " consumes domain-generated presentation text.");
+        }
+    }
+
     private static IEnumerable<string> SourceFiles(string folder)
     {
         return Directory.EnumerateFiles(folder, "*.cs", SearchOption.AllDirectories)

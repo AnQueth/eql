@@ -7,26 +7,22 @@ using EqLog.Core.Tracking;
 namespace EqLog.Application.Motes;
 
 public sealed record MoteTierReadModel(
-    string Tier, string ItemName, string Count, bool HasSessionDrops, string Owned, string Value, string ToolTip);
+    string Tier, string ItemName, int SessionCount, int AllTimeCount, int? Owned,
+    int? Rank, int? EquipmentPoints, int? SpellPoints, int? MaximumEquipmentRank);
 
-public sealed record MoteRecentReadModel(string Text, string Time, bool IsYou, string ItemName);
+public sealed record MoteRecentReadModel(
+    string Tier, string Looter, int Quantity, string Source, DateTime Time, string ItemName);
 
-public sealed record MoteRateReadModel(string Mob, string Rate);
+public sealed record MoteRateReadModel(string Mob, int Drops, int Kills, double? DropRate);
 
 public sealed record MoteOverviewReadModel(
     IReadOnlyList<MoteTierReadModel> Tiers, IReadOnlyList<MoteRecentReadModel> Recent,
-    IReadOnlyList<MoteRateReadModel> ZoneRates, string Subtitle, string TotalCount,
-    string OwnedTotal, string InventoryToolTip, string HeaderToolTip);
+    IReadOnlyList<MoteRateReadModel> ZoneRates, int SessionTotal, int AllTimeTotal, double PerHour,
+    int? OwnedTotal, DateTime? ExportTime);
 
 /// <summary>Detached, immutable owned mote counts for one character.</summary>
 public sealed class MoteInventoryReadModel
 {
-    private const string ValuesTip =
-        "A mote adds points to gear and spells. In the Gear/Spell column, the first number is for gear; the second is for spells.\n" +
-        "The ≤+N part means this mote works on gear at +N or lower. Motes work on spells at any rank.\n" +
-        "Example: 5/16 ≤+4 means 5 gear points at +4 or lower, or 16 spell points at any rank. " +
-        "Values are from the EQLWiki Mote Guide.";
-
     private readonly IReadOnlyDictionary<string, int> _ownedByTier;
     private readonly DateTime? _exportTime;
 
@@ -69,11 +65,6 @@ public sealed class MoteInventoryReadModel
 
     public MoteOverviewReadModel Prepare(MoteSnapshot snapshot, DateTime now)
     {
-        string inventoryTip = (_exportTime is DateTime exported
-            ? $"Export {exported.ToLocalTime():g}; owned counts are confirmed by this export."
-            : "No inventory export: export inventory to confirm owned counts.") +
-            "\nOwned excludes collection, installed items and historical drops." +
-            "\nLoot logs do not change Owned. Run /outputfile inventory after looting, spending, or moving motes to refresh.";
         var allTime = snapshot.AllTime.ToDictionary(c => c.Tier, c => c.Count, StringComparer.OrdinalIgnoreCase);
         var session = snapshot.Session.ToDictionary(c => c.Tier, c => c.Count, StringComparer.OrdinalIgnoreCase);
         var tiers = allTime.Keys.Union(session.Keys, StringComparer.OrdinalIgnoreCase)
@@ -85,39 +76,24 @@ public sealed class MoteInventoryReadModel
         foreach (string tier in tiers)
         {
             int count = session.GetValueOrDefault(tier);
-            string owned = _exportTime.HasValue || _ownedByTier.ContainsKey(tier)
-                ? _ownedByTier.GetValueOrDefault(tier).ToString("N0") : "?";
-            string value = "?";
-            string tip = $"No upgrade value is known for {tier}.\n\n{inventoryTip}";
-            if (MoteValues.RankOf(tier) is int rank)
-            {
-                value = $"{MoteValues.ItemPoints(rank)}/{MoteValues.SpellPoints(rank)} ≤+{MoteValues.ItemMaxTier(rank)}";
-                tip = $"{MoteTiers.ItemName(tier)} (rank {rank})\n" +
-                    $"Adds {MoteValues.ItemPoints(rank)} points to gear at +{MoteValues.ItemMaxTier(rank)} or lower.\n" +
-                    $"Adds {MoteValues.SpellPoints(rank)} points to spells at any rank.\n\n" + inventoryTip;
-            }
-
-            rows.Add(new MoteTierReadModel(tier, MoteTiers.ItemName(tier),
-                $"{count}  ({allTime.GetValueOrDefault(tier)})", count > 0, owned, value, tip));
+            int? owned = _exportTime.HasValue || _ownedByTier.ContainsKey(tier)
+                ? _ownedByTier.GetValueOrDefault(tier) : null;
+            int? rank = MoteValues.RankOf(tier);
+            rows.Add(new MoteTierReadModel(tier, MoteTiers.ItemName(tier), count,
+                allTime.GetValueOrDefault(tier), owned, rank,
+                rank is int gearRank ? MoteValues.ItemPoints(gearRank) : null,
+                rank is int spellRank ? MoteValues.SpellPoints(spellRank) : null,
+                rank is int maxRank ? MoteValues.ItemMaxTier(maxRank) : null));
         }
 
-        string total = _exportTime.HasValue || _ownedByTier.Count > 0
-            ? _ownedByTier.Values.Sum().ToString("N0") : "?";
-        var recent = snapshot.Recent.Take(5).Select(d =>
-        {
-            bool isYou = d.Looter == Names.You;
-            string who = isYou ? "" : $"[{d.Looter}] ";
-            string quantity = d.Quantity > 1 ? $" x{d.Quantity}" : "";
-            return new MoteRecentReadModel($"{who}{d.Tier}{quantity}  {d.Source}", d.Time.ToString("HH:mm"),
-                isYou, MoteTiers.ItemName(d.Tier));
-        }).ToArray();
+        int? total = _exportTime.HasValue || _ownedByTier.Count > 0
+            ? _ownedByTier.Values.Sum() : null;
+        var recent = snapshot.Recent.Take(5).Select(d => new MoteRecentReadModel(
+            d.Tier, d.Looter, d.Quantity, d.Source, d.Time, MoteTiers.ItemName(d.Tier))).ToArray();
         var rates = snapshot.ZoneRates.Take(10).Select(r =>
-        {
-            string rate = r.DropRate is double value ? $"  {value:P0}" : "";
-            return new MoteRateReadModel(r.Mob, $"{r.Drops}/{r.Kills}{rate}");
-        }).ToArray();
+            new MoteRateReadModel(r.Mob, r.Drops, r.Kills, r.DropRate)).ToArray();
         return new MoteOverviewReadModel(rows.AsReadOnly(), Array.AsReadOnly(recent),
-            Array.AsReadOnly(rates), $"{snapshot.SessionTotal} this session  {snapshot.PerHour(now):0.#}/hr",
-            $"{snapshot.SessionTotal}  ({snapshot.AllTimeTotal})", total, inventoryTip, ValuesTip + "\n\n" + inventoryTip);
+            Array.AsReadOnly(rates), snapshot.SessionTotal, snapshot.AllTimeTotal, snapshot.PerHour(now),
+            total, _exportTime);
     }
 }

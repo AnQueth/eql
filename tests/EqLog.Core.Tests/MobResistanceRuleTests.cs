@@ -8,20 +8,20 @@ public sealed class MobResistanceRuleTests
     private static readonly DateTime T0 = new(2026, 10, 21, 19, 0, 0);
 
     [Theory]
-    [InlineData(7, 13, 0, "Partial \u2014 65% (13/20)")]
-    [InlineData(0, 4, 0, "Resists \u2014 100% (4/4)")]
-    [InlineData(10, 0, 0, "Not Resistant \u2014 0% (0/10)")]
-    [InlineData(1, 1, 0, "Partially Resistant \u2014 50% (1/2)")]
-    [InlineData(80, 20, 0, "Partially Resistant \u2014 20% (20/100)")]
-    [InlineData(81, 19, 0, "Not Resistant \u2014 19% (19/100)")]
-    [InlineData(0, 0, 0, "Unknown \u2014 no assessed outcomes")]
-    [InlineData(0, 0, 3, "Unknown \u2014 no assessed outcomes")]
-    [InlineData(7, 13, 3, "Partial \u2014 65% (13/20)")]
-    public void Observation_DisplayText_ShowsLabelPercentageAndAssessedCounts(
+    [InlineData(7, 13, 0, 65)]
+    [InlineData(0, 4, 0, 100)]
+    [InlineData(10, 0, 0, 0)]
+    [InlineData(1, 1, 0, 50)]
+    [InlineData(80, 20, 0, 20)]
+    [InlineData(81, 19, 0, 19)]
+    [InlineData(0, 0, 0, null)]
+    [InlineData(0, 0, 3, null)]
+    [InlineData(7, 13, 3, 65)]
+    public void Observation_ResistPercent_UsesOnlyAssessedCounts(
         long landed,
         long resisted,
         long unassessed,
-        string expected)
+        int? expected)
     {
         var observation = new ResistanceObservation(
             ResistanceType.Fire,
@@ -29,25 +29,26 @@ public sealed class MobResistanceRuleTests
             resisted,
             50,
             UnassessedDamage: unassessed);
-        Assert.Equal(expected, observation.DisplayText);
+        Assert.Equal((decimal?)expected, observation.ResistPercent);
+        Assert.Equal((decimal)landed + resisted, observation.AssessedOutcomes);
     }
 
     [Theory]
-    [InlineData(0, 0, "Unknown")]
-    [InlineData(0, 1, "Resists")]
-    [InlineData(0, 100, "Resists")]
-    [InlineData(1, 99, "Partial")]
-    [InlineData(49, 51, "Partial")]
-    [InlineData(50, 50, "Partially Resistant")]
-    [InlineData(79, 21, "Partially Resistant")]
-    [InlineData(80, 20, "Partially Resistant")]
-    [InlineData(801, 199, "Not Resistant")]
-    [InlineData(81, 19, "Not Resistant")]
-    [InlineData(89, 11, "Not Resistant")]
-    [InlineData(90, 10, "Not Resistant")]
-    [InlineData(91, 9, "Not Resistant")]
-    [InlineData(100, 0, "Not Resistant")]
-    public void Observation_Status_UsesExactConfirmedThresholds(long landed, long resisted, string expected)
+    [InlineData(0, 0, ResistanceStatus.Unknown)]
+    [InlineData(0, 1, ResistanceStatus.Resists)]
+    [InlineData(0, 100, ResistanceStatus.Resists)]
+    [InlineData(1, 99, ResistanceStatus.Partial)]
+    [InlineData(49, 51, ResistanceStatus.Partial)]
+    [InlineData(50, 50, ResistanceStatus.PartiallyResistant)]
+    [InlineData(79, 21, ResistanceStatus.PartiallyResistant)]
+    [InlineData(80, 20, ResistanceStatus.PartiallyResistant)]
+    [InlineData(801, 199, ResistanceStatus.NotResistant)]
+    [InlineData(81, 19, ResistanceStatus.NotResistant)]
+    [InlineData(89, 11, ResistanceStatus.NotResistant)]
+    [InlineData(90, 10, ResistanceStatus.NotResistant)]
+    [InlineData(91, 9, ResistanceStatus.NotResistant)]
+    [InlineData(100, 0, ResistanceStatus.NotResistant)]
+    public void Observation_Status_UsesExactConfirmedThresholds(long landed, long resisted, ResistanceStatus expected)
     {
         Assert.Equal(expected, new ResistanceObservation(ResistanceType.Magic, landed, resisted, 0).Status);
     }
@@ -55,7 +56,7 @@ public sealed class MobResistanceRuleTests
     [Fact]
     public void Observation_OnlyOtherSpellResists_DoesNotInventOverallStatus()
     {
-        Assert.Equal("Unknown", new ResistanceObservation(ResistanceType.Fire, 0, 0, 100).Status);
+        Assert.Equal(ResistanceStatus.Unknown, new ResistanceObservation(ResistanceType.Fire, 0, 0, 100).Status);
     }
 
     [Theory]
@@ -237,7 +238,9 @@ public sealed class MobResistanceRuleTests
         Assert.Equal(4, fire.Landed);
         Assert.Equal(1, fire.Resisted);
         Assert.Equal(1, fire.EstimatedPartial);
-        Assert.Equal("Partially Resistant \u2014 20% (1/5)", fire.DisplayText);
+        Assert.Equal(ResistanceStatus.PartiallyResistant, fire.Status);
+        Assert.Equal(20m, fire.ResistPercent);
+        Assert.Equal(5m, fire.AssessedOutcomes);
         Assert.Single(exact.Spells);
         Assert.Equal(2, store.Get("Sky", "Target").Observations.Single(observation => observation.Type == ResistanceType.Fire).Resisted);
     }

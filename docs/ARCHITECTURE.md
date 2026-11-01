@@ -52,12 +52,26 @@ import/export from native dialogs, previews and WPF resources.
 
 `InventoryReadModel` hides its detached domain inventory. Inventory/Sky queries
 prepare progress and combined shortages; NPC queries prepare damage rates,
-resistance evidence and explanatory labels. Mote planning and combat aggregation
+typed resistance classifications and numeric evidence. Mote planning and combat aggregation
 are Application operations using Core rules. Item identity, wiki navigation,
 cache freshness, theme validation and raw-log parsing likewise cross Application
 queries, not direct domain calls from views.
 `SessionQueries` prepares loot ordering and the experience rate, including its
 warmup policy, without requiring presentation to invoke calculated domain methods.
+
+Application returns strongly typed data, not display sentences, headings, formatted
+tables, tooltips or explanatory labels. Resistance results carry counts, rates and
+enums; spell evidence carries its assessment kind; mote results carry calculated
+upgrade/farm data. Overlay constructs all displayed wording and layout from those
+values. Trigger matching returns captures and the user-authored template; Overlay
+performs capture/name substitution. Raw-log filtering returns a status enum and an
+optional diagnostic, not a prefabricated status sentence.
+
+Source text (item/mob names, imported wiki fields/link labels, log messages and
+user-authored templates), stable persistence/protocol identifiers, and diagnostic
+exceptions are not generated UI wording. They remain data; views decide how to
+label and explain them. Existing persisted NPC outcome identifiers are mapped to
+typed read-model outcomes without altering the storage format.
 
 Presentation retains formatting, visual ordering, selection, paging, bar geometry,
 themes/brushes, drag/focus behavior and user confirmations. These are display

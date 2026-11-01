@@ -481,7 +481,7 @@ public partial class MainWindow
                 ResistanceType.Disease => Brushes.Khaki,
                 _ => Brushes.White,
             };
-            rows.Add(new(observation.Type.ToString(), observation.DisplayText, Bold: true, Foreground: color));
+            rows.Add(new(observation.Type.ToString(), ResistancePresentation.Describe(observation), Bold: true, Foreground: color));
         }
         var wikiResists = info.Wiki?.Resistances;
         if (wikiResists is { Count: > 0 })

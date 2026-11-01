@@ -70,13 +70,25 @@ public sealed class PresentationQueryTests
         var session = new GameSession(new(new(), new(), new(), new(), new(), []));
         Assert.Empty(session.ConfigureTriggers([new AlertTrigger { Pattern = @"^{C} waves\.$", Text = "Wave" }], "Que"));
         var alert = Assert.Single(session.MatchTriggers(["[Tue Oct 27 12:00:00 2026] Que waves."]));
-        Assert.Equal("Wave", alert.Text);
+        Assert.Equal("Wave", alert.Trigger.Text);
+        Assert.Equal("Que waves.", alert.Message);
         var filtered = RawLogQueries.Filter(["[Tue Oct 27 12:00:00 2026] Que waves.", "other"], "^{C}", true, "Que", 10);
         Assert.Single(filtered.Lines);
-        Assert.Null(filtered.Error);
+        Assert.Equal(RawLogFilterStatus.Success, filtered.Status);
         var invalid = RawLogQueries.Filter(["one", "two"], "[", true, "Que", 1);
-        Assert.Contains("Invalid regex", invalid.Error);
+        Assert.Equal(RawLogFilterStatus.InvalidRegex, invalid.Status);
+        Assert.NotEmpty(invalid.Diagnostic!);
         Assert.Equal(["two"], invalid.Lines);
+    }
+
+    [Fact]
+    public void RawLogFilterTimeoutReturnsExplicitTypedFailureWithoutInventingDisplayText()
+    {
+        string line = new string('a', 10_000) + "!";
+        var result = RawLogQueries.Filter([line, "a"], "^(a+)+$", true, null, 10);
+        Assert.Equal(RawLogFilterStatus.TimedOut, result.Status);
+        Assert.Equal(["a"], result.Lines);
+        Assert.Null(result.Diagnostic);
     }
 
     [Fact]
@@ -133,11 +145,54 @@ public sealed class PresentationQueryTests
         mobs.Record("log", 3, "Zone", "Mob", "Poison", true, at.AddSeconds(2));
         var session = new GameSession(new(new(), new(), new(), mobs, new(), []));
         var card = Assert.Single(session.NpcSpellDetails("Zone", "Mob"));
-        Assert.Contains("50% resisted (1/2)", card.Result);
-        Assert.Contains(card.Evidence, field => field.Label == "All resists" && field.Value == "2");
+        Assert.Equal(NpcSpellResultKind.DamageOverTime, card.Kind);
+        Assert.Equal(50m, card.DotResistPercent);
+        Assert.Equal(2m, card.DotAssessedCasts);
+        Assert.Equal(2, card.Counts.FullResists);
         session.ResetResistances("Zone", "Mob", DateTime.Now);
         Assert.Empty(session.GetMob("Zone", "Mob").Spells);
-        Assert.Contains("50%", card.Result);
+        Assert.Equal(50m, card.DotResistPercent);
+    }
+
+    [Fact]
+    public void DirectSpellReadModelCarriesTypedCountsAndClassifications()
+    {
+        var mobs = new MobResistanceStore();
+        var at = DateTime.UtcNow.AddMinutes(-1);
+        mobs.SetSpell(new("Fire", ResistanceType.Fire, null, at, SingleTargetDirectDamage: true, TargetType: "Single"));
+        mobs.Record("log", 1, "Zone", "Mob", "Fire", false, at);
+        mobs.Record("log", 2, "Zone", "Mob", "Fire", true, at.AddSeconds(1));
+        var session = new GameSession(new(new(), new(), new(), mobs, new(), []));
+        var card = Assert.Single(session.NpcSpellDetails("Zone", "Mob"));
+        Assert.Equal(NpcSpellResultKind.DirectDamage, card.Kind);
+        Assert.Equal(SpellAssessmentKind.DirectDamage, card.Assessment);
+        Assert.Equal(ResistanceStatus.PartiallyResistant, card.Resistance!.Status);
+        Assert.Equal(50m, card.Resistance.ResistPercent);
+        Assert.Equal(1, card.Resistance.Landed);
+        Assert.Equal(1, card.Counts.LegacyLandings);
+        Assert.Equal(1, card.Counts.FullResists);
+        Assert.Equal(3, card.Resistance.MinimumDamageSamples);
+        Assert.Equal(90m, card.Resistance.ReducedDamageThresholdPercent);
+        Assert.Equal("Single", card.TargetType);
+    }
+
+    [Theory]
+    [InlineData("Active", NpcEncounterOutcome.Active)]
+    [InlineData("NPC died", NpcEncounterOutcome.NpcDied)]
+    [InlineData("You died", NpcEncounterOutcome.PlayerDied)]
+    [InlineData("Loadout changed", NpcEncounterOutcome.LoadoutChanged)]
+    [InlineData("Zoned", NpcEncounterOutcome.Zoned)]
+    [InlineData("Login", NpcEncounterOutcome.Login)]
+    [InlineData("future outcome", NpcEncounterOutcome.Unknown)]
+    public void NpcReadModelMapsStoredOutcomeIdentifiersToTypedValues(string stored, NpcEncounterOutcome expected)
+    {
+        var at = DateTime.UtcNow;
+        var encounter = new NpcEncounter("one", at, at, "Que", null, null, stored, 100, 0, 0, []);
+        var read = NpcReadModel.From(new("Mob", "Zone", at, at, 0, null, [encounter]));
+        var result = Assert.Single(read.Encounters);
+        Assert.Equal(expected, result.Outcome);
+        Assert.Equal(expected == NpcEncounterOutcome.NpcDied ? 1 : 0, read.ObservedDeaths);
+        Assert.Equal(expected == NpcEncounterOutcome.Unknown ? stored : null, result.UnrecognizedOutcome);
     }
 
     [Theory]

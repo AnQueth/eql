@@ -137,7 +137,7 @@ public sealed class TrackingRepositoryRoundTripTests
                 .Single(observation => observation.Type == ResistanceType.Fire);
             Assert.Equal(1, fire.Landed);
             Assert.Equal(1, fire.EstimatedPartial);
-            Assert.Equal("Not Resistant", fire.Status);
+            Assert.Equal(ResistanceStatus.NotResistant, fire.Status);
         }
         finally
         {

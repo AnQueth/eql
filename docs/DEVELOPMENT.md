@@ -42,6 +42,12 @@ engines/stores or call domain helpers from views. Portable snapshot records/enum
 may be shared, but calculated domain getters must be evaluated in Application.
 `PresentationBoundaryTests` inspect compiled calls, including lambdas, to enforce
 this distinction. Keep display formatting, sorting/paging and chart geometry in WPF.
+Return typed counts, rates, ranks, classifications and validation statuses from
+Application. Build sentences, labels, explanations, tooltips and formatted tables
+in Overlay; do not package these as strings or UI-shaped block models in Application.
+Source names/wiki text, user templates, stable identifiers and diagnostics remain
+data, not generated display wording. Query source checks guard formatting ownership;
+assert typed values in Application tests and rendered wording in Overlay tests.
 
 Application tests use fake ports to exercise stabilization, superseded sessions,
 cancellation, detached snapshots, ordered saves, retries and confirmed counts.

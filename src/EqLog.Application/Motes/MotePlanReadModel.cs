@@ -30,20 +30,63 @@ public sealed record MotePlanningRequest(
     bool HasInventoryExport,
     IReadOnlyList<int> HypotheticalCopies);
 
-public abstract record MotePlanBlock;
+public enum MoteInputStatus
+{
+    Valid,
+    Invalid,
+}
 
-public sealed record MotePlanHeading(string Text, bool Detail = false, bool Subsequent = false) : MotePlanBlock;
+public enum MoteFeedingStatus
+{
+    NotRequested,
+    NotApplicable,
+    NotNeeded,
+    NotBeneficial,
+    Used,
+}
 
-public sealed record MotePlanLine(
-    string Text, bool Indent = false, bool Muted = false, bool Bold = false) : MotePlanBlock;
+public enum MoteStepClassification
+{
+    Standard,
+    OutgrownMotesBeforeSufficientCopies,
+}
 
-public sealed record MotePlanTable(
-    IReadOnlyList<string>? Headers, IReadOnlyList<IReadOnlyList<string>> Rows,
-    string? ToolTip = null, bool RowLabels = false) : MotePlanBlock;
+public enum MoteMissingReason
+{
+    None,
+    ExactSpellValue,
+    SmallestUsableEquipmentTier,
+    OnlyUsableEquipmentTier,
+}
 
-public sealed record MotePlanComparison(string Heading, IReadOnlyList<string> Lines) : MotePlanBlock;
+public sealed record MoteResourceUse(int Rank, int Count, bool IsCopy, int Points);
 
-public sealed record MotePlanComplete(string Text) : MotePlanBlock;
+public sealed record MoteUpgradeStep(
+    int FromRank, int ToRank, int Needed, int StartPoints, IReadOnlyList<MoteResourceUse> Used,
+    int MissingRank, string MissingTier, int Missing, int CarryAfter, int MotePoints, int CopyPoints,
+    MoteStepClassification Classification, MoteMissingReason MissingReason);
+
+public sealed record MoteFedCopy(
+    int StartRank, int EndRank, bool IsFodder, IReadOnlyList<MoteResourceUse> Motes, int MergePoints, int Wasted);
+
+public sealed record MoteResourceCount(int Rank, string Tier, int Count);
+
+public sealed record MoteFarmTarget(int TargetRank, int AdditionalCopies);
+
+public sealed record MoteCopyOnlyStep(int FromRank, int ToRank, int Copies);
+
+public sealed record MoteWhatIfCalculation(int OriginalMergePoints, int HypotheticalMergePoints);
 
 public sealed record MotePlanReadModel(
-    string Summary, string SummaryToolTip, IReadOnlyList<MotePlanBlock> Blocks);
+    MoteUpgradeKind Kind, int StartRank, int TargetRank, int Progress, int ParsedPoints,
+    int MaximumProgress, int MaximumFodderCopies,
+    MoteInputStatus PointsStatus, MoteInputStatus FodderStatus,
+    bool HasInventoryExport, string ItemName, MoteCopySelection CopySelection,
+    MoteWhatIfCalculation? WhatIf, MoteFeedingStatus FeedingStatus, int FodderRank, int FodderCopies,
+    IReadOnlyList<MoteUpgradeStep> Steps, IReadOnlyList<MoteFedCopy> FedCopies,
+    IReadOnlyList<MoteResourceCount> MotesUsed, IReadOnlyList<MoteResourceCount> CopiesUsed,
+    IReadOnlyList<MoteResourceCount> Missing, IReadOnlyList<MoteResourceCount> FeedingSavings,
+    IReadOnlyList<MoteResourceCount> FeedingCosts, int ExtraCopiesFed, int FeedingWaste,
+    int TotalRequiredPoints, int RemainingPoints,
+    IReadOnlyList<MoteFarmTarget> FarmTargets, IReadOnlyList<MoteCopyOnlyStep> CopyOnlySteps,
+    IReadOnlyList<string> TierIds);
