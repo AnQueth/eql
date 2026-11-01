@@ -25,6 +25,7 @@ public enum UsageAction
     AddDuration,
     RelearnDuration,
     RemoveDuration,
+    ToggleKnownSpells,
     ImportTheme,
     OpenItemWiki,
     OpenQuest,

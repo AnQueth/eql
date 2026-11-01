@@ -76,6 +76,14 @@ dispatcher: virtualized overlays replace large row changes with one collection
 reset instead of notifying once per item, and merge-table rendering yields between
 small batches. Filter tests verify coalescing, responsiveness and stale-result rejection.
 
+Canceled filter requests intentionally throw `OperationCanceledException` inside their worker.
+`AsyncTextFilter` handles cancellation for superseded requests and shutdown before it can publish
+stale results. A debugger configured to break on thrown or user-unhandled exceptions may stop at
+`ThrowIfCancellationRequested` before the awaiting handler catches it. Continue execution to let
+the handler run; disable breaking for `System.OperationCanceledException` in the debugger's
+exception settings if these expected cancellations are noisy. Do not remove cancellation checks
+or suppress unrelated exceptions.
+
 The mote planner's inventory selection is independent of its typed name filter.
 Picking a matching item preserves the search text and plans for the selected item
 at its highest owned rank. Editing the search clears that selection; refreshing

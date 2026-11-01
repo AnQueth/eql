@@ -70,6 +70,81 @@ public sealed class AsyncTextFilterTests
         });
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task QuestBuilderCancellation_IsHandledWithoutPublishingOrReportingErrors(bool disposing)
+    {
+        return Run(async dispatcher =>
+        {
+            using var release = new ManualResetEventSlim();
+            var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var errors = new List<Exception>();
+            var applied = new List<OverlayContent>();
+            using var work = new AsyncTextFilter<OverlayContent>(dispatcher, errors.Add);
+            work.Request("old", token =>
+            {
+                started.SetResult();
+                Assert.True(release.Wait(TimeSpan.FromSeconds(5)));
+                return MainWindow.BuildQuestOpportunities(
+                    EqLog.Application.Inventory.InventoryReadModel.Empty, "Old",
+                    new Dictionary<string, EqLog.Core.QuestLookupResult>(), "", true, token);
+            }, applied.Add, delayMilliseconds: 0);
+
+            try
+            {
+                await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                Task old = work.Completion;
+                if (disposing)
+                {
+                    work.Dispose();
+                }
+                else
+                {
+                    work.Request("new", token => MainWindow.BuildQuestOpportunities(
+                        EqLog.Application.Inventory.InventoryReadModel.Empty, "New",
+                        new Dictionary<string, EqLog.Core.QuestLookupResult>(), "", true, token),
+                        applied.Add, delayMilliseconds: 0);
+                }
+
+                release.Set();
+                await Task.WhenAll(old, work.Completion);
+                Assert.True(old.IsCompletedSuccessfully);
+                Assert.Empty(errors);
+                if (disposing)
+                {
+                    Assert.Empty(applied);
+                    Assert.Null(work.Result);
+                }
+                else
+                {
+                    Assert.Equal("New", Assert.Single(applied).Subtitle);
+                    Assert.Same(applied[0], work.Result);
+                }
+            }
+            finally
+            {
+                release.Set();
+            }
+        });
+    }
+
+    [Fact]
+    public Task UnrelatedCancellation_IsNotSilentlyDiscarded()
+    {
+        return Run(async dispatcher =>
+        {
+            var failure = new OperationCanceledException("Not canceled by this filter");
+            using var work = new AsyncTextFilter<string>(dispatcher, error => throw error);
+            work.Request("failed", _ => throw failure, delayMilliseconds: 0);
+
+            var actual = await Assert.ThrowsAsync<OperationCanceledException>(() => work.Completion);
+
+            Assert.Same(failure, actual);
+            Assert.Null(work.Result);
+        });
+    }
+
     [Fact]
     public Task DisposingCancelsPendingPublication()
     {

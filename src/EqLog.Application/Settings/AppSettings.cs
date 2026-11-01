@@ -481,6 +481,10 @@ public sealed class AppSettings
     {
         get; set;
     }
+
+    /// <summary>Show the known-spells list beneath active spell timers.</summary>
+    public bool SpellTimersShowKnownSpells { get; set; } = true;
+
     /// <summary>Null follows Windows app appearance; a palette fixes the user's selected theme.</summary>
     public EqLog.Core.ThemePalette? Theme
     {

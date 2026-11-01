@@ -1010,8 +1010,11 @@ unknown-duration timer while learning.
 
 Uncheck *Track* to hide a spell's timers (every rank of it); its duration is still learned.
 You can also toggle tracking directly in the **Spell Timers** overlay: uncheck an active timer
-or select a checkbox under **Known spells**. Enabling tracking waits for logged spell events;
-it does not create a countdown immediately. Unlock floating overlays with Ctrl+Shift+L to interact.
+or select a checkbox under **Known spells**. Use the **Known spells** checkbox in the overlay
+header to show or hide that list; active timers and tracking choices are unaffected, and the
+visibility choice is remembered. In hover-only title mode, hover over a floating overlay to reveal
+the checkbox. Enabling tracking waits for logged spell events; it does not create a countdown
+immediately. Unlock floating overlays with Ctrl+Shift+L to interact.
 **Relearn** forgets the selected spell/rank's learned samples and measures the duration again from
 your next casts, for example after gear or AAs changed it. Only wear-offs after the newest log line
 count, so history re-read at startup doesn't bring the old duration back. Override, wiki estimate

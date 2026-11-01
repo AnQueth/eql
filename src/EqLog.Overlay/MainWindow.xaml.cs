@@ -316,6 +316,11 @@ public partial class MainWindow : Window
 
             if (def.Key == "timers")
             {
+                ConfigureKnownSpellsControl(panel, _settings.SpellTimersShowKnownSpells, show =>
+                {
+                    _settings.SpellTimersShowKnownSpells = show;
+                    SaveSettingsInBackground();
+                });
                 panel.SpellTrackToggleRequested += change =>
                 {
                     _session.SetSpellTracked(change.Spell, change.Tracked);
@@ -1112,7 +1117,8 @@ public partial class MainWindow : Window
             frame.Chat,
             _dpsFight,
             _characterName,
-            MoteInventory: IsShowing("motes") ? _questInventory.Motes(_characterName) : null);
+            MoteInventory: IsShowing("motes") ? _questInventory.Motes(_characterName) : null,
+            ShowKnownSpells: _settings.SpellTimersShowKnownSpells);
         if (LogLinesTab.IsSelected)
         {
             RefreshRawLines();

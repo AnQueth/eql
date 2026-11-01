@@ -21,7 +21,7 @@ public sealed record ActiveAlert(string Text, Brush Color, DateTime Expires, Ale
 public sealed record OverlayView(ISet<ChatChannel> ChatChannels, IReadOnlyList<ActiveAlert> Alerts, int LootGrouping = 0,
     InventoryReadModel? Inventory = null, WikiActivitySnapshot? WikiActivity = null, QuestWikiActivity? QuestWiki = null,
     IReadOnlyList<ChatEvent>? RecentChat = null, DpsFightKey? DpsFight = null, string? CharacterName = null,
-    string ItemFilter = "", MoteInventoryReadModel? MoteInventory = null);
+    string ItemFilter = "", MoteInventoryReadModel? MoteInventory = null, bool ShowKnownSpells = true);
 
 /// <summary>Identifies one fight chosen in the DPS overlay picker.</summary>
 public sealed record DpsFightKey(string Target, DateTime Start)
@@ -546,7 +546,7 @@ public static class OverlayPresenters
         return new("Healing", $"out {Short(h.OutgoingRecentHps)} hps  in {Short(h.IncomingRecentHps)} hps", rows);
     }
 
-    private static OverlayContent Timers(EngineSnapshot s, EngineQuerySnapshot queries, OverlayView __)
+    private static OverlayContent Timers(EngineSnapshot s, EngineQuerySnapshot queries, OverlayView view)
     {
         var rows = new List<OverlayRow>();
         foreach (var t in s.Timers)
@@ -592,18 +592,22 @@ public static class OverlayPresenters
             rows.Add(new("No active timers", Foreground: Dim));
         }
 
-        var activeSpells = s.Timers
-            .Select(timer => timer.Spell)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var known = queries.SpellDurations
-            .Where(duration =>
-                !activeSpells.Contains(duration.Spell) &&
-                (duration.LearnedSeconds is not null || duration.OverrideSeconds is not null || duration.WikiSeconds is not null))
-            .OrderBy(duration => duration.Spell, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        if (known.Count > 0)
+        if (view.ShowKnownSpells)
         {
-            rows.Add(new("Known spells", Foreground: Header, Bold: true, QuestHeading: true));
+            var activeSpells = s.Timers
+                .Select(timer => timer.Spell)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var known = queries.SpellDurations
+                .Where(duration =>
+                    !activeSpells.Contains(duration.Spell) &&
+                    (duration.LearnedSeconds is not null || duration.OverrideSeconds is not null || duration.WikiSeconds is not null))
+                .OrderBy(duration => duration.Spell, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (known.Count > 0)
+            {
+                rows.Add(new("Known spells", Foreground: Header, Bold: true, QuestHeading: true));
+            }
+
             foreach (var duration in known)
             {
                 rows.Add(new(duration.Spell, duration.Tracked ? "Tracked" : "Not tracked",

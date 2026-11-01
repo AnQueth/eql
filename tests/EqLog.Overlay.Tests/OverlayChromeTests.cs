@@ -1,5 +1,7 @@
 using System.Runtime.ExceptionServices;
 using System.Windows;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -128,6 +130,7 @@ public sealed class OverlayChromeTests
                 VerifyAllMoteTiersVisible();
                 VerifyHoverBackgroundOpacity();
                 VerifyItemFilterToolbars();
+                VerifyKnownSpellsVisibilityControl();
                 application.Shutdown();
             }
             catch (Exception ex)
@@ -142,6 +145,125 @@ public sealed class OverlayChromeTests
         {
             ExceptionDispatchInfo.Capture(failure).Throw();
         }
+    }
+
+    private static void VerifyKnownSpellsVisibilityControl()
+    {
+        var now = new DateTime(2026, 11, 1, 17, 0, 0);
+        var durations = new SpellDurationStore();
+        durations.SetOverride("Active", 60);
+        durations.SetOverride("Known", 30);
+        var engine = new LogEngine(durations: durations);
+        var snapshot = engine.Snapshot(now) with
+        {
+            Timers =
+            [
+                new("Active", "a kobold", true, false, now.AddSeconds(-10), 60, 10, 50, TimerState.Running)
+            ]
+        };
+        var queries = EngineQuerySnapshot.Capture(engine);
+        var definition = Assert.Single(OverlayPresenters.All, item => item.Key == "timers");
+        var panel = new OverlayPanel("timers", "Spell Timers", false);
+        var settings = new AppSettings();
+        int visibilityChanges = 0;
+        int trackingChanges = 0;
+        var showKnown = MainWindow.ConfigureKnownSpellsControl(panel, settings.SpellTimersShowKnownSpells, visible =>
+        {
+            settings.SpellTimersShowKnownSpells = visible;
+            visibilityChanges++;
+        });
+        panel.SpellTrackToggleRequested += _ =>
+        {
+            trackingChanges++;
+        };
+        var headerContent = Assert.IsType<DockPanel>(showKnown.Parent);
+        var header = Assert.IsType<Border>(headerContent.Parent);
+        Assert.Same(showKnown, headerContent.Children[0]);
+        Assert.Equal(Dock.Bottom, DockPanel.GetDock(showKnown));
+        Assert.Equal(0, visibilityChanges);
+
+        void Render()
+        {
+            var view = new OverlayView(new HashSet<ChatChannel>(), [], ShowKnownSpells: settings.SpellTimersShowKnownSpells);
+            var content = definition.Render(snapshot, queries, view);
+            panel.Update(content.Title, content.Subtitle, content.Rows);
+        }
+
+        var window = new OverlayWindow(panel) { Width = 300, Height = 200 };
+        window.AttachPanel();
+        window.Show();
+        try
+        {
+            var label = new TextBlock
+            {
+                Text = "Known spells",
+                FontFamily = showKnown.FontFamily,
+                FontSize = showKnown.FontSize,
+                FontWeight = showKnown.FontWeight,
+            };
+            label.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            foreach (double width in new[] { 120.0, 300.0 })
+            {
+                window.Width = width;
+                window.UpdateLayout();
+                Assert.True(showKnown.ActualWidth >= label.DesiredSize.Width + 15,
+                    $"The known-spells control is clipped at overlay width {width}.");
+            }
+
+            foreach (bool docked in new[] { false, true })
+            {
+                panel.SetDocked(docked);
+                Render();
+                var shownRows = Assert.IsType<StackPanel>(PanelScroll(panel).Content);
+                Assert.Equal(3, shownRows.Children.Count);
+                Assert.True(showKnown.IsChecked);
+                Assert.True(OverlayPanel.IsInteractive(showKnown));
+                Assert.Equal(UsageAction.ToggleKnownSpells, UsageTracking.GetAction(showKnown));
+                window.UpdateLayout();
+                double rowsTop = shownRows.TranslatePoint(new Point(0, 0), panel).Y;
+                panel.SetChromeHidden(true);
+                window.UpdateLayout();
+                Assert.Equal(docked ? Visibility.Visible : Visibility.Hidden, header.Visibility);
+                Assert.Equal(docked, showKnown.IsVisible);
+                Assert.True(shownRows.IsVisible);
+                Assert.Equal(rowsTop, shownRows.TranslatePoint(new Point(0, 0), panel).Y, 3);
+                Assert.Equal(3, shownRows.Children.Count);
+                panel.SetChromeHidden(false);
+                Assert.True(showKnown.IsVisible);
+
+                var toggle = Assert.IsAssignableFrom<IToggleProvider>(
+                    new CheckBoxAutomationPeer(showKnown).GetPattern(PatternInterface.Toggle));
+                toggle.Toggle();
+                Assert.False(settings.SpellTimersShowKnownSpells);
+                Render();
+                Assert.Single(shownRows.Children);
+                Assert.False(showKnown.IsChecked);
+
+                toggle.Toggle();
+                Assert.True(settings.SpellTimersShowKnownSpells);
+                Render();
+                Assert.Equal(3, shownRows.Children.Count);
+                Assert.True(showKnown.IsChecked);
+            }
+        }
+        finally
+        {
+            window.Close();
+        }
+
+        Assert.Equal(4, visibilityChanges);
+        Assert.Equal(0, trackingChanges);
+        Assert.True(durations.IsTracked("Active"));
+        Assert.True(durations.IsTracked("Known"));
+
+        var hiddenPanel = new OverlayPanel("timers", "Spell Timers", false);
+        int initialChanges = 0;
+        var initiallyHidden = MainWindow.ConfigureKnownSpellsControl(hiddenPanel, false, _ =>
+        {
+            initialChanges++;
+        });
+        Assert.False(initiallyHidden.IsChecked);
+        Assert.Equal(0, initialChanges);
     }
 
     private static void VerifyItemFilterToolbars()

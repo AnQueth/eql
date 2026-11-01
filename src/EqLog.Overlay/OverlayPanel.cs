@@ -156,6 +156,7 @@ public sealed class OverlayPanel : ContentControl
     private readonly Slider _backgroundSlider;
     private readonly StackPanel _backgroundControls;
     private readonly Border _frame;
+    private readonly DockPanel _header = new();
     private readonly Border _titleFrame;
     private readonly Border _inset;
     private readonly Border _bevel;
@@ -253,7 +254,7 @@ public sealed class OverlayPanel : ContentControl
             }
         };
 
-        var header = new DockPanel();
+        var header = _header;
         var dragBox = new FrameworkElementFactory(typeof(Border));
         dragBox.SetResourceReference(Border.BackgroundProperty, "NightRaised");
         dragBox.SetResourceReference(Border.BorderBrushProperty, "Pumpkin");
@@ -459,6 +460,12 @@ public sealed class OverlayPanel : ContentControl
     public event Action<SpawnTrackChange>? SpawnTrackToggleRequested;
     public event Action<SpellTrackChange>? SpellTrackToggleRequested;
     public event Action<double>? BackgroundOpacityChanged;
+
+    internal void AddHeaderControl(UIElement control)
+    {
+        DockPanel.SetDock(control, Dock.Bottom);
+        _header.Children.Insert(0, control);
+    }
 
     public void SetToolbar(UIElement toolbar)
     {

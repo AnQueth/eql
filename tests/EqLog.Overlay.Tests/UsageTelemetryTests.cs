@@ -181,17 +181,22 @@ public sealed class UsageTelemetryTests : IDisposable
         Assert.Equal(4, properties.Count);
     }
 
-    [Fact]
-    public void Action_CheckBoxClick_TracksWithoutCapturingContent()
+    [Theory]
+    [InlineData(UsageAction.ToggleAutoArrange)]
+    [InlineData(UsageAction.ToggleKnownSpells)]
+    public void Action_CheckBoxClick_TracksWithoutCapturingContent(UsageAction action)
     {
         OnStaThread(() =>
         {
             var checkbox = new CheckBox { Content = "Private name" };
-            UsageTracking.SetAction(checkbox, UsageAction.ToggleAutoArrange);
+            UsageTracking.SetAction(checkbox, action);
             checkbox.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, checkbox));
         });
 
-        Assert.Equal("ToggleAutoArrange", Assert.Single(_factory.Events)["action"]);
+        var properties = Assert.Single(_factory.Events);
+        Assert.Equal(action.ToString(), properties["action"]);
+        Assert.Equal(4, properties.Count);
+        Assert.DoesNotContain(properties.Values, value => Equals(value, "Private name"));
     }
 
     [Fact]

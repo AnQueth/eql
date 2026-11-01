@@ -22,6 +22,28 @@ public sealed class SettingsRepositoryTests : IDisposable
         Assert.Equal("log", loaded.LogPath);
     }
 
+    [Fact]
+    public async Task SpellTimersKnownSpellsVisibility_DefaultsVisibleAndRoundTrips()
+    {
+        Directory.CreateDirectory(_folder);
+        string path = Path.Combine(_folder, "settings.json");
+        await File.WriteAllTextAsync(path, """{"FontSize":15}""");
+        var repository = new SettingsRepository(path);
+
+        var settings = await repository.LoadAsync();
+        Assert.True(settings.SpellTimersShowKnownSpells);
+
+        settings.SpellTimersShowKnownSpells = false;
+        await repository.SaveAsync(settings.Snapshot());
+        var hidden = await repository.LoadAsync();
+        Assert.False(hidden.SpellTimersShowKnownSpells);
+        Assert.Equal(15, hidden.FontSize);
+
+        hidden.SpellTimersShowKnownSpells = true;
+        await repository.SaveAsync(hidden.Snapshot());
+        Assert.True((await repository.LoadAsync()).SpellTimersShowKnownSpells);
+    }
+
     [Theory]
     [InlineData("not json")]
     [InlineData("null")]

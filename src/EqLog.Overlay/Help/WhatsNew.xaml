@@ -1,7 +1,30 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.36" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.37" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.37
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released November 1, 2026 at 5:47 PM CT.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Show or hide known spells
+        </Paragraph>
+        <Paragraph>
+            In Settings &gt; General &gt; Overlays, enable Spell Timers to see the new
+            Known spells checkbox in its header. Clear it to hide the known-spells list
+            and make more room for active timers; select it again to restore the list.
+            Your choice is saved between launches. This only changes the list's visibility;
+            active timers and spell tracking are unaffected.
+        </Paragraph>
+        <Paragraph>
+            Floating overlays in hover-only title mode hide the checkbox with the rest of
+            the header until you move the pointer over the panel. Docked Spell Timers keep
+            their header visible.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.36
     </Paragraph>
