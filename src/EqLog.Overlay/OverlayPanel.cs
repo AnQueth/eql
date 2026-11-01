@@ -605,7 +605,7 @@ public sealed class OverlayPanel : ContentControl
         }
         bool hideChrome = _chromeHidden && !_docked;
         // Reserve the header's space so hovering does not shift content under the pointer.
-        _titleFrame.Visibility = hideChrome ? Visibility.Hidden : Visibility.Visible;
+        _titleFrame.Visibility = hideChrome && Key != "mobinfo" ? Visibility.Hidden : Visibility.Visible;
         if (hideChrome)
         {
             _frame.BorderBrush = Brushes.Transparent;

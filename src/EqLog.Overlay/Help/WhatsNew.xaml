@@ -1,7 +1,30 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.35" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.36" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.36
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released November 1, 2026 at 4:43 PM CT.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Mob info keeps its title visible
+        </Paragraph>
+        <Paragraph>
+            Enable Mob info under Settings &gt; General &gt; Overlays, then /consider
+            a mob in game. Its title now stays visible for the entire time the panel
+            is active, even when Hide floating overlay titles and borders in game
+            unless hovered is enabled. You no longer need to hover to see the title.
+            This also works with locked, click-through overlays.
+        </Paragraph>
+        <Paragraph>
+            Other overlays retain their existing hover-only behavior. Mob info's
+            display timeout, hover-to-hold behavior, and docking are unchanged;
+            this fix does not keep an expired panel open.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.35
     </Paragraph>

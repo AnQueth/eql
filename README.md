@@ -357,6 +357,7 @@ as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels r
 - Enable **Hide floating overlay titles and borders in game unless hovered** for unobtrusive floating
   panels while EverQuest is active. Hover to reveal the header and decorations; docked panels are
   unchanged. Locked overlays remain click-through, and their hover state updates within half a second.
+  Mob info keeps its title visible whenever the panel is active, even in hover-only mode.
 - **Reset session** clears totals. You can also have them reset automatically when you log in.
 
 ### Main window: settings + docked panels (second monitor)

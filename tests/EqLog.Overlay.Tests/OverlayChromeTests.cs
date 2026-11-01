@@ -31,6 +31,7 @@ public sealed class OverlayChromeTests
                     application.Resources[key] = Brushes.Gray;
                 }
                 AsyncTextFilterTests.VerifyQuestVirtualization();
+                VerifyMobInfoTitleAlwaysVisible();
 
                 var panel = new OverlayPanel("timers", "Spell Timers", false);
                 var frame = Assert.IsType<Border>(panel.Content);
@@ -169,6 +170,33 @@ public sealed class OverlayChromeTests
                 filter.Clear();
                 WaitForFilter(() => value == "");
                 Assert.Equal("", value);
+            }
+        }
+    }
+
+    private static void VerifyMobInfoTitleAlwaysVisible()
+    {
+        var panel = new OverlayPanel("mobinfo", "Mob info", false);
+        var frame = Assert.IsType<Border>(panel.Content);
+        var frameContent = Assert.IsType<Grid>(frame.Child);
+        var bevel = Assert.IsType<Border>(frameContent.Children[0]);
+        var inset = Assert.IsType<Border>(bevel.Child);
+        var layout = Assert.IsType<DockPanel>(inset.Child);
+        var header = Assert.IsType<Border>(layout.Children[0]);
+        foreach (bool docked in new[] { false, true, false })
+        {
+            panel.SetDocked(docked);
+            foreach (bool locked in new[] { false, true })
+            {
+                panel.SetLocked(locked);
+                panel.SetChromeHidden(true);
+                Assert.Equal(Visibility.Visible, header.Visibility);
+                if (!docked)
+                {
+                    Assert.Equal(Brushes.Transparent, frame.BorderBrush);
+                }
+                panel.SetChromeHidden(false);
+                Assert.Equal(Visibility.Visible, header.Visibility);
             }
         }
     }
