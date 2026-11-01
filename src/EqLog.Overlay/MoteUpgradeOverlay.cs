@@ -189,17 +189,8 @@ public partial class MainWindow
         DockPanel.SetDock(top, Dock.Top);
 
         _planHost = new StackPanel();
-        var scroll = new ScrollViewer
-        {
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Content = _planHost,
-        };
-        var tabBody = new DockPanel();
         var tabTop = new StackPanel { Children = { fodderRow, _planCopyEditor, _planSummary } };
-        DockPanel.SetDock(tabTop, Dock.Top);
-        tabBody.Children.Add(tabTop);
-        tabBody.Children.Add(scroll);
+        var tabBody = CreatePlanScrollBody(tabTop, _planHost);
         _planTabs = CreatePlanTabs(tabBody, RefreshMotePlan);
         _planFarmTab = (TabItem)_planTabs.Items[1];
         _planWhatIfTab = (TabItem)_planTabs.Items[2];
@@ -247,6 +238,16 @@ public partial class MainWindow
 
         panel.SetBody(body);
         RefreshMotePlan();
+    }
+
+    internal static ScrollViewer CreatePlanScrollBody(FrameworkElement controls, FrameworkElement results)
+    {
+        return new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Content = new StackPanel { Children = { controls, results } },
+        };
     }
 
     internal static TabControl CreatePlanTabs(FrameworkElement content, Action refresh)
@@ -428,13 +429,7 @@ public partial class MainWindow
         for (int index = 0; index < copies.Count; index++)
         {
             int copyIndex = index;
-            var rank = new ComboBox
-            {
-                ItemsSource = Enumerable.Range(0, startRank + 1).Select(value => $"+{value}").ToArray(),
-                SelectedIndex = copies[index],
-                MinWidth = 60,
-                Margin = new Thickness(4, 0, 0, 0),
-            };
+            var rank = CreateHypotheticalCopyRankSelector(copies[index]);
             rank.SelectionChanged += (_, _) =>
             {
                 _planHypotheticalCopies[copyIndex] = rank.SelectedIndex;
@@ -450,6 +445,17 @@ public partial class MainWindow
             RefreshMotePlan();
         };
         _planCopyControls.Children.Add(reset);
+    }
+
+    internal static ComboBox CreateHypotheticalCopyRankSelector(int exportedRank)
+    {
+        return new ComboBox
+        {
+            ItemsSource = Enumerable.Range(0, MoteValues.MaxRank + 1).Select(value => $"+{value}").ToArray(),
+            SelectedIndex = exportedRank,
+            MinWidth = 60,
+            Margin = new Thickness(4, 0, 0, 0),
+        };
     }
 
     private void RefreshPlanNames(UpgradeKind kind)

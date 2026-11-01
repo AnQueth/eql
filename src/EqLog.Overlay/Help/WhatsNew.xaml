@@ -1,7 +1,48 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.32" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.33" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.33
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released November 1, 2026 at 12:21 AM CT.
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,20">
+        Scroll long mote planner pages and choose hypothetical spare-copy ranks all the way to +10.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Long planner pages are fully scrollable
+        </Paragraph>
+        <Paragraph>
+            Enable Mote upgrade planner under Settings &gt; General &gt; Overlays.
+            Each tab now scrolls its controls and results together. In What if,
+            scroll through long spare-copy lists to reach Reset to inventory ranks,
+            notes, and upgrade instructions instead of losing the results below the panel.
+        </Paragraph>
+        <Paragraph>
+            The shared item selector, Current, Points, Stop at, and resource controls
+            remain above the tabs while you scroll. This works docked or floating;
+            unlock floating overlays with Ctrl+Shift+L to interact.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            What if spare copies can reach +10
+        </Paragraph>
+        <Paragraph>
+            Open What if and expand What if: change spare copy ranks. Each copy's
+            dropdown now offers +0 through +10, even when the main item's Current
+            rank is lower. For example, a main item at +4 can use hypothetical +5
+            or higher spare copies in the simulation.
+        </Paragraph>
+        <Paragraph>
+            Hypothetical ranks do not change the main item, actual inventory, or
+            recorded upgrades. Stop at still caps the main plan, and feeding follows
+            your selected options. Reset to inventory ranks restores the exported copies.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.32
     </Paragraph>

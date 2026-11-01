@@ -907,6 +907,9 @@ Choose a task tab:
   apply only to this tab, not Upgrade or Farm copies.
 - **Math**: detailed tables for the actual-inventory Upgrade plan.
 
+Each tab's content scrolls, including the spare-copy editor, reset button, notes, and results.
+The shared item, rank, and resource controls stay above the tabs while you scroll.
+
 The item, **Current**, **Points**, and **Stop at** are shared. The resource and feeding checkboxes are always
 visible above the tabs so you can change which motes and inventory copies are used, or whether
 spare copies are raised first. Equipment-only controls are hidden in Spell mode.
@@ -926,7 +929,8 @@ on spare copies before merging them.
   as **Current** to plan from them). Equipment-storage copies are included alongside loose copies.
   Other collections and installed augments are selectable targets but are not counted as mergeable spare copies.
 - **What if: change spare copy ranks** lets you choose a hypothetical rank for each inventory
-  spare without changing the main item's **Current** rank, actual inventory, or upgrade history.
+  spare from +0 through +10, even above the main item's **Current** rank, without changing
+  the main rank, actual inventory, or upgrade history. **Stop at** still caps the main plan.
   For example, two spares changed from +0 and +1 to +5 and +5 supply 64 merge points,
   enough to take a +6 main item to +7 without motes. Feeding remains available.
   **Reset to inventory ranks** restores the exported values; changing the item, character,

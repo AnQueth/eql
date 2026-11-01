@@ -1,4 +1,5 @@
 using System.Runtime.ExceptionServices;
+using System.Windows;
 using System.Windows.Controls;
 using EqLog.Core;
 using EqLog.Core.Parsing;
@@ -9,6 +10,76 @@ namespace EqLog.Overlay.Tests;
 
 public sealed class MoteOverlayTests
 {
+    [Fact]
+    public void PlannerScrollBody_LongCopyEditorAndResultsAreReachableInEveryTab()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var copies = new StackPanel();
+                for (int i = 0; i < 30; i++)
+                {
+                    var selector = MainWindow.CreateHypotheticalCopyRankSelector(4);
+                    selector.Height = 40;
+                    Assert.Equal(Enumerable.Range(0, 11).Select(rank => $"+{rank}"), selector.Items.Cast<string>());
+                    Assert.Equal(4, selector.SelectedIndex);
+                    selector.SelectedIndex = 10;
+                    Assert.Equal("+10", selector.SelectedItem);
+                    copies.Children.Add(selector);
+                }
+                var reset = new Button { Content = "Reset to inventory ranks", Height = 40 };
+                copies.Children.Add(reset);
+                var editor = new Expander { Content = copies, IsExpanded = true };
+                var results = new TextBlock { Text = "Upgrade instructions", Height = 200 };
+                var scroll = MainWindow.CreatePlanScrollBody(editor, results);
+                var tabs = MainWindow.CreatePlanTabs(scroll, () => { });
+                var size = new Size(600, 400);
+
+                void Layout()
+                {
+                    tabs.Measure(size);
+                    tabs.Arrange(new Rect(size));
+                    tabs.UpdateLayout();
+                }
+
+                foreach (int index in new[] { 0, 1, 2, 3 })
+                {
+                    tabs.SelectedIndex = index;
+                    Layout();
+                    Assert.Same(scroll, ((TabItem)tabs.SelectedItem).Content);
+                    Assert.True(scroll.ScrollableHeight > 800);
+                    scroll.ScrollToEnd();
+                    Layout();
+                    Assert.Equal(scroll.ScrollableHeight, scroll.VerticalOffset);
+                    var resultBottom = results.TranslatePoint(new Point(0, results.ActualHeight), scroll);
+                    Assert.InRange(resultBottom.Y, 0, scroll.ActualHeight);
+                    var resetTop = reset.TranslatePoint(new Point(), scroll);
+                    Assert.InRange(resetTop.Y, 0, scroll.ActualHeight);
+                }
+
+                ((ComboBox)copies.Children[0]).SelectedIndex = 1;
+                Layout();
+                Assert.Equal(scroll.ScrollableHeight, scroll.VerticalOffset);
+                editor.IsExpanded = false;
+                Layout();
+                Assert.Equal(0, scroll.ScrollableHeight);
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure is not null)
+        {
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+    }
+
     [Fact]
     public void StopAtSelectorDefaultsToTenAndRetainsTargetsWithinCurrentRankRange()
     {
