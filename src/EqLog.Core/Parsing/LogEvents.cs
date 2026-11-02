@@ -74,6 +74,12 @@ public sealed record LootEvent(
 
 public sealed record CoinEvent(DateTime Time, Coin Amount) : LogEvent(Time);
 
+/// <summary>A forage attempt. <see cref="Item"/> is null when nothing was found.</summary>
+public sealed record ForageEvent(DateTime Time, string? Item, int Quantity = 1) : LogEvent(Time);
+
+/// <summary>"You have become better at Forage! (N)"</summary>
+public sealed record ForageSkillEvent(DateTime Time, int Skill) : LogEvent(Time);
+
 public enum ChatChannel
 {
     Tell,

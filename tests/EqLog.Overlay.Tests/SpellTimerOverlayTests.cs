@@ -51,6 +51,40 @@ public sealed class SpellTimerOverlayTests
         Assert.False(durations.IsTracked("Bite"));
     }
 
+    [Fact]
+    public void Timers_KnownSpellsFilter_FiltersOnlyKnownSpellsByName()
+    {
+        var now = new DateTime(2026, 11, 1, 17, 0, 0);
+        var durations = new SpellDurationStore();
+        durations.SetOverride("Adrenaline", 60);
+        durations.SetOverride("Bite", 20);
+        durations.SetWikiDuration("Charm", 45);
+        durations.SetOverride("Cheetah", 30);
+        var engine = new LogEngine(durations: durations);
+        var snapshot = engine.Snapshot(now) with
+        {
+            Timers =
+            [
+                new("adrenaline", "a kobold", true, false, now.AddSeconds(-10), 60, 10, 50, TimerState.Running)
+            ]
+        };
+        var queries = EngineQuerySnapshot.Capture(engine);
+        var presenter = Assert.Single(OverlayPresenters.All, definition => definition.Key == "timers");
+        var view = new OverlayView(new HashSet<ChatChannel>(), []);
+
+        var filtered = presenter.Render(snapshot, queries, view with { ItemFilter = "  CH " });
+        var noMatch = presenter.Render(snapshot, queries, view with { ItemFilter = "zzz" });
+        var activeOnly = presenter.Render(snapshot, queries, view with { ItemFilter = "adren" });
+
+        Assert.Equal(["adrenaline \u2192 a kobold", "Known spells", "Charm", "Cheetah"],
+            filtered.Rows.Select(row => row.Left));
+        Assert.Equal(["adrenaline \u2192 a kobold", "Known spells", "No known spells match \"zzz\""],
+            noMatch.Rows.Select(row => row.Left));
+        Assert.Null(noMatch.Rows[2].SpellTrack);
+        Assert.Equal("adrenaline \u2192 a kobold", activeOnly.Rows[0].Left);
+        Assert.Equal(3, activeOnly.Rows.Count);
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

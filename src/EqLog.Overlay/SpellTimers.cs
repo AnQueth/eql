@@ -29,4 +29,30 @@ public partial class MainWindow
         panel.AddHeaderControl(visibility);
         return visibility;
     }
+
+    /// <summary>Adds a known-spells name filter that is shown only while the known-spells list is visible.</summary>
+    internal static TextBox ConfigureKnownSpellsFilter(OverlayPanel panel, CheckBox knownSpells, Action<string> filterChanged)
+    {
+        var filter = new TextBox
+        {
+            Margin = new Thickness(0, 5, 0, 5),
+            VerticalContentAlignment = VerticalAlignment.Center,
+            ToolTip = "Filter known spells by name (case-insensitive). Clear to show all. Unlock floating panels to type.",
+        };
+        System.Windows.Automation.AutomationProperties.SetName(filter, "Known spells filter");
+        TextFilterBinding.Bind(filter, filterChanged);
+
+        void UpdateVisibility()
+        {
+            filter.Visibility = knownSpells.IsChecked == true
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+
+        knownSpells.Checked += (_, _) => UpdateVisibility();
+        knownSpells.Unchecked += (_, _) => UpdateVisibility();
+        UpdateVisibility();
+        panel.SetToolbar(filter);
+        return filter;
+    }
 }

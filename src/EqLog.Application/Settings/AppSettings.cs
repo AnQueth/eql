@@ -477,6 +477,12 @@ public sealed class AppSettings
         get; set;
     }
 
+    /// <summary>0 = recent finds, 1 = grouped by most recent, 2 = grouped by item name.</summary>
+    public int ForageGrouping
+    {
+        get; set;
+    }
+
     public bool DpsExpandedView
     {
         get; set;

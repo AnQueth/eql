@@ -316,11 +316,12 @@ public partial class MainWindow : Window
 
             if (def.Key == "timers")
             {
-                ConfigureKnownSpellsControl(panel, _settings.SpellTimersShowKnownSpells, show =>
+                var knownSpells = ConfigureKnownSpellsControl(panel, _settings.SpellTimersShowKnownSpells, show =>
                 {
                     _settings.SpellTimersShowKnownSpells = show;
                     SaveSettingsInBackground();
                 });
+                ConfigureKnownSpellsFilter(panel, knownSpells, filter => _itemFilters[def.Key] = filter);
                 panel.SpellTrackToggleRequested += change =>
                 {
                     _session.SetSpellTracked(change.Spell, change.Tracked);
@@ -367,6 +368,18 @@ public partial class MainWindow : Window
                     ToolTip = "Grouped views count all loot observed this session, separately per looter. Upgrade variants are combined.",
                 };
                 grouping.SelectionChanged += (_, _) => _settings.LootGrouping = grouping.SelectedIndex;
+                ConfigureItemFilterToolbar(panel, filter => _itemFilters[def.Key] = filter, grouping);
+            }
+            else if (def.Key == "forage")
+            {
+                var grouping = new ComboBox
+                {
+                    ItemsSource = new[] { "Recent finds", "Grouped: most recent", "Grouped: item name (A-Z)" },
+                    SelectedIndex = Math.Clamp(_settings.ForageGrouping, 0, 2),
+                    Margin = new Thickness(0, 5, 0, 5),
+                    ToolTip = "Grouped views total all forage finds this session per item, with the zones they came from.",
+                };
+                grouping.SelectionChanged += (_, _) => _settings.ForageGrouping = grouping.SelectedIndex;
                 ConfigureItemFilterToolbar(panel, filter => _itemFilters[def.Key] = filter, grouping);
             }
             else if (def.Key == "itemupgrades")
@@ -817,7 +830,7 @@ public partial class MainWindow : Window
 
     private static OverlayPlacement DefaultPlacement(OverlayDefinition def, int index, Rect work)
     {
-        if (def.Key is "npcs" or "wiki" or "inventory" or "merge" or "itemupgrades" or "moteplan" or "exaltations")
+        if (def.Key is "npcs" or "wiki" or "inventory" or "merge" or "itemupgrades" or "moteplan" or "exaltations" or "forage")
         {
             return new OverlayPlacement
             {
@@ -1118,7 +1131,8 @@ public partial class MainWindow : Window
             _dpsFight,
             _characterName,
             MoteInventory: IsShowing("motes") ? _questInventory.Motes(_characterName) : null,
-            ShowKnownSpells: _settings.SpellTimersShowKnownSpells);
+            ShowKnownSpells: _settings.SpellTimersShowKnownSpells,
+            ForageGrouping: _settings.ForageGrouping);
         if (LogLinesTab.IsSelected)
         {
             RefreshRawLines();
@@ -1148,7 +1162,7 @@ public partial class MainWindow : Window
                 "exaltations" => ExaltationsContent(),
                 _ => def.Render(snap, frame.Queries, view with { ItemFilter = _itemFilters.GetValueOrDefault(def.Key, "") }),
             };
-            var rows = def.Key is "loot" or "wiki"
+            var rows = def.Key is "loot" or "forage" or "wiki"
                 ? content.Rows.Select(row => row.LootItem is { } item
                     ? row with
                     {

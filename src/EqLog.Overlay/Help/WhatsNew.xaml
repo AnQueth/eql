@@ -1,7 +1,47 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.37" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.38" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.38
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released November 1, 2026 at 8:28 PM CT.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Track forage finds and their zones
+        </Paragraph>
+        <Paragraph>
+            Enable Forage under Settings &gt; General &gt; Overlays to see this session's
+            forage attempts, success rate, finds per hour, skill-ups, and found items.
+            Choose Recent finds, Grouped: most recent, or Grouped: item name (A-Z) from
+            the panel toolbar. Recent rows include their zone; grouped items show totals
+            for each zone. Use the item-name filter to narrow the displayed finds.
+        </Paragraph>
+        <Paragraph>
+            Zone totals use the zone name from the log; finds before a zone-change line
+            appears are labeled (unknown zone). Tracking is based on forage messages in
+            the log and does not infer finds that were not logged.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Filter known spells by name
+        </Paragraph>
+        <Paragraph>
+            In the Spell Timers overlay, check Known spells to show its list and filter
+            box. Type part of a spell name to narrow the list; matching ignores case.
+            Active timers are not filtered. Unchecking Known spells hides both the list
+            and its filter box.
+        </Paragraph>
+        <Paragraph>
+            Floating-overlay text boxes can now receive keyboard input after you unlock
+            overlays with Ctrl+Shift+L and click in a filter. Click back into the game
+            to send keyboard input there again. This applies to the Spell Timers and
+            other overlay text filters.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.37
     </Paragraph>

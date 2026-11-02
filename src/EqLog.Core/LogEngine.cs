@@ -17,6 +17,7 @@ public sealed record EngineSnapshot(
     HealSnapshot Heals,
     SessionSnapshot Session,
     LootSnapshot Loot,
+    ForageSnapshot Forage,
     SpellCastSnapshot Spells,
     IReadOnlyList<SpellTimerSnapshot> Timers,
     SpawnSnapshot Spawns,
@@ -41,6 +42,7 @@ public sealed class LogEngine
     private readonly HealTracker _heals = new();
     private readonly SessionTracker _session = new();
     private readonly LootTracker _loot = new();
+    private readonly ForageTracker _forage = new();
     private readonly ChatTracker _chat = new();
     private readonly SpellCastTracker _spells = new();
     private readonly SpellTimerTracker _timers;
@@ -268,11 +270,18 @@ public sealed class LogEngine
             case CoinEvent coin:
                 _loot.OnCoin(coin);
                 break;
+            case ForageEvent forage:
+                _forage.OnForage(forage);
+                break;
+            case ForageSkillEvent forageSkill:
+                _forage.OnSkill(forageSkill);
+                break;
             case ChatEvent chat:
                 _chat.OnChat(chat);
                 break;
             case ZoneEvent z:
                 _session.OnZone(z);
+                _forage.OnZone(z);
                 _timers.Clear();
                 break;
             case LoginEvent login:
@@ -302,6 +311,7 @@ public sealed class LogEngine
         _session.ResetSession(at);
         _motes.ResetSession(at);
         _loot.ResetSession();
+        _forage.ResetSession();
         _spells.ResetSession();
     }
 
@@ -326,6 +336,7 @@ public sealed class LogEngine
                 _heals.Snapshot(now, topRows),
                 _session.Snapshot(now, topRows),
                 _loot.Snapshot(30, topRows),
+                _forage.Snapshot(),
                 _spells.Snapshot(topRows),
                 _timers.Snapshot(now),
                 _spawns.Snapshot(now),

@@ -21,7 +21,7 @@ public sealed record ActiveAlert(string Text, Brush Color, DateTime Expires, Ale
 public sealed record OverlayView(ISet<ChatChannel> ChatChannels, IReadOnlyList<ActiveAlert> Alerts, int LootGrouping = 0,
     InventoryReadModel? Inventory = null, WikiActivitySnapshot? WikiActivity = null, QuestWikiActivity? QuestWiki = null,
     IReadOnlyList<ChatEvent>? RecentChat = null, DpsFightKey? DpsFight = null, string? CharacterName = null,
-    string ItemFilter = "", MoteInventoryReadModel? MoteInventory = null, bool ShowKnownSpells = true);
+    string ItemFilter = "", MoteInventoryReadModel? MoteInventory = null, bool ShowKnownSpells = true, int ForageGrouping = 0);
 
 /// <summary>Identifies one fight chosen in the DPS overlay picker.</summary>
 public sealed record DpsFightKey(string Target, DateTime Start)
@@ -119,6 +119,7 @@ public static class OverlayPresenters
         new("timers", "Spell Timers", 300, 200, false, Timers),
         new("session", "Session", 260, 230, false, Session),
         new("loot", "Loot", 320, 220, false, Loot),
+        new("forage", "Forage", 300, 260, false, Forage),
         new("chat", "Chat", 420, 200, true, Chat),
         new("spells", "Spell Casting", 300, 220, false, Spells),
         new("alerts", "Alerts", 420, 140, false, Alerts),
@@ -603,12 +604,20 @@ public static class OverlayPresenters
                     (duration.LearnedSeconds is not null || duration.OverrideSeconds is not null || duration.WikiSeconds is not null))
                 .OrderBy(duration => duration.Spell, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+            var shown = known
+                .Where(duration => MatchesItemName(duration.Spell, view.ItemFilter))
+                .ToList();
             if (known.Count > 0)
             {
                 rows.Add(new("Known spells", Foreground: Header, Bold: true, QuestHeading: true));
             }
 
-            foreach (var duration in known)
+            if (known.Count > 0 && shown.Count == 0)
+            {
+                rows.Add(new($"No known spells match \"{view.ItemFilter.Trim()}\"", Foreground: Dim));
+            }
+
+            foreach (var duration in shown)
             {
                 rows.Add(new(duration.Spell, duration.Tracked ? "Tracked" : "Not tracked",
                     Foreground: duration.Tracked ? null : Dim,
@@ -708,6 +717,68 @@ public static class OverlayPresenters
         }
 
         return new("Loot", $"{l.ItemsLooted} items this session", rows);
+    }
+
+    private static OverlayContent Forage(EngineSnapshot s, EngineQuerySnapshot _, OverlayView view)
+    {
+        var f = s.Forage;
+        int finds = f.Attempts - f.Failures;
+        var rows = new List<OverlayRow>();
+        if (f.Skill is int skill)
+        {
+            rows.Add(new("Forage skill", f.SkillGains > 0 ? $"{skill}  (+{f.SkillGains})" : $"{skill}"));
+        }
+
+        if (f.Attempts == 0)
+        {
+            rows.Add(new("No forages yet this session.", Wrap: true, Foreground: Dim));
+            return new("Forage", null, rows);
+        }
+
+        rows.Add(new("Found", $"{finds:N0} / {f.Attempts:N0}  ({(double)finds / f.Attempts:P0})",
+            Foreground: Good, ToolTip: "Successful forages / all forage attempts this session"));
+        if (f.FirstAttempt is DateTime first)
+        {
+            double hours = Math.Max((s.Now - first).TotalHours, 1 / 60.0);
+            rows.Add(new("Finds/hr", $"{finds / hours:0.#}"));
+        }
+
+        bool filtered = !string.IsNullOrWhiteSpace(view.ItemFilter);
+        bool anyItem = false;
+        if (view.ForageGrouping is 1 or 2)
+        {
+            int max = f.Items.Count == 0 ? 1 : f.Items.Max(item => item.Quantity);
+            var groups = f.Items.Where(item => MatchesItemName(item.Item, view.ItemFilter));
+            groups = view.ForageGrouping == 1
+                ? groups.OrderByDescending(item => item.LastFound).ThenBy(item => item.Item, StringComparer.OrdinalIgnoreCase)
+                : groups.OrderBy(item => item.Item, StringComparer.OrdinalIgnoreCase);
+            foreach (var item in groups)
+            {
+                anyItem = true;
+                rows.Add(new(item.Item, $"x{item.Quantity:N0}  {item.LastFound:HH:mm}",
+                    (double)item.Quantity / max, TimerBar, LootItem: item.Item));
+                foreach (var zone in item.Zones)
+                {
+                    rows.Add(new($"    {zone.Zone}", $"x{zone.Quantity:N0}", Foreground: Dim));
+                }
+            }
+        }
+        else
+        {
+            foreach (var find in f.Recent.Where(find => MatchesItemName(find.Item, view.ItemFilter)).Take(15))
+            {
+                anyItem = true;
+                string qty = find.Quantity > 1 ? $"{find.Quantity} x " : "";
+                rows.Add(new($"{qty}{find.Item}", $"{find.Zone}  {find.Time:HH:mm}", LootItem: find.Item));
+            }
+        }
+
+        if (filtered && !anyItem && f.Items.Count > 0)
+        {
+            rows.Add(new("No forage finds match the item filter.", Wrap: true, Foreground: Dim));
+        }
+
+        return new("Forage", $"{f.Items.Count} distinct items this session", rows);
     }
 
     private static OverlayContent Chat(EngineSnapshot s, EngineQuerySnapshot queries, OverlayView view)

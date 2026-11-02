@@ -183,6 +183,22 @@ public class LogEventParserTests
     }
 
     [Fact]
+    public void ParsesForage()
+    {
+        var found = Assert.IsType<ForageEvent>(P("You have scrounged up Fruit."));
+        Assert.Equal("Fruit", found.Item);
+        Assert.Equal(1, found.Quantity);
+        Assert.Equal("Pod of Water", Assert.IsType<ForageEvent>(P("You have scrounged up Pod of Water.")).Item);
+
+        var failed = Assert.IsType<ForageEvent>(P("You fail to locate any food nearby."));
+        Assert.Null(failed.Item);
+
+        Assert.Equal(213, Assert.IsType<ForageSkillEvent>(P("You have become better at Forage! (213)")).Skill);
+        Assert.Null(P("You must wait longer before you can forage."));
+        Assert.IsType<ChatEvent>(P("Bygon tells General:1, 'You have scrounged up Fruit.'"));
+    }
+
+    [Fact]
     public void ParsesCoin()
     {
         var c = Assert.IsType<CoinEvent>(P("You receive 3 platinum, 2 gold, 1 silver and 5 copper from the corpse."));

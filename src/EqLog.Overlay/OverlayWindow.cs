@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -16,6 +17,7 @@ public sealed class OverlayWindow : Window
     private bool _locked;
     private bool _hoverOnlyChrome;
     private bool _sliderInteraction;
+    private bool _textInteraction;
     private bool _dragInteraction;
 
     public OverlayWindow(OverlayPanel panel)
@@ -67,18 +69,38 @@ public sealed class OverlayWindow : Window
         SourceInitialized += (_, _) => ApplyExStyle();
         PreviewMouseDown += (_, e) =>
         {
-            if (!_locked && e.ChangedButton == MouseButton.Left &&
-                FindSlider(e.OriginalSource as DependencyObject) is not null)
+            if (_locked || e.ChangedButton != MouseButton.Left)
+            {
+                return;
+            }
+
+            var source = e.OriginalSource as DependencyObject;
+            if (FindAncestor<Slider>(source) is not null)
             {
                 _sliderInteraction = true;
                 ApplyExStyle();
                 Activate();
             }
+            else if (FindAncestor<TextBoxBase>(source) is { } text && text.IsEnabled)
+            {
+                // Floating overlays never take focus from the game, except while typing in a text box.
+                _textInteraction = true;
+                ApplyExStyle();
+                Activate();
+                Keyboard.Focus(text);
+            }
+        };
+        PreviewLostKeyboardFocus += (_, e) =>
+        {
+            if (FindAncestor<TextBoxBase>(e.NewFocus as DependencyObject) is null)
+            {
+                EndTextInteraction();
+            }
         };
         AddHandler(Mouse.PreviewMouseUpEvent, new MouseButtonEventHandler((_, _) => EndSliderInteraction()), true);
         AddHandler(Mouse.LostMouseCaptureEvent, new MouseEventHandler((_, _) =>
         {
-            if (FindSlider(Mouse.Captured as DependencyObject) is null)
+            if (FindAncestor<Slider>(Mouse.Captured as DependencyObject) is null)
             {
                 EndSliderInteraction();
             }
@@ -86,6 +108,7 @@ public sealed class OverlayWindow : Window
         Deactivated += (_, _) =>
         {
             EndSliderInteraction();
+            EndTextInteraction();
             if (Content == Panel)
             {
                 Panel.DragHandle.CancelDrag();
@@ -155,6 +178,7 @@ public sealed class OverlayWindow : Window
             Panel.DragHandle.CancelDrag();
             _dragInteraction = false;
             EndSliderInteraction();
+            EndTextInteraction();
         }
         Panel.SetLocked(locked);
         WindowChrome.GetWindowChrome(this).ResizeBorderThickness = new Thickness(locked ? 0 : 6);
@@ -171,13 +195,24 @@ public sealed class OverlayWindow : Window
         ApplyExStyle();
     }
 
-    private static Slider? FindSlider(DependencyObject? source)
+    private void EndTextInteraction()
+    {
+        if (!_textInteraction)
+        {
+            return;
+        }
+        _textInteraction = false;
+        ApplyExStyle();
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? source)
+        where T : DependencyObject
     {
         while (source is not null)
         {
-            if (source is Slider slider)
+            if (source is T match)
             {
-                return slider;
+                return match;
             }
             source = source is Visual ? VisualTreeHelper.GetParent(source) : LogicalTreeHelper.GetParent(source);
         }
@@ -193,7 +228,7 @@ public sealed class OverlayWindow : Window
         }
 
         int always = NativeMethods.WS_EX_TOOLWINDOW | NativeMethods.WS_EX_LAYERED;
-        bool typing = Panel.Key is "npcs" or "inventory" or "moteplan" || _sliderInteraction || _dragInteraction;
+        bool typing = Panel.Key is "npcs" or "inventory" or "moteplan" || _sliderInteraction || _textInteraction || _dragInteraction;
         if (_locked || !typing)
         {
             always |= NativeMethods.WS_EX_NOACTIVATE;

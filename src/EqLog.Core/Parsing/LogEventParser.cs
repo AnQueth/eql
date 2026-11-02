@@ -37,6 +37,11 @@ public sealed partial class LogEventParser
             return ParseChat(t, m);
         }
 
+        if (m.StartsWith("You ", StringComparison.Ordinal) && ParseForage(t, m) is { } forage)
+        {
+            return forage;
+        }
+
         if (m[0] == '[' && !string.IsNullOrWhiteSpace(CharacterName))
         {
             var who = WhoLoadoutRegex().Match(m);
@@ -347,6 +352,31 @@ public sealed partial class LogEventParser
         if (m.StartsWith("You gained reward experience", StringComparison.Ordinal))
         {
             return new ExperienceEvent(t, ExperienceKind.Reward, null);
+        }
+
+        return null;
+    }
+
+    private static LogEvent? ParseForage(DateTime t, string m)
+    {
+        const string Found = "You have scrounged up ";
+        const string SkillUp = "You have become better at Forage! (";
+        if (m.StartsWith(Found, StringComparison.Ordinal) && m[^1] == '.')
+        {
+            var (item, qty) = SplitQuantity(m[Found.Length..^1].Trim());
+            return item.Length > 0 ? new ForageEvent(t, item, qty) : null;
+        }
+
+        if (m == "You fail to locate any food nearby.")
+        {
+            return new ForageEvent(t, null, 0);
+        }
+
+        if (m.StartsWith(SkillUp, StringComparison.Ordinal) && m[^1] == ')' &&
+            int.TryParse(m.AsSpan(SkillUp.Length, m.Length - SkillUp.Length - 1), NumberStyles.None,
+                CultureInfo.InvariantCulture, out int skill))
+        {
+            return new ForageSkillEvent(t, skill);
         }
 
         return null;

@@ -102,6 +102,58 @@ public sealed class ItemFilterTests
     }
 
     [Fact]
+    public void Forage_ShowsTotalsSkillAndFilteredItems()
+    {
+        var engine = new LogEngine { CharacterName = "Que" };
+        engine.ProcessLines(
+        [
+            "[Wed Oct 21 17:59:00 2026] You have entered Qeynos Hills.",
+            "[Wed Oct 21 18:00:00 2026] You have scrounged up Fruit.",
+            "[Wed Oct 21 18:05:00 2026] You have entered Surefall Glade.",
+            "[Wed Oct 21 18:10:00 2026] You have scrounged up Fruit.",
+            "[Wed Oct 21 18:20:00 2026] You have scrounged up Roots.",
+            "[Wed Oct 21 18:30:00 2026] You fail to locate any food nearby.",
+            "[Wed Oct 21 18:30:00 2026] You have become better at Forage! (215)",
+            "[Wed Oct 21 18:40:00 2026] You have scrounged up Berries.",
+        ]);
+        var snapshot = engine.Snapshot(new DateTime(2026, 10, 21, 19, 0, 0));
+        var presenter = OverlayPresenters.All.Single(definition => definition.Key == "forage");
+        var view = new OverlayView(new HashSet<ChatChannel>(), []);
+
+        string[] Items(OverlayContent content)
+        {
+            return content.Rows.Where(row => row.LootItem is not null).Select(row => row.LootItem!).ToArray();
+        }
+
+        var recent = presenter.Render(snapshot, EngineQuerySnapshot.Capture(engine), view);
+        Assert.Contains(recent.Rows, row => row.Left == "Found" && row.Right.StartsWith("4 / 5"));
+        Assert.Contains(recent.Rows, row => row.Left == "Forage skill" && row.Right == "215  (+1)");
+        Assert.Equal(["Berries", "Roots", "Fruit", "Fruit"], Items(recent));
+        Assert.Equal("Qeynos Hills  18:00", recent.Rows.Last().Right);
+
+        var byRecent = presenter.Render(snapshot, EngineQuerySnapshot.Capture(engine), view with { ForageGrouping = 1 });
+        Assert.Equal(["Berries", "Roots", "Fruit"], Items(byRecent));
+        int fruit = byRecent.Rows.ToList().FindIndex(row => row.LootItem == "Fruit");
+        Assert.Equal(("x2", "    Qeynos Hills", "    Surefall Glade"),
+            (byRecent.Rows[fruit].Right[..2], byRecent.Rows[fruit + 1].Left, byRecent.Rows[fruit + 2].Left));
+
+        var byName = presenter.Render(snapshot, EngineQuerySnapshot.Capture(engine), view with { ForageGrouping = 2 });
+        Assert.Equal(["Berries", "Fruit", "Roots"], Items(byName));
+
+        var filtered = presenter.Render(snapshot, EngineQuerySnapshot.Capture(engine), view with
+        {
+            ItemFilter = "root"
+        });
+        Assert.Equal(["Roots"], Items(filtered));
+        var unmatched = presenter.Render(snapshot, EngineQuerySnapshot.Capture(engine), view with
+        {
+            ForageGrouping = 2,
+            ItemFilter = "missing"
+        });
+        Assert.Contains(unmatched.Rows, row => row.Left == "No forage finds match the item filter.");
+    }
+
+    [Fact]
     public void Motes_AlwaysShowsAllTiersAndRecentDropsRegardlessOfItemFilter()
     {
         var engine = new LogEngine { CharacterName = "Que" };

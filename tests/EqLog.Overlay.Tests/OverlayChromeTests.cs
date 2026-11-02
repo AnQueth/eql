@@ -112,6 +112,20 @@ public sealed class OverlayChromeTests
                     Assert.NotEqual(0, NativeMethods.GetWindowLongPtr(handle, NativeMethods.GWL_EXSTYLE).ToInt64() &
                         NativeMethods.WS_EX_NOACTIVATE);
 
+                    var spellFilter = new TextBox();
+                    panel.SetToolbar(spellFilter);
+                    window.UpdateLayout();
+                    spellFilter.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
+                    {
+                        RoutedEvent = Mouse.PreviewMouseDownEvent,
+                    });
+                    Assert.Equal(0, NativeMethods.GetWindowLongPtr(handle, NativeMethods.GWL_EXSTYLE).ToInt64() &
+                        NativeMethods.WS_EX_NOACTIVATE);
+                    window.SetLocked(true);
+                    window.SetLocked(false);
+                    Assert.NotEqual(0, NativeMethods.GetWindowLongPtr(handle, NativeMethods.GWL_EXSTYLE).ToInt64() &
+                        NativeMethods.WS_EX_NOACTIVATE);
+
                     window.SetLocked(true);
                     slider.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
                     {
@@ -264,6 +278,24 @@ public sealed class OverlayChromeTests
         });
         Assert.False(initiallyHidden.IsChecked);
         Assert.Equal(0, initialChanges);
+
+        string spellFilter = "";
+        var hiddenFilter = MainWindow.ConfigureKnownSpellsFilter(hiddenPanel, initiallyHidden, text => spellFilter = text);
+        Assert.Equal("Known spells filter", System.Windows.Automation.AutomationProperties.GetName(hiddenFilter));
+        Assert.True(OverlayPanel.IsInteractive(hiddenFilter));
+        Assert.Equal(Visibility.Collapsed, hiddenFilter.Visibility);
+        initiallyHidden.IsChecked = true;
+        Assert.Equal(Visibility.Visible, hiddenFilter.Visibility);
+        hiddenFilter.Text = "Bite";
+        WaitForFilter(() => spellFilter == "Bite");
+        Assert.Equal("Bite", spellFilter);
+        initiallyHidden.IsChecked = false;
+        Assert.Equal(Visibility.Collapsed, hiddenFilter.Visibility);
+
+        var shownFilter = MainWindow.ConfigureKnownSpellsFilter(panel, showKnown, _ =>
+        {
+        });
+        Assert.Equal(showKnown.IsChecked == true ? Visibility.Visible : Visibility.Collapsed, shownFilter.Visibility);
     }
 
     private static void VerifyItemFilterToolbars()
