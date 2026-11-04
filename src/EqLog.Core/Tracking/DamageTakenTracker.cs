@@ -44,7 +44,7 @@ public sealed class DamageTakenTracker
         }
 
         _encounterLast = e.Time;
-        string key = e.Kind == DamageKind.Melee ? e.Attacker : Label(e);
+        string key = e.Kind is DamageKind.Melee or DamageKind.Ranged ? e.Attacker : Label(e);
         Add(_encounter, key, e.Amount);
         Add(_session, e.Attacker == Names.Unknown && e.Source is not null ? Label(e) : e.Attacker, e.Amount);
         _encounterTotal += e.Amount;

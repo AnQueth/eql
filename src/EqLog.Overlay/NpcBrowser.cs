@@ -10,6 +10,7 @@ public partial class MainWindow
 {
     private bool _npcSaveEnabled = true;
     private string? _npcStorageError;
+    private string? _npcDpsStatus;
     private TextBox _npcSearch = null!;
     private ComboBox _npcChoices = null!;
     private string _npcChoicesSignature = "";
@@ -125,6 +126,53 @@ public partial class MainWindow
         };
         buttons.Children.Add(refresh);
         buttons.Children.Add(wiki);
+        var dpsHistory = new Button
+        {
+            Content = "DPS by loadout",
+            FontSize = 11,
+            Padding = new Thickness(10, 5, 10, 5),
+            ToolTip = "Compare saved DPS for this NPC and zone by character, class loadout, and level; click fights for details.",
+        };
+        dpsHistory.Click += async (_, _) =>
+        {
+            if (_settings.NpcSelectedMob is not { } mob || _settings.NpcSelectedZone is not { } zone)
+            {
+                _npcDpsStatus = "Choose an NPC and zone before comparing DPS by loadout.";
+                _npcNextRender = default;
+                return;
+            }
+            dpsHistory.IsEnabled = false;
+            dpsHistory.Content = "Loading DPS history...";
+            _npcDpsStatus = null;
+            _npcNextRender = default;
+            long revision = _session.Revision;
+            try
+            {
+                var entry = await _session.GetNpcAsync(_tracking, mob, zone);
+                if (revision != _session.Revision || _settings.NpcSelectedMob != mob || _settings.NpcSelectedZone != zone)
+                {
+                    return;
+                }
+                if (entry is null)
+                {
+                    _npcDpsStatus = "No saved encounter history for this NPC and zone yet.";
+                    _npcNextRender = default;
+                    return;
+                }
+                new NpcDpsHistoryWindow(entry) { Owner = _dock }.Show();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+            {
+                _npcDpsStatus = $"Could not read DPS history: {ex.Message}";
+                _npcNextRender = default;
+            }
+            finally
+            {
+                dpsHistory.IsEnabled = true;
+                dpsHistory.Content = "DPS by loadout";
+            }
+        };
+        buttons.Children.Add(dpsHistory);
         bar.Children.Add(buttons);
         var views = new TabControl
         {
@@ -226,6 +274,7 @@ public partial class MainWindow
         _npcHistoryPage = 0;
         _npcWikiSelection = null;
         _npcWikiStatus = "";
+        _npcDpsStatus = null;
         _npcNextRender = default;
     }
 
@@ -308,7 +357,7 @@ public partial class MainWindow
         if (_settings.NpcSelectedMob is not { } mob || _settings.NpcSelectedZone is not { } zone)
         {
             return new("NPC compendium", "Search recorded NPCs or look up an exact name",
-                [new(_npcStorageError ?? "Importing the selected log's history and recording new interactions. " +
+                [new(_npcStorageError ?? _npcDpsStatus ?? "Importing the selected log's history and recording new interactions. " +
                     "Choose a name/zone above. Unlock floating overlays to search.", Wrap: true)]);
         }
         var resistanceInfo = _session.GetMob(zone, mob);
@@ -322,6 +371,10 @@ public partial class MainWindow
         if (_npcStorageError is not null)
         {
             rows.Add(new(_npcStorageError, Wrap: true, Bold: true));
+        }
+        if (_npcDpsStatus is not null)
+        {
+            rows.Add(new(_npcDpsStatus, Wrap: true, Bold: true));
         }
         if (_settings.NpcView == 1)
         {

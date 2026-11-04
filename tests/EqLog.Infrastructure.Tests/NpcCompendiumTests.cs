@@ -44,6 +44,40 @@ public sealed class NpcCompendiumTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadoutHistory_RetainsClassesPhysicalSplitAndNamedEffectsAfterRestartAndReplay()
+    {
+        var store = new NpcCompendium();
+        for (int replay = 0; replay < 2; replay++)
+        {
+            var engine = Engine(store);
+            Lines(engine,
+                (0, "You have entered Sky Hard."),
+                (0, "[50 DRU/WIZ/ENC] Tester (Erudite)"),
+                (1, "You kick A wraith for 42 points of damage."),
+                (2, "You shoot A wraith for 688 points of damage. (Double Bow Shot)"),
+                (3, "You hit A wraith for 100 points of magic damage by Whirlwind."),
+                (4, "You have slain A wraith!"),
+                (10, "[50 SHD/BRD/WIZ] Tester (Erudite)"),
+                (11, "You hit A wraith for 75 points of magic damage by Soul Leech."),
+                (12, "You have slain A wraith!"));
+            await store.SaveAsync(_path);
+            store = await TrackingTestPersistence.LoadNpcCompendiumAsync(_path);
+            var npc = Assert.IsType<NpcEntry>(await TrackingTestPersistence.GetNpcAsync(store, "A wraith", "Sky Hard"));
+            Assert.Equal(2, npc.Encounters.Count);
+            var first = Assert.Single(npc.Encounters, e => e.Classes == "DRU/WIZ/ENC");
+            Assert.Equal(50, first.Level);
+            Assert.Equal(830, first.YourDamage);
+            Assert.Equal(207.5, first.YourDps);
+            Assert.Equal(688, Assert.Single(first.Spells, s => s.Spell == "Ranged").Damage);
+            Assert.Equal(42, Assert.Single(first.Spells, s => s.Spell == "Melee").Damage);
+            Assert.Equal(100, Assert.Single(first.Spells, s => s.Spell == "Whirlwind").Damage);
+            var second = Assert.Single(npc.Encounters, e => e.Classes == "SHD/BRD/WIZ");
+            Assert.Equal(37.5, second.YourDps);
+            Assert.Equal(75, Assert.Single(second.Spells).Damage);
+        }
+    }
+
+    [Fact]
     public async Task Save_ActiveEncounter_ReplayThenAppendContinuesItOnce()
     {
         var store = new NpcCompendium();

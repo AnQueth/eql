@@ -196,7 +196,8 @@ public sealed partial class LogEventParser
             var mm = MeleeRegex().Match(m);
             if (mm.Success)
             {
-                return Damage(t, mm.Groups["a"].Value, mm.Groups["t"].Value, mm.Groups["n"].Value, DamageKind.Melee, null, mm.Groups["m"]);
+                DamageKind kind = mm.Groups["v"].Value is "shoot" or "shoots" ? DamageKind.Ranged : DamageKind.Melee;
+                return Damage(t, mm.Groups["a"].Value, mm.Groups["t"].Value, mm.Groups["n"].Value, kind, null, mm.Groups["m"]);
             }
         }
 
@@ -511,7 +512,7 @@ public sealed partial class LogEventParser
         "mauls?|slams?|strikes?|smash(?:es)?|rends?|reaves?|shoots?|frenz(?:y|ies) on|sweeps?|slices?|cleaves?|stabs?|whips?|" +
         "chops?|tramples?|thrusts?|hacks?|batters?|smites?|bludgeons?|lacerates?|impales?";
 
-    [GeneratedRegex(@"^(?<a>.+?) (?:" + MeleeVerbs + @") (?<t>.+?) for (?<n>\d+) points? of damage\.(?: \((?<m>[^)]+)\))?$")]
+    [GeneratedRegex(@"^(?<a>.+?) (?<v>" + MeleeVerbs + @") (?<t>.+?) for (?<n>\d+) points? of damage\.(?: \((?<m>[^)]+)\))?$")]
     private static partial Regex MeleeRegex();
 
     [GeneratedRegex(@"^(?<a>.+?) hit (?<t>.+?) for (?<n>\d+) points? of (?:[\w-]+ )?damage by (?<s>.+?)\.(?: \((?<m>[^)]+)\))?$")]

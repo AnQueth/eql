@@ -36,7 +36,7 @@ public sealed class AbilityBreakdownWindow : Window
         root.Children.Add(header);
         var note = new TextBlock
         {
-            Text = "Snapshot captured when clicked. Rates use the displayed fight/session healing span, not the rolling 30-second meter. Only events visible in your log are included; unnamed melee is grouped as Melee.",
+            Text = "Snapshot captured when clicked. Rates use the displayed fight/session healing span, not the rolling 30-second meter. Melee and Ranged are separate; spell and proc damage uses each logged effect name and rank. The log may not distinguish a proc from a cast of the same spell.",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 10, 0, 0),
         };

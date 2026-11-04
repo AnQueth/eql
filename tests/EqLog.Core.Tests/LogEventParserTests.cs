@@ -46,6 +46,30 @@ public class LogEventParserTests
     }
 
     [Fact]
+    public void RangedMissAndAbsorbedShot_DoNotCreateDamage()
+    {
+        Assert.Null(P("You try to shoot a greater sphinx, but miss!"));
+        Assert.Null(P("You try to shoot a greater sphinx, but a greater sphinx's magical skin absorbs the blow!"));
+    }
+
+    [Theory]
+    [InlineData("You shoot a greater sphinx for 688 points of damage. (Double Bow Shot)", "You", 688, "Double Bow Shot")]
+    [InlineData("You shoot a greater sphinx for 1676 points of damage. (Critical Double Bow Shot)", "You", 1676, "Critical Double Bow Shot")]
+    [InlineData("You shoot a greater sphinx for 1932 points of damage. (Finishing Blow Double Bow Shot)", "You", 1932, "Finishing Blow Double Bow Shot")]
+    [InlineData("You shoot a greater sphinx for 410 points of damage. (Strikethrough Double Bow Shot)", "You", 410, "Strikethrough Double Bow Shot")]
+    [InlineData("Archer shoots a greater sphinx for 100 points of damage.", "Archer", 100, null)]
+    public void ParsesRangedDamageOnce(string message, string attacker, long amount, string? modifier)
+    {
+        var damage = Assert.IsType<DamageEvent>(P(message));
+        Assert.Equal(DamageKind.Ranged, damage.Kind);
+        Assert.Equal(attacker, damage.Attacker);
+        Assert.Equal("A greater sphinx", damage.Target);
+        Assert.Equal(amount, damage.Amount);
+        Assert.Equal(modifier, damage.Modifier);
+        Assert.Null(damage.Source);
+    }
+
+    [Fact]
     public void ParsesSpellDamage()
     {
         var e = Assert.IsType<DamageEvent>(P("You hit Guardian Golem for 4806 points of fire damage by Conflagration X. (Critical)"));

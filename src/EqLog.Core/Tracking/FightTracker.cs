@@ -194,7 +194,7 @@ public sealed class FightTracker
             if (e.Amount > SessionMaxHitByYou)
             {
                 SessionMaxHitByYou = e.Amount;
-                SessionMaxHitSource = $"{e.Source ?? "melee"} on {e.Target}";
+                SessionMaxHitSource = $"{e.Source ?? (e.Kind == DamageKind.Ranged ? "ranged" : "melee")} on {e.Target}";
             }
         }
     }

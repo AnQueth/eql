@@ -1,7 +1,57 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.39" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.40" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.40
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released November 4, 2026 at 2:16 AM CT.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Compare a mob's DPS history by loadout
+        </Paragraph>
+        <Paragraph>
+            Enable NPC compendium under Settings &gt; General &gt; Overlays, select an NPC
+            and its exact zone, then click DPS by loadout. Click a loadout to see its saved
+            encounters, then a fight for personal damage, DPS, other attackers' damage,
+            incoming damage, and a per-effect breakdown.
+        </Paragraph>
+        <Paragraph>
+            Weighted average DPS divides total damage by total encounter seconds. Mean DPS
+            gives each fight equal weight. P90 and P99 show nearest-rank percentiles of
+            individual fight DPS; small samples may equal best DPS. These statistics use
+            personal-damage encounters with an observed NPC death only. Active and interrupted
+            encounters remain available for details but do not enter comparison statistics.
+        </Paragraph>
+        <Paragraph>
+            Character, reported class order, and level stay separate. Run /who after switching
+            builds to attribute future encounters correctly; unknown loadouts are not guessed.
+            Existing saved history is included without a reset. Reopen the snapshot window
+            for new fights. Encounter durations include incoming damage and run through last
+            activity plus one second, so rates can differ from the live DPS panel. Gear, buffs,
+            debuffs, and other attackers can affect comparisons. Spell resistance and typical
+            damage learning remain shared across class loadouts.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Separate ranged damage and inspect named proc effects
+        </Paragraph>
+        <Paragraph>
+            Bow shots now appear as Ranged instead of Melee in damage breakdowns, including
+            newly recorded NPC encounters. Named spell and proc effects, such as Whirlwind,
+            Soul Leech, and Conflagration X, retain their own damage rows and exact ranks.
+            Double Bow Shot and other logged modifiers do not multiply damage a second time.
+        </Paragraph>
+        <Paragraph>
+            The log cannot always distinguish a proc from a manual cast with the same effect
+            name, so those share a row. Older saved physical totals may still combine bow
+            shots under Melee. Saved encounter details show direct landings and full resists,
+            not invented hit counts, critical counts, maximum hits, or timelines.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.39
     </Paragraph>

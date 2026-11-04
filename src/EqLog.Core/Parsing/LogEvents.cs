@@ -8,6 +8,7 @@ public enum DamageKind
     DirectSpell,
     DamageOverTime,
     DamageShield,
+    Ranged,
 }
 
 public sealed record DamageEvent(

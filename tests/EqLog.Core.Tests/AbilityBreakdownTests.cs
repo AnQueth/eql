@@ -37,6 +37,63 @@ public class AbilityBreakdownTests
     }
 
     [Fact]
+    public void Engine_SeparatesRangedMeleeAndNamedProcEffectsWithoutChangingTotals()
+    {
+        var npcs = new NpcCompendium();
+        var engine = new LogEngine(logIdentity: "log", npcs: npcs) { CharacterName = "Quethrosar" };
+        string[] messages =
+        [
+            "You kick a greater sphinx for 42 points of damage.",
+            "You shoot a greater sphinx for 688 points of damage. (Double Bow Shot)",
+            "You shoot a greater sphinx for 1676 points of damage. (Critical Double Bow Shot)",
+            "You shoot a greater sphinx for 1932 points of damage. (Finishing Blow Double Bow Shot)",
+            "You hit a greater sphinx for 100 points of magic damage by Whirlwind.",
+            "You hit a greater sphinx for 33 points of magic damage by Chaotic Feedback.",
+            "You hit a greater sphinx for 1324 points of fire damage by Conflagration.",
+            "You hit a greater sphinx for 1700 points of fire damage by Conflagration X.",
+            "You hit a greater sphinx for 75 points of magic damage by Soul Leech.",
+            "You hit a greater sphinx for 35 points of magic damage by Lifetap Strike III.",
+            "You try to shoot a greater sphinx, but miss!",
+            "You have slain a greater sphinx!",
+        ];
+        for (int i = 0; i < messages.Length; i++)
+        {
+            engine.Process(new(Start.AddSeconds(i), messages[i]));
+        }
+
+        var snapshot = engine.Snapshot(Start.AddSeconds(messages.Length));
+        var fight = Assert.IsType<FightSnapshot>(snapshot.CurrentFight);
+        var you = Assert.IsType<CombatantStats>(fight.You);
+        Assert.Equal(7605, you.Total);
+        Assert.Equal(12, fight.DurationSeconds);
+        Assert.Equal(7605.0 / 12, you.Dps);
+        var melee = Assert.Single(you.Abilities, a => a.Name == "Melee");
+        var ranged = Assert.Single(you.Abilities, a => a.Name == "Ranged");
+        Assert.Equal(42, melee.Total);
+        Assert.Equal(4296, ranged.Total);
+        Assert.Equal(3, ranged.Hits);
+        Assert.Equal(1, ranged.Crits);
+        Assert.Equal(1932, ranged.MaxHit);
+        Assert.Equal("ranged on A greater sphinx", snapshot.SessionMaxHitSource);
+        foreach (var (name, amount) in new[]
+        {
+            ("Whirlwind", 100), ("Chaotic Feedback", 33), ("Conflagration", 1324),
+            ("Conflagration X", 1700), ("Soul Leech", 75), ("Lifetap Strike III", 35),
+        })
+        {
+            Assert.Equal(amount, Assert.Single(you.Abilities, a => a.Name == name).Total);
+            Assert.Equal(amount, Assert.Single(you.AbilityTimelines, a => a.Name == name).Points.Sum(p => p.Amount));
+        }
+        Assert.Equal(you.Total, you.Abilities.Sum(a => a.Total));
+        Assert.Equal(4296, Assert.Single(you.AbilityTimelines, a => a.Name == "Ranged").Points.Sum(p => p.Amount));
+        var encounter = Assert.Single(npcs.Get("A greater sphinx", "(unknown zone)")!.Encounters);
+        Assert.Equal(you.Total, encounter.YourDamage);
+        Assert.Equal(4296, Assert.Single(encounter.Spells, s => s.Spell == "Ranged").Damage);
+        Assert.Equal(42, Assert.Single(encounter.Spells, s => s.Spell == "Melee").Damage);
+        Assert.Equal(75, Assert.Single(encounter.Spells, s => s.Spell == "Soul Leech").Damage);
+    }
+
+    [Fact]
     public void HealingBreakdown_TracksObservedHealersAndDirections_WithoutDoubleCountingSelfHeal()
     {
         var tracker = new HealTracker();

@@ -290,7 +290,7 @@ at the top of **DPS** to view one of your last 10 fights (newest first); **Curre
 returns to following live combat. DPS details also include a **Damage timeline** tab: bars show
 damage over the fight (one second each, or wider for long fights), with idle gaps shown as empty
 bars; hover a bar for its time span, damage, and DPS. The **Damage types** tab shows one row per
-damage type (Melee, each spell, DoT, or proc). Every row spans the whole fight, and bars run from
+damage type (Melee, Ranged, each named spell, DoT, or proc effect). Every row spans the whole fight, and bars run from
 when that type started landing to when it finished, with marks at each start and finish; a gap of
 more than 7 seconds starts a new bar, so 6-second DoT ticks stay together. In **Healing**,
 click a recipient, incoming healer, or **Observed healers** name for session ability totals.
@@ -303,8 +303,15 @@ Details show total, DPS/HPS, share, hits, crits, maximum, and healing overheal. 
 windows opened by clicking a row are snapshots at click time, not live windows; click again
 for an updated snapshot. The embedded DPS **Full details** view is live. Healing detail rates use the
 span from first to last observed session heal (minimum one second), not the rolling 30-second
-meter. Only logged events are available; unnamed melee is grouped as Melee and unnamed heals
-as unknown. Unlock floating overlays with Ctrl+Shift+L to click; docked panels remain interactive.
+meter. Only logged events are available; bow shots are grouped as Ranged, other physical hits
+as Melee, and unnamed heals as unknown. Named proc effects such as Whirlwind, Soul Leech,
+and Lifetap Strike III retain their own damage, hits, crits, and timelines; exact ranks stay
+separate (for example Conflagration and Conflagration X). A proc and a cast with the identical
+logged effect name share a row because the log does not reliably distinguish their origin.
+Shot modifiers such as Double Bow Shot do not multiply the already logged damage amount.
+New NPC encounter history uses the same Melee/Ranged split. Older saved encounter summaries
+remain combined because they contain no raw attack verbs to reclassify safely.
+Unlock floating overlays with Ctrl+Shift+L to click; docked panels remain interactive.
 
 | Overlay | Shows |
 |---|---|
@@ -522,6 +529,24 @@ spell names against long status text.
 - Encounter summaries include the date, character, reported loadout/level, duration,
   your damage/DPS, other attackers' damage, incoming damage, and a logged death or end reason.
   Use **Older** / **Newer** in the **Encounters** view to page through history.
+- Choose an NPC and its exact zone, then click **DPS by loadout** to compare saved builds.
+  Click a loadout row to see its encounters, then a fight to see personal damage, DPS,
+  incoming/other damage, outcome, and per-effect damage/DPS/share, direct landings and resists.
+  Melee, Ranged, named spells and proc effects keep their recorded breakdowns and exact ranks.
+  Character, reported class order, and level stay separate; run **/who** after switching builds
+  so future encounters are attributed correctly. Unknown builds have their own group, never guessed.
+  Existing saved loadout history is included automatically; no reset is needed.
+  Comparison average is total personal damage / total encounter seconds for **observed NPC deaths**
+  only, not a simple average of fight DPS. **Mean DPS** is the arithmetic mean of individual
+  fight DPS values (each fight has equal weight). **P90 DPS** and **P99 DPS** use nearest-rank
+  percentiles: sort fight DPS ascending and select rank `ceil(percentile * fight count)`.
+  Small samples may have P90/P99 equal to best DPS. All these statistics and best DPS use
+  the same observed-NPC-death fights; no completed fights means no statistic. Active, zoned,
+  player-death and loadout-change segments remain visible for details but do not enter comparison
+  averages. The window is a snapshot; reopen it for new fights. This does not change shared spell
+  resistance or loadout-independent damage learning. Gear, buffs, debuffs and other attackers
+  can affect comparisons. Old physical summaries may combine Melee/Ranged, and saved history
+  does not contain hit counts, crits, maximum hits or timelines; these are not invented.
 - **Your average DPS** is total damage divided by summed durations of encounters where you
   dealt damage, not a simple average of fight DPS values. Durations use last activity minus
   start plus one second, minimum one second. Other-attacker damage/DPS is separate and includes
