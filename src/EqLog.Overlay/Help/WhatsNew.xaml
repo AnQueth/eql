@@ -1,7 +1,48 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.38" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.39" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.39
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released November 3, 2026 at 5:40 PM CT.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Spell resistance tracking no longer needs /who
+        </Paragraph>
+        <Paragraph>
+            In Mob info and NPC Browser &gt; Spell resists, confirmed spell landings now
+            count even when your class loadout is unknown after logging in. This includes
+            direct spells such as Rend and the first confirmed tick of a damage-over-time
+            cast. Explicit resists still determine the resisted count; reduced damage is
+            not treated as a resist.
+        </Paragraph>
+        <Paragraph>
+            Restart with the updated app and let it re-read your log to recover eligible
+            landings skipped by earlier versions. Saved observations are not duplicated,
+            and no resistance reset is needed. Only events still present in the log can
+            be recovered; critical, modified, and recent finishing hits remain excluded.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Damage samples are shared across class loadouts
+        </Paragraph>
+        <Paragraph>
+            Typical spell damage now uses samples across class builds, including existing
+            saved samples. Learning also works before /who: samples with an unknown level
+            are kept separately until the log supplies your level. Character, level, and
+            exact spell rank still have separate baselines.
+        </Paragraph>
+        <Paragraph>
+            Spell resistance history explains landings without damage samples separately
+            from hits still learning a baseline. At least three eligible samples are
+            needed; hits below 90% of the typical-damage median are marked as reduced
+            damage, not resisted. Combining builds can change these estimates.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.38
     </Paragraph>

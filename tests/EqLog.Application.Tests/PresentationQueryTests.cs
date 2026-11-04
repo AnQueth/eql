@@ -155,6 +155,38 @@ public sealed class PresentationQueryTests
     }
 
     [Fact]
+    public void RendResistanceHistoryLearnsDamageWithUnknownAndKnownLoadouts()
+    {
+        var at = new DateTime(2026, 11, 3, 16, 27, 0);
+        const string zone = "The Plane of Hate - Solo 4 (Refined)";
+        const string mob = "Innoruuk`s Chosen";
+        var mobs = new MobResistanceStore();
+        mobs.SetSpell(new("Rend X", ResistanceType.Magic, "Magic", at, SingleTargetDirectDamage: true));
+        var engine = new LogEngine(resistances: mobs, logIdentity: "log") { CharacterName = "Que" };
+        engine.Process(new(at, $"You have entered {zone}."));
+        engine.Process(new(at.AddSeconds(1), "You begin casting Rend X."));
+        engine.Process(new(at.AddSeconds(3), $"You hit {mob} for 1753 points of magic damage by Rend X."));
+        engine.Process(new(at.AddSeconds(8), "[50 DRU/WIZ/ENC] Que (Erudite)"));
+        engine.Process(new(at.AddSeconds(9), "You begin casting Rend X."));
+        engine.Process(new(at.AddSeconds(11), $"You hit {mob} for 1500 points of magic damage by Rend X."));
+        engine.Process(new(at.AddSeconds(16), "[50 SHD/BRD/WIZ] Que (Erudite)"));
+        engine.Process(new(at.AddSeconds(17), "You begin casting Rend X."));
+        engine.Process(new(at.AddSeconds(19), $"{mob} resisted your Rend X!"));
+        engine.Snapshot(at.AddSeconds(25));
+
+        var session = new GameSession(new(new(), new(), new(), mobs, new(), []));
+        var card = Assert.Single(session.NpcSpellDetails(zone, mob));
+        var resistance = Assert.IsType<ResistanceDetails>(card.Resistance);
+        Assert.Equal(ResistanceType.Magic, card.School);
+        Assert.Equal(NpcSpellResultKind.DirectDamage, card.Kind);
+        Assert.Equal(2, resistance.Landed);
+        Assert.Equal(1, resistance.Resisted);
+        Assert.Equal(3m, resistance.AssessedOutcomes);
+        Assert.Equal(2, resistance.UnassessedDamage);
+        Assert.Equal(new RawSpellCounts(1, 0, 2, DotResisted: 1), card.Counts);
+    }
+
+    [Fact]
     public void DirectSpellReadModelCarriesTypedCountsAndClassifications()
     {
         var mobs = new MobResistanceStore();

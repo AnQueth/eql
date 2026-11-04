@@ -13,12 +13,13 @@ public sealed class MobResistanceTracker(MobResistanceStore store, string logIde
     private static readonly TimeSpan DeathWindow = TimeSpan.FromSeconds(3);
 
     public string CharacterName { get; set; } = "";
-    /// <summary>Separate learning context; empty disables learning until the current loadout is known.</summary>
+    /// <summary>Character/level damage-learning context; empty uses the character without a known level.</summary>
     public string? DamageProfile
     {
         get; set;
     }
     private string? _castProfile;
+    private string _castCharacter = "";
 
     public void OnUnparsedLine(DateTime time, string message)
     {
@@ -67,6 +68,7 @@ public sealed class MobResistanceTracker(MobResistanceStore store, string logIde
             case CastBeginEvent cast:
                 _cast = cast;
                 _castProfile = DamageProfile ?? CharacterName;
+                _castCharacter = CharacterName;
                 _outcomes.Clear();
                 _dots.OnCast(cast);
                 break;
@@ -91,9 +93,11 @@ public sealed class MobResistanceTracker(MobResistanceStore store, string logIde
                 Landed(damage, line);
                 break;
             case DamageEvent { Kind: DamageKind.DamageOverTime } tick:
-                if (_dots.OnTick(tick) is string dotSpell && !string.IsNullOrWhiteSpace(_castProfile))
+                if (_dots.OnTick(tick) is string dotSpell)
                 {
-                    _pending.Add(new(line, _zone, tick.Target, dotSpell, tick.Time, false, null, _castProfile, true));
+                    _pending.Add(new(line, _zone, tick.Target, dotSpell, tick.Time, false, null,
+                        string.IsNullOrWhiteSpace(_castProfile) ? _castCharacter : _castProfile, true,
+                        string.IsNullOrWhiteSpace(_castProfile)));
                 }
                 break;
         }
@@ -106,7 +110,8 @@ public sealed class MobResistanceTracker(MobResistanceStore store, string logIde
             var outcome = _pending[0];
             _pending.RemoveAt(0);
             store.Record(logIdentity, outcome.Line, outcome.Zone, outcome.Target, outcome.Spell, outcome.Resisted,
-                outcome.Time, outcome.Character, outcome.Damage, outcome.DamageOverTime);
+                outcome.Time, outcome.Character, outcome.Damage, outcome.DamageOverTime,
+                unprofiledLanding: outcome.UnknownLevel);
         }
     }
 
@@ -114,13 +119,15 @@ public sealed class MobResistanceTracker(MobResistanceStore store, string logIde
     {
         if (_cast is null || damage.Time < _cast.Time || damage.Time - _cast.Time > TimeSpan.FromSeconds(20) ||
             !SpellNames.SameBase(damage.Source!, _cast.Spell) || !_outcomes.Add(damage.Target) ||
-            damage.IsCritical || damage.Modifier is not null || damage.Amount <= 0 || string.IsNullOrWhiteSpace(_castProfile))
+            damage.IsCritical || damage.Modifier is not null || damage.Amount <= 0)
         {
             return;
         }
-        _pending.Add(new(line, _zone, damage.Target, _cast.Spell, damage.Time, false, damage.Amount, _castProfile));
+        _pending.Add(new(line, _zone, damage.Target, _cast.Spell, damage.Time, false, damage.Amount,
+            string.IsNullOrWhiteSpace(_castProfile) ? _castCharacter : _castProfile,
+            UnknownLevel: string.IsNullOrWhiteSpace(_castProfile)));
     }
 
     private sealed record PendingOutcome(long Line, string Zone, string Target, string Spell, DateTime Time,
-        bool Resisted, long? Damage, string Character, bool DamageOverTime = false);
+        bool Resisted, long? Damage, string? Character, bool DamageOverTime = false, bool UnknownLevel = false);
 }

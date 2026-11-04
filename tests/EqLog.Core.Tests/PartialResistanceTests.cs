@@ -135,6 +135,33 @@ public class PartialResistanceTests
     }
 
     [Fact]
+    public void LearnedDamage_ExistingLoadoutSamplesShareBaselineAndInvalidateTogether()
+    {
+        var store = CreateStore();
+        var data = new MobResistanceStore.Data();
+        data.Mobs["SKY\nTARGET"] = new()
+        {
+            ["CONFLAGRATION X"] = new("Conflagration X", 0, 0, new()
+            {
+                ["TESTER DRU/WIZ/ENC 50"] = new()
+                {
+                    [1000] = 3
+                },
+                ["TESTER SHD/BRD/WIZ 50"] = new()
+                {
+                    [500] = 3
+                },
+            })
+        };
+        store.ImportData(data, [new("Conflagration X", ResistanceType.Fire, "Fire", T0, true)]);
+        Assert.Equal(3, Fire(store).EstimatedPartial);
+        store.Record("new", 1, "Sky", "Target", "Conflagration X", false, T0, "Tester\n50", 500);
+        Assert.Equal(0, Fire(store).EstimatedPartial);
+        Assert.Equal(7, Fire(store).Landed);
+        Assert.Equal(0, Fire(store).UnassessedDamage);
+    }
+
+    [Fact]
     public void LearnedDamage_SeparatesCharacterAndExactSpellRank()
     {
         var store = CreateStore();

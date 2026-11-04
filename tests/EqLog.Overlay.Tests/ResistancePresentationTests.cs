@@ -43,9 +43,9 @@ public sealed class ResistancePresentationTests
         Assert.Equal("Fire  /  Not Resistant \u2014 0% (0/3)", rendered.Result);
         Assert.Equal([("Confirmed landings", "3"), ("Full resists", "0"), ("Reduced damage", "1")], rendered.Evidence);
         Assert.Equal(
-            "2 landed hits need at least 3 damage samples for a typical-damage baseline for this character/loadout/rank.\n" +
+            "2 landed hits need at least 3 damage samples for a typical-damage baseline for this character/level/rank, shared across class loadouts.\n" +
             "Reduced-damage hits are below 90% of the sample-weighted median; cause unknown. They count as landed, not resisted.\n" +
-            "4 earlier landings have no damage values; partial damage cannot be checked retrospectively.", rendered.Explanation);
+            "4 landings from older history have no damage samples; they count as landed, but reduced damage cannot be assessed.", rendered.Explanation);
     }
 
     [Theory]
@@ -61,7 +61,7 @@ public sealed class ResistancePresentationTests
         var rendered = ResistancePresentation.Spell(card);
         Assert.Equal("School not verified  /  Group", rendered.Result);
         Assert.StartsWith(expected, rendered.Explanation);
-        Assert.Contains(("Earlier landings", "1"), rendered.Evidence);
+        Assert.Contains(("Landings without samples", "1"), rendered.Evidence);
     }
 
     [Fact]

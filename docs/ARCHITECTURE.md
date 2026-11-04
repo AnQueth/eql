@@ -240,9 +240,9 @@ name in a structured `/who` entry. Class abbreviations and their order are retai
 The engine exposes the latest report as `CurrentLoadout` in its snapshot, clears it on login
 or character change, and updates its level on a logged level change. Session resets preserve it.
 The Session overlay and log status display this context. Damage learning captures the context
-at cast start (character, classes, level) and stores samples under that composite key. An unknown
-loadout disables damage learning; it does not prevent explicit resist counts. Changed reports
-invalidate pending cast attribution without reassigning already buffered outcomes. Historical
+at cast start (character and level) and stores samples under that composite key. Unknown-level
+samples use the character alone. Class loadouts do not partition damage learning or outcomes.
+Level changes invalidate pending cast attribution without reassigning already buffered outcomes. Historical
 reports reconstruct context during replay; no unlogged loadout change is inferred.
 
 `LogEventParser` emits `ConsiderEvent` (mob, level, faction, difficulty, rare marker) and
@@ -269,6 +269,8 @@ are conservatively omitted if the process exits before they can be checked.
 the full logged zone's difficulty/instance suffix instead of merging potentially different variants.
 Per-log timestamp/line watermarks prevent replay inflation while accepting newer timestamps
 after a log is truncated. A moved log is a different source. Same-name NPCs are necessarily combined.
+Unprofiled landings use a separate `UNPROFILED` watermark stream (with a separate DoT watermark),
+so replay recovers outcomes older versions skipped without duplicating profiled hits or resists.
 
 `MobWikiLookup` uses the public EQLWiki API with redirects and title-case variants. Ranked spell
 pages may fall back to their base spell page for resistance school and instant-damage metadata,
@@ -283,8 +285,10 @@ observation or selection even inside the seven-day TTL so corrected lifetap clas
 observations without replaying or rewriting their counts. Missing details, area-effect/wave
 spells, and duration spells receive distinct assessment explanations; known school is never
 presented as unknown merely because damage assessment is unsupported.
-Unmodified non-critical damage histograms are persisted by character/loadout/level and exact
-ranked spell inside each mob's outcomes. After at least three eligible samples across mobs/zones,
+Unmodified non-critical damage histograms are persisted by character/level and exact
+ranked spell inside each mob's outcomes. Legacy character/classes/level keys are normalized
+for baseline aggregation and invalidation without rewriting saved histograms or duplicating hits.
+After at least three eligible samples across mobs/zones,
 the sample-count-weighted median supplies the baseline (the middle two values are averaged
 for an even sample count). Hits below 90% of this baseline are reduced-damage estimates,
 not inferred resists. Confirmed hits count as landed even while a baseline is unavailable;

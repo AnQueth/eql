@@ -34,7 +34,7 @@ internal static class ResistancePresentation
         };
         if (counts.LegacyLandings > 0)
         {
-            evidence.Add(("Earlier landings", $"{counts.LegacyLandings:N0}"));
+            evidence.Add(("Landings without samples", $"{counts.LegacyLandings:N0}"));
         }
         string result;
         var explanations = new List<string>();
@@ -51,7 +51,7 @@ internal static class ResistancePresentation
                 ];
                 if (observation.UnassessedDamage > 0)
                 {
-                    explanations.Add($"{observation.UnassessedDamage:N0} landed hits need at least {observation.MinimumDamageSamples} damage samples for a typical-damage baseline for this character/loadout/rank.");
+                    explanations.Add($"{observation.UnassessedDamage:N0} landed hits need at least {observation.MinimumDamageSamples} damage samples for a typical-damage baseline for this character/level/rank, shared across class loadouts.");
                 }
                 else if (observation.AssessedOutcomes == 0)
                 {
@@ -63,7 +63,7 @@ internal static class ResistancePresentation
                 }
                 if (counts.LegacyLandings > 0)
                 {
-                    explanations.Add($"{counts.LegacyLandings:N0} earlier landings have no damage values; partial damage cannot be checked retrospectively.");
+                    explanations.Add($"{counts.LegacyLandings:N0} landings from older history have no damage samples; they count as landed, but reduced damage cannot be assessed.");
                 }
                 break;
             case NpcSpellResultKind.DamageOverTime:

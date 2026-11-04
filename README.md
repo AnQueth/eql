@@ -161,14 +161,14 @@ your loadout. The character, detected class loadout, and level appear in the **a
 as well as the **Session** overlay and log status. The title bar retains the app version and
 updates automatically when your own /who entry changes.
 
-Learned normal spell damage is kept separate by **character, class loadout, level, and exact
-spell rank**, so different Legends builds do not distort each other's reduced-damage estimates.
+Learned normal spell damage is shared across class loadouts and kept separate by **character,
+level, and exact spell rank**. Existing loadout-specific samples also share the baseline.
 Use **/who after changing loadouts**: the app cannot detect an unlogged switch and uses the
 last reported loadout until updated. After a login or changing character, classes are unknown
-until your own /who entry is read; damage learning waits rather than guessing. Historical
+until your own /who entry is read; damage learning uses a separate unknown-level baseline. Historical
 /who entries are read in order on startup, reconstructing the last reported loadout.
-Saved damage samples retain their loadout context across restarts. Earlier samples collected
-before loadout tracking cannot be assigned to a class build retroactively.
+Spell resistance outcomes and damage learning both work without /who and across loadouts.
+Different builds can change typical damage, so combining them can affect reduced-damage estimates.
 
 ## Appearance and themes
 
@@ -410,6 +410,7 @@ Five color-coded rows show **Magic, Fire, Cold, Poison, and Disease**:
 - **Observed result** shows a plain label followed by the percentage and resisted/assessed counts,
   for example **Partial — 65% (13/20)**. Only explicit resist messages enter the resisted count.
   Confirmed damage hits count as landed, even below the damage baseline or while learning it.
+  An unknown class loadout does not block direct-spell or DoT landings or damage samples.
   Other-spell resists are not in this denominator.
   With no assessed outcomes it shows **Unknown — no assessed outcomes**.
   **Resists** (all recorded outcomes resisted), **Partial** (more than half but not all),
@@ -422,7 +423,7 @@ Five color-coded rows show **Magic, Fire, Cold, Poison, and Disease**:
   Repeated damage lines for that cast and target do not inflate the count.
   **Reduced-damage hits (cause unknown)** are shown separately if they deal less than **90%**
   of typical damage. The baseline is the **sample-count-weighted median**, not the maximum,
-  learned separately for each character, reported class loadout, level, and exact spell rank
+  learned separately for each character, level, and exact spell rank, shared across class loadouts,
   across mobs/zones from non-critical, unmodified hits. At least three eligible hits are required;
   for an even sample count the middle two damage values are averaged. Until then, hits await a
   damage baseline but still count as confirmed landings. Saved samples are re-evaluated as
@@ -434,7 +435,9 @@ Five color-coded rows show **Magic, Fire, Cold, Poison, and Disease**:
   even if another player gets the kill. Without a death message (or with one delayed longer than
   this window), finishing blows cannot be identified reliably. Very recent buffered hits may be
   omitted if the app closes before they can be checked.
-  Previously saved landed counts contain no damage amounts and cannot be reclassified retroactively.
+  Older landings without samples cannot be assessed for reduced damage.
+  Re-reading the log on startup recovers eligible landings previously skipped for an unknown loadout,
+  without duplicating saved outcomes. No resistance reset is needed.
 - Single-target **damage-over-time** spells (wiki duration spells with a per-tick hit point
   decrease, such as Bond of Death, Envenomed Bolt, Dark Soul and Ignite Blood) also count
   toward their school. DoTs land fully or are fully resisted, so each cast counts once per mob:

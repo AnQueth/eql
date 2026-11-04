@@ -195,7 +195,7 @@ public sealed class LogEngine
             {
                 _resistances.CharacterName = _parser.CharacterName;
                 _resistances.DamageProfile = _loadout is null ? "" :
-                    $"{_parser.CharacterName}\n{_loadout.Classes}\n{_loadout.Level}";
+                    $"{_parser.CharacterName}\n{_loadout.Level}";
             }
             _resistances?.OnEvent(ev, _lines);
             _npcs?.OnEvent(ev, _lines, _parser.CharacterName, _loadout);

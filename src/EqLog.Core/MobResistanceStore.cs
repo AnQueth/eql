@@ -181,9 +181,11 @@ public sealed class MobResistanceStore
     /// <summary>
     /// Records one observed outcome once per log path/line, preventing replay from inflating counts.
     /// DoT outcomes have their own watermark, so history read before DoTs were assessed is counted once.
+    /// Landings without a known loadout have a separate watermark to recover previously skipped history.
     /// </summary>
     public void Record(string log, long line, string zone, string mob, string spell, bool resisted,
-        DateTime time = default, string? character = null, long? damage = null, bool damageOverTime = false)
+        DateTime time = default, string? character = null, long? damage = null, bool damageOverTime = false,
+        bool unprofiledLanding = false)
     {
         lock (_gate)
         {
@@ -193,6 +195,10 @@ public sealed class MobResistanceStore
                 return;
             }
             string source = log.ToUpperInvariant();
+            if (unprofiledLanding)
+            {
+                source += "\nUNPROFILED";
+            }
             bool counted = Advance(source, time, line);
             bool dotCounted = damageOverTime && Advance(source + "\nDOT", time, line);
             if (damageOverTime && !resisted)
@@ -220,7 +226,7 @@ public sealed class MobResistanceStore
             if (counted && damage is long amount && character is not null)
             {
                 var samples = previous.DamageSamples ?? [];
-                string characterKey = MobKey(character);
+                string characterKey = DamageProfileKey(character);
                 if (!samples.TryGetValue(characterKey, out var histogram))
                 {
                     histogram = [];
@@ -287,7 +293,7 @@ public sealed class MobResistanceStore
                 {
                     foreach (var (character, samples) in spell.DamageSamples ?? [])
                     {
-                        decimal? baseline = DamageBaseline(MobKey(spell.Spell), character);
+                        decimal? baseline = DamageBaseline(MobKey(spell.Spell), DamageProfileKey(character));
                         foreach (var (amount, count) in samples)
                         {
                             landed += count;
@@ -329,6 +335,12 @@ public sealed class MobResistanceStore
         }
     }
 
+    private static string DamageProfileKey(string character)
+    {
+        return Regex.Replace(MobKey(character), @"^(.+) [A-Z]{3}(?:/[A-Z]{3})* (\d+)$", "$1 $2",
+            RegexOptions.None, TimeSpan.FromSeconds(1));
+    }
+
     private decimal? DamageBaseline(string spell, string character)
     {
         var key = (spell, character);
@@ -337,8 +349,10 @@ public sealed class MobResistanceStore
             return cached;
         }
         var samples = _data.Mobs.Values.SelectMany(m => m.Values)
-            .Where(s => MobKey(s.Spell) == spell && s.DamageSamples?.ContainsKey(character) == true)
-            .SelectMany(s => s.DamageSamples![character]).ToArray();
+            .Where(s => MobKey(s.Spell) == spell)
+            .SelectMany(s => s.DamageSamples ?? [])
+            .Where(profile => DamageProfileKey(profile.Key) == character)
+            .SelectMany(profile => profile.Value).ToArray();
         long total = samples.Sum(sample => sample.Value);
         if (total < MinimumDamageSamples)
         {
