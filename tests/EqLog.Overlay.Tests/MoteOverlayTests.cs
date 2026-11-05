@@ -156,7 +156,7 @@ public sealed class MoteOverlayTests
             }, new Dictionary<int, int> { [8] = 3, [9] = 2 }, []);
             var host = Render(model, MotePlanPage.Farm);
             Assert.Equal("How many +4 copies should I farm?", Assert.IsType<TextBlock>(host.Children[0]).Text);
-            Assert.Equal(["Reach +8: farm 7 more +4 copies.", "Reach +9: farm 22 more +4 copies.",
+            Assert.Equal(["Reach +8: farm 6 more +4 copies.", "Reach +9: farm 22 more +4 copies.",
                 "Reach +10: farm 54 more +4 copies."],
                 host.Children.OfType<TextBlock>().Where(text => text.Text.StartsWith("Reach")).Select(text => text.Text));
             Assert.All(host.Children.OfType<TextBlock>().Where(text => text.Text.StartsWith("Reach")),
@@ -233,7 +233,7 @@ public sealed class MoteOverlayTests
                 MainWindow.PlanSummary(invalid, MotePlanPage.Farm));
             var complete = MotePlanningService.Prepare(PlanRequest(5, 5), new Dictionary<int, int>(), []);
             Assert.Equal(["Already at the +5 target. No points needed."], Texts(Render(complete)));
-            Assert.Equal("Each step uses its matching mote tier. Bigger motes are saved until a higher rank needs them. " +
+            Assert.Equal("Each step uses the smallest usable motes first, including higher tiers when needed. " +
                 "Spare copies are merged after motes. Condensing and Void-Touched motes are not used.",
                 MainWindow.PlanSummaryToolTip(MoteUpgradeKind.Equipment));
             Assert.Equal("Spell motes double in value each tier (1 to 512 points) and work at any +level. " +
@@ -490,7 +490,7 @@ public sealed class MoteOverlayTests
     }
 
     [Theory]
-    [InlineData(8, 7)]
+    [InlineData(8, 6)]
     [InlineData(9, 22)]
     [InlineData(10, 54)]
     public void FarmTargetSummary_UsesTotalFromCurrentRankRatherThanIndividualStep(int targetRank, int expected)

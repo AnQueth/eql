@@ -616,7 +616,7 @@ public partial class MainWindow
     internal static string PlanSummaryToolTip(MoteUpgradeKind kind)
     {
         return kind == MoteUpgradeKind.Equipment
-            ? "Each step uses its matching mote tier. Bigger motes are saved until a higher rank needs them. " +
+            ? "Each step uses the smallest usable motes first, including higher tiers when needed. " +
                 "Spare copies are merged after motes. Condensing and Void-Touched motes are not used."
             : "Spell motes double in value each tier (1 to 512 points) and work at any +level. " +
                 "Smallest motes are spent first. Condensing and Void-Touched motes are not used.";

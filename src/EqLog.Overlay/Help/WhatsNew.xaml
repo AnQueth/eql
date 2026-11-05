@@ -1,7 +1,30 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.40" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.41" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.41
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released November 4, 2026 at 10:37 PM CT.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Use higher-tier motes when needed
+        </Paragraph>
+        <Paragraph>
+            Enable Mote upgrade planner under Settings &gt; General &gt; Overlays. In Equipment
+            mode, plans now use the smallest usable motes first and fall back to higher tiers
+            when smaller motes are missing or insufficient. Spare-copy feeding follows the
+            same rule, so eligible higher-tier motes can complete a copy's next rank.
+        </Paragraph>
+        <Paragraph>
+            When spare inventory copies can finish a step, the planner saves higher-tier motes
+            that would not be needed. Equipment mote rank limits still apply. Plans use mote
+            counts from your last inventory export; run /outputfile inventory after looting or
+            spending motes to refresh them.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.40
     </Paragraph>

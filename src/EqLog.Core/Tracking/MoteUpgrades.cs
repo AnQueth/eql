@@ -229,8 +229,9 @@ public sealed record UpgradePlan(UpgradeKind Kind, IReadOnlyList<UpgradeStep> St
 /// <summary>
 /// Plans upgrading an item or spell to a selected rank, up to +10, with owned motes and spare item copies.
 /// Motes and copies add fixed points; points past a rank carry into the next one.
-/// Equipment steps spend only motes matching the step's tier, preserving higher tiers for later ranks, then copies
-/// (which have no tier limit). At the final target, sufficient copies are used without first spending unnecessary motes.
+/// Equipment steps spend usable motes smallest first, falling back to higher tiers when needed, then copies
+/// (which have no tier limit). Higher tiers are preserved when copies can finish the step.
+/// At the final target, sufficient copies are used without first spending unnecessary motes.
 /// Spells spend the lowest motes first. Nothing is condensed: once owned motes and copies
 /// run out, the rest of each step is listed as missing motes of the step's matching tier.
 /// <para>
@@ -383,7 +384,7 @@ public static class MoteUpgradePlanner
 
     /// <summary>
     /// Raises spare copies one rank at a time, always the lowest copy first so each small mote goes where it is still
-    /// allowed. Only motes matching the copy's next rank are used, so higher tiers are reserved for later ranks. A rank is
+    /// allowed. Usable motes are spent smallest first, including higher tiers when needed. A rank is
     /// only started if owned motes can finish it. Stops once copies hold enough points for the selected target.
     /// </summary>
     private static List<FedCopy> Feed(int[] motes, IReadOnlyList<int> copies, int fodder, int fodderRank,
@@ -426,7 +427,7 @@ public static class MoteUpgradePlanner
         var take = new List<UpgradeUse>();
         for (int moteRank = 1; moteRank <= MoteValues.MaxRank && points < needed; moteRank++)
         {
-            bool allowed = moteRank == feeder.Rank + 1 &&
+            bool allowed = feeder.Rank <= MoteValues.ItemMaxTier(moteRank) &&
                 (feedUsable || MoteValues.ItemMaxTier(moteRank) < mainRank);
             if (motes[moteRank] == 0 || !allowed)
             {
@@ -485,9 +486,16 @@ public static class MoteUpgradePlanner
                 points + spareCopies.Sum(copy => (long)MoteValues.CopyPoints(copy)) >= needed;
             for (int moteRank = 1; moteRank <= MoteValues.MaxRank && points < needed && !copiesFinishTarget; moteRank++)
             {
-                if (motes[moteRank] == 0 || (kind == UpgradeKind.Equipment && moteRank != rank + 1))
+                if (motes[moteRank] == 0 ||
+                    (kind == UpgradeKind.Equipment && rank > MoteValues.ItemMaxTier(moteRank)))
                 {
                     continue;
+                }
+
+                if (kind == UpgradeKind.Equipment && moteRank > rank + 1 &&
+                    points + spareCopies.Sum(copy => (long)MoteValues.CopyPoints(copy)) >= needed)
+                {
+                    break;
                 }
 
                 int value = MoteValues.Points(kind, moteRank);

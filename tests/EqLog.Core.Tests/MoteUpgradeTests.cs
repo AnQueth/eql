@@ -264,15 +264,41 @@ public class MoteUpgradeTests
     }
 
     [Fact]
-    public void EquipmentReservesHigherTierMotesForTheirMatchingRank()
+    public void EquipmentUsesHigherTierMotesWhenMatchingTierIsMissing()
     {
         var owned = new Dictionary<int, int> { [6] = 5 };
 
         var plan = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 4, 0, owned, []);
 
-        Assert.Empty(plan.Steps[0].Used);
-        Assert.Equal(4, plan.Steps[0].Missing);
-        Assert.Equal([new UpgradeUse(6, 5, IsCopy: false)], plan.Steps[1].Used);
+        Assert.Equal([new UpgradeUse(6, 3, IsCopy: false)], plan.Steps[0].Used);
+        Assert.Equal(0, plan.Steps[0].Missing);
+        Assert.Equal(2, plan.Steps[0].CarryAfter);
+        Assert.Equal([new UpgradeUse(6, 2, IsCopy: false)], plan.Steps[1].Used);
+        Assert.Equal(3, plan.Steps[1].Missing);
+        Assert.Equal(5, owned[6]);
+    }
+
+    [Fact]
+    public void EquipmentExhaustsMatchingMotesBeforeUsingHigherTiers()
+    {
+        var plan = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 4, 0,
+            new Dictionary<int, int> { [4] = 100, [5] = 1, [7] = 2, [10] = 100 }, [], targetRank: 5);
+
+        var step = Assert.Single(plan.Steps);
+        Assert.Equal([new UpgradeUse(5, 1, false), new UpgradeUse(7, 2, false)], step.Used);
+        Assert.Equal(0, step.Missing);
+        Assert.Equal(3, step.CarryAfter);
+    }
+
+    [Fact]
+    public void EquipmentPreservesHigherTierMotesWhenCopiesFinishAnIntermediateStep()
+    {
+        var plan = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 4, 0,
+            new Dictionary<int, int> { [6] = 6 }, [4], targetRank: 6);
+
+        Assert.Equal([new UpgradeUse(4, 1, true)], plan.Steps[0].Used);
+        Assert.Equal([new UpgradeUse(6, 6, false)], plan.Steps[1].Used);
+        Assert.Empty(plan.Missing);
     }
 
     [Fact]
@@ -406,14 +432,30 @@ public class MoteUpgradeTests
     }
 
     [Fact]
-    public void FeedingDoesNotUseHigherTierMotesToRaiseALowerRankCopy()
+    public void FeedingUsesHigherTierMotesWhenMatchingTierIsMissing()
     {
-        var owned = new Dictionary<int, int> { [6] = 5 };
+        var owned = new Dictionary<int, int> { [6] = 8 };
 
-        var plan = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 4, 0, owned, [4], new FeedOptions());
+        var plan = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 6, 0, owned, [4],
+            new FeedOptions(), targetRank: 7);
 
-        Assert.Empty(plan.FedCopies);
-        Assert.Equal(5, plan.MotesUsed.GetValueOrDefault(6));
+        var fed = Assert.Single(plan.FedCopies);
+        Assert.Equal(6, fed.EndRank);
+        Assert.Equal([new UpgradeUse(6, 8, false)], fed.Motes);
+        Assert.Empty(plan.Missing);
+    }
+
+    [Fact]
+    public void FeedingCanSkipMissingTiersWithOutgrownMotesOnly()
+    {
+        var plan = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 4, 0,
+            new Dictionary<int, int> { [4] = 4 }, [0],
+            new FeedOptions(FeedUsableMotes: false), targetRank: 5);
+
+        var fed = Assert.Single(plan.FedCopies);
+        Assert.Equal(4, fed.EndRank);
+        Assert.Equal([new UpgradeUse(4, 4, false)], fed.Motes);
+        Assert.Empty(plan.Missing);
     }
 
     [Fact]

@@ -69,6 +69,24 @@ public sealed class MotePlanningTests
         Assert.Equal(48, model.RemainingPoints);
     }
 
+    [Theory]
+    [InlineData(MotePlanPage.Upgrade)]
+    [InlineData(MotePlanPage.Farm)]
+    public void MissingIntermediateTiersDoNotBlockOwnedHigherMotes(MotePlanPage page)
+    {
+        var request = Request(4, 6) with
+        {
+            Page = page,
+        };
+        var model = MotePlanningService.Prepare(request, new Dictionary<int, int> { [7] = 7 }, []);
+
+        Assert.Empty(model.Missing);
+        AssertStep(model.Steps[0], 4, 5, 16, 0, 0, 5);
+        AssertStep(model.Steps[1], 5, 6, 32, 5, 0, 1);
+        Assert.Equal(new MoteResourceCount(7, "Superior", 7), Assert.Single(model.MotesUsed));
+        Assert.All(model.FarmTargets, target => Assert.Equal(0, target.AdditionalCopies));
+    }
+
     [Fact]
     public void ProgressAndFinalTargetDoNotSpendMotesMerelyToCarryBeyondTheTarget()
     {
@@ -200,7 +218,7 @@ public sealed class MotePlanningTests
             Feeding = true,
         };
         var model = MotePlanningService.Prepare(request, new Dictionary<int, int> { [8] = 3, [9] = 2 }, []);
-        Assert.Equal([new MoteFarmTarget(8, 7), new MoteFarmTarget(9, 22), new MoteFarmTarget(10, 54)], model.FarmTargets);
+        Assert.Equal([new MoteFarmTarget(8, 6), new MoteFarmTarget(9, 22), new MoteFarmTarget(10, 54)], model.FarmTargets);
         Assert.Equal([new MoteCopyOnlyStep(7, 8, 8), new MoteCopyOnlyStep(8, 9, 16),
             new MoteCopyOnlyStep(9, 10, 32)], model.CopyOnlySteps);
     }

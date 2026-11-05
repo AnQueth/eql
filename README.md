@@ -968,7 +968,8 @@ on spare copies before merging them.
   Equipment storage, other collections, installed augments/exaltations, and motes; selection does not
   verify that the game permits upgrading that item. Enter **Points** if it already has progress toward the next rank.
 - **Use owned motes** spends the motes confirmed by your last inventory export. For equipment, each rank uses
-  only its matching mote tier; higher tiers are reserved for later ranks rather than spent to reach a lower rank.
+  the smallest usable motes first, falling back to higher tiers when smaller tiers are missing or insufficient.
+  Higher tiers are saved when spare copies can already finish the step.
 - **Use inventory copies** (equipment only) then merges spare copies of the same item from your inventory export,
   lowest first. A +N copy counts as exactly +N (2^N points), with no partial progress. One copy at the current rank
   is treated as the item being upgraded. Copies ranked above **Current** are never counted as spares (pick their rank
@@ -993,7 +994,7 @@ on spare copies before merging them.
   at +4, two +0 copies fed Infinitesimal ×1, Minor ×2 and Lesser ×2 each reach +3 and merge for the whole 16 points
   of +4 → +5, saving three Majors. The overlay lists what to feed each copy, then the steps for the main item, plus
   what feeding saves and what it spends instead.
-  - The lowest copy is always raised first, and each rank uses only its matching mote tier. A rank is only started if
+  - The lowest copy is always raised first, using the smallest usable motes and falling back to higher tiers as needed. A rank is only started if
     your motes can finish it. Points past a copy's last rank are shown as **Wasted**, because merging only passes on
     exactly 2^N.
   - **Include motes the item can still use** (on by default) also feeds motes the main item could take now, which
