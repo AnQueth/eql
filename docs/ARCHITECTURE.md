@@ -85,6 +85,70 @@ telemetry consent/instrumentation and Velopack's Windows update lifecycle remain
 presentation/host integration concerns. Manual isolated full-window review is still
 distinct from automated XAML/presenter coverage.
 
+## UI/backend contract
+
+The Overlay talks to the Application through exactly three kinds of surface, and nothing else:
+
+```mermaid
+flowchart LR
+    subgraph Overlay
+        V[Views / presenters]
+    end
+    subgraph Application
+        C[GameSession commands]
+        Q[Application queries and read models]
+        E[LogEngine - internal to GameSession]
+    end
+    V -- "commands: SetSpellTracked, RelearnSpawn, ..." --> C
+    C --> E
+    E -- "detached snapshots" --> Q
+    Q -- "LogSessionFrame / EngineQuerySnapshot / read models" --> V
+```
+
+**1. Detached snapshots (reads).** Views never receive the live `LogEngine` or its mutable
+stores. Each render frame carries a `LogSessionFrame` (`Snapshot`, `Chat`, `Replay`,
+`Queries`) whose `Queries` is an `EngineQuerySnapshot` — plain value data captured on the
+thread pool. `GameSession.Revision` rejects frames from a replaced engine, so a stale
+frame can never be applied after a session switch.
+
+**2. Commands (writes).** Every mutation goes through `GameSession` command methods:
+`SetSpellTracked`, `SetSpellDurationOverride`, `AddSpellDuration`, `RemoveSpellDuration`,
+`RelearnSpellDuration`, `SetSpawnTracked`, `RelearnSpawn`, `SetSpawnOverride`,
+`ApplySpawnWiki`, `ResetResistances`, `ResetSession`, `SetResetOnLogin`, and the
+`Save*Async` methods. Views hold no engine reference from which to bypass these.
+
+**3. Read models (prepared queries).** Rule-derived values are prepared in Application,
+never calculated in presentation:
+
+| UI surface | Contract type(s) |
+|---|---|
+| Spell countdowns / spawn timers | `EngineQuerySnapshot` (`SpellDurations`, `SpawnCandidates`) |
+| NPC compendium | `NpcReadModel`, `NpcEncounterDetails` |
+| Inventory, loot quests, Sky quests | `InventoryReadModel`, `QuestOpportunity`, `SkyItemProgress` |
+| Mote planning | `MoteInventoryReadModel`, `MotePlanReadModel` |
+| Combat / DPS | `CombatQueries`, fight snapshots from the frame |
+| Session stats (XP/AA rate) | `SessionQueries.ExperiencePercentPerHour` |
+| Raw log filtering | `RawLogQueries` (status enum + diagnostic, not sentences) |
+
+Read models hide their domain state: `InventoryReadModel` clones its private
+`QuestInventory` and exposes only immutable summaries; views cannot mutate it.
+
+**Data-only rule.** Application returns strongly typed data — counts, rates, enums,
+identifiers — never display wording, headings, tooltips or formatted tables. Overlay
+constructs all displayed text and layout from those values. Source text (item/mob names,
+log messages, user-authored templates) is data, not generated UI wording.
+
+**Composition.** Concrete adapters are constructed only in the explicit `*Composition`
+factories (`StartupComposition`, `InventoryComposition`, `SettingsComposition`,
+`TrackingComposition`, `WikiComposition`); views never open files, build HTTP clients or
+call concrete repositories.
+
+**Enforcement.** `LayerBoundaryTests` verify the reference graph and forbid file/HTTP/WPF
+access in Core/Application; `PresentationBoundaryTests` inspect compiled calls (including
+generated lambdas) to reject domain rule methods, calculated domain getters and live
+engine/store fields in presentation. Shared portable records may describe snapshot values;
+sharing their types is not permission to run their rules.
+
 ## Windows and presentation
 
 `MainWindow` is a hidden controller. Its settings UI is hosted by the visible `DockWindow`.
@@ -160,9 +224,17 @@ increase confirmed ownership. Owned is the sum of exported loose/worn storage co
 collections and installed augments separate. Legacy estimated Owned values are reconciled to
 saved storage counts on load.
 
-The former Loot quests settings tab is hosted in the `inventory` overlay: at startup
-`ConfigureInventoryOverlay` moves the XAML content (`LootQuestsContent`, with its event handlers)
-into the overlay through `OverlayPanel.SetBody`. Ready to merge has its own independent overlay.
+The loot quest UI is declared in `MainWindow.xaml` as a hidden settings tab
+(`LootQuestsTab`, `Visibility="Collapsed"`), but that tab never appears: at startup
+`ConfigureInventoryOverlay` detaches the tab's content (`LootQuestsContent`) and removes the
+`TabItem` from the settings `Tabs`, then reparents the same `DockPanel` into the inventory
+overlay panel through `OverlayPanel.SetBody`. WPF permits one visual parent, so this is a
+move, not a copy: the buttons' XAML event handlers (`LookupQuest_Click`, `OpenQuest_Click`,
+etc.), the `DataContext` binding to `InventoryViewModel` (set in `LootQuests.cs`), and all
+child controls travel with it. The adopted content's `Loaded`/`Unloaded` events suspend and
+resume the shared inventory filter work, so quest-panel visibility does not leave stale
+filter state behind. Ready to merge has its own independent overlay; `ConfigureMergeOverlay`
+builds that body programmatically instead of adopting XAML.
 The last parsed export rows are kept in memory. `InventoryExport.MergeGroups` groups loose rows by name without `+N`, and
 location text is built from the export path. Worn slot numbers are assigned in `Parse` before empty
 rows are skipped, because repeated roots (Ear, Wrist, Fingers, Any Slot) are only distinguished by order.

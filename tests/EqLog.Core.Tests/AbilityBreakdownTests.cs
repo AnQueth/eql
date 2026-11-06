@@ -8,6 +8,45 @@ public class AbilityBreakdownTests
     private static readonly DateTime Start = new(2026, 10, 27, 12, 0, 0);
 
     [Fact]
+    public void FightIncomingDamageIncludesPullHitsAndRecipientsWithoutChangingOutgoingTotals()
+    {
+        var tracker = new FightTracker();
+        tracker.OnDamage(new(Start.AddSeconds(-2), "a goblin", Names.You, 10, DamageKind.Melee, null, null));
+        tracker.OnDamage(new(Start, Names.You, "a goblin", 100, DamageKind.Melee, null, null));
+        tracker.OnDamage(new(Start.AddSeconds(1), "a goblin", "Fluffy", 20, DamageKind.Melee, null, null));
+        tracker.OnDamage(new(Start.AddSeconds(2), "a goblin", "Cleric", 30, DamageKind.DirectSpell, "Fire", null));
+        tracker.OnDamage(new(Start.AddSeconds(3), "a rat", Names.You, 40, DamageKind.Melee, null, null));
+        var before = tracker.Current()!;
+        Assert.Equal(100, before.Total);
+        Assert.Equal(1, before.DurationSeconds);
+        Assert.Equal(new[] { Names.You, "Fluffy", "Cleric" }, before.IncomingDamageEvents.Select(e => e.Target));
+        Assert.Equal(60, before.IncomingDamageEvents.Sum(e => e.Amount));
+
+        tracker.OnDamage(new(Start.AddSeconds(4), "a goblin", Names.You, 50, DamageKind.Melee, null, null));
+        Assert.Equal(3, before.IncomingDamageEvents.Count);
+        tracker.OnKill(new(Start.AddSeconds(5), Names.You, "a goblin"));
+        tracker.OnDamage(new(Start.AddSeconds(6), Names.You, "a goblin", 200, DamageKind.Melee, null, null));
+        Assert.Empty(tracker.Current()!.IncomingDamageEvents);
+        Assert.Equal(4, tracker.Recent(2).Last().IncomingDamageEvents.Count);
+        tracker.Clear();
+        Assert.Null(tracker.Current());
+    }
+
+    [Fact]
+    public void IncomingDamageOutsideFightTimeoutDoesNotLeakIntoAnotherFight()
+    {
+        var tracker = new FightTracker();
+        tracker.OnDamage(new(Start.AddSeconds(-16), "a goblin", Names.You, 10, DamageKind.Melee, null, null));
+        tracker.OnDamage(new(Start, Names.You, "a goblin", 100, DamageKind.Melee, null, null));
+        Assert.Empty(tracker.Current()!.IncomingDamageEvents);
+        tracker.OnDamage(new(Start.AddSeconds(16), "a goblin", Names.You, 20, DamageKind.Melee, null, null));
+        Assert.Empty(tracker.Current()!.IncomingDamageEvents);
+        tracker.OnDamage(new(Start.AddSeconds(17), Names.You, "a goblin", 200, DamageKind.Melee, null, null));
+        Assert.Equal(20, Assert.Single(tracker.Current()!.IncomingDamageEvents).Amount);
+        Assert.Empty(tracker.Recent(2).Last().IncomingDamageEvents);
+    }
+
+    [Fact]
     public void FightBreakdown_SeparatesCombatantsAndAbilities_UsesFightDuration()
     {
         var tracker = new FightTracker();
@@ -19,6 +58,8 @@ public class AbilityBreakdownTests
         var fight = tracker.Current()!;
         var you = fight.You!;
         Assert.Equal(5, fight.DurationSeconds);
+        Assert.Equal(4, fight.DamageEvents.Count);
+        Assert.Equal(new[] { Start, Start.AddSeconds(4), Start.AddSeconds(4), Start.AddSeconds(4) }, fight.DamageEvents.Select(e => e.Time));
         Assert.Equal(you.Total, you.Abilities.Sum(a => a.Total));
         Assert.Equal(you.Dps, you.Abilities.Sum(a => a.PerSecond));
         var fire = Assert.Single(you.Abilities, a => a.Name == "Fire");

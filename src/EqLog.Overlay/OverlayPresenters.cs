@@ -454,7 +454,9 @@ public static class OverlayPresenters
                     a.Percent / 100,
                     you ? YouBar : OtherBar,
                     Bold: you, Breakdown: new(Who(a.Name), $"{f.Target} · {Clock(f.DurationSeconds)} fight · snapshot at click", "DPS", a.Abilities,
-                        a.Timeline, f.DurationSeconds, f.Start, a.AbilityTimelines)));
+                        a.Timeline, f.DurationSeconds, f.Start, a.AbilityTimelines,
+                        f.DamageEvents.Where(e => string.Equals(e.Attacker, a.Name, StringComparison.OrdinalIgnoreCase)).ToArray(),
+                        f.IncomingDamageEvents)));
             }
         }
 
@@ -477,7 +479,7 @@ public static class OverlayPresenters
     {
         var details = CombatQueries.Fight(fight);
         return new(fight.Target, $"All attackers · {Clock(fight.DurationSeconds)} fight · snapshot at click", "DPS", details.Abilities,
-            fight.Timeline, fight.DurationSeconds, fight.Start, details.Timelines);
+            fight.Timeline, fight.DurationSeconds, fight.Start, details.Timelines, fight.DamageEvents, fight.IncomingDamageEvents);
     }
 
     private static OverlayContent Taken(EngineSnapshot s, EngineQuerySnapshot _, OverlayView __)

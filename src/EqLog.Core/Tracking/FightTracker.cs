@@ -132,6 +132,10 @@ public sealed record FightSnapshot(
     }
 
     public IReadOnlyList<DamageTimelinePoint> Timeline { get; init; } = [];
+
+    public IReadOnlyList<DamageEvent> DamageEvents { get; init; } = [];
+
+    public IReadOnlyList<DamageEvent> IncomingDamageEvents { get; init; } = [];
 }
 
 /// <summary>Groups damage dealt to each creature into fights and computes per-attacker DPS.</summary>
@@ -140,6 +144,7 @@ public sealed class FightTracker
     private const int MaxFights = 60;
     private readonly Dictionary<string, Fight> _active = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Fight> _fights = [];
+    private readonly List<DamageEvent> _pendingIncoming = [];
 
     public TimeSpan FightTimeout { get; set; } = TimeSpan.FromSeconds(15);
 
@@ -160,6 +165,19 @@ public sealed class FightTracker
 
     public void OnDamage(DamageEvent e)
     {
+        _pendingIncoming.RemoveAll(d => e.Time - d.Time > FightTimeout);
+        if (e.Attacker != Names.You && e.Attacker != e.Target)
+        {
+            if (_active.TryGetValue(e.Attacker, out var incomingFight) &&
+                e.Time - incomingFight.LastActivity <= FightTimeout)
+            {
+                incomingFight.IncomingDamageEvents.Add(e);
+                return;
+            }
+
+            _pendingIncoming.Add(e);
+        }
+
         if (e.Target == Names.You || e.Attacker == e.Target)
         {
             return;
@@ -179,6 +197,9 @@ public sealed class FightTracker
             }
 
             fight = new Fight(e.Target, e.Time);
+            fight.IncomingDamageEvents.AddRange(_pendingIncoming.Where(d =>
+                string.Equals(d.Attacker, e.Target, StringComparison.OrdinalIgnoreCase)));
+            _pendingIncoming.RemoveAll(d => string.Equals(d.Attacker, e.Target, StringComparison.OrdinalIgnoreCase));
             _active[e.Target] = fight;
             _fights.Add(fight);
             if (_fights.Count > MaxFights)
@@ -201,6 +222,7 @@ public sealed class FightTracker
 
     public void OnKill(KillEvent e)
     {
+        _pendingIncoming.RemoveAll(d => string.Equals(d.Attacker, e.Victim, StringComparison.OrdinalIgnoreCase));
         if (_active.TryGetValue(e.Victim, out var fight))
         {
             fight.Killed = true;
@@ -221,6 +243,7 @@ public sealed class FightTracker
     {
         _active.Clear();
         _fights.Clear();
+        _pendingIncoming.Clear();
         ResetSession();
     }
 
@@ -258,6 +281,9 @@ public sealed class FightTracker
     {
         private readonly Dictionary<string, Combatant> _attackers = new(StringComparer.OrdinalIgnoreCase);
         private readonly SortedDictionary<int, long> _timeline = [];
+        private readonly List<DamageEvent> _damageEvents = [];
+
+        public List<DamageEvent> IncomingDamageEvents { get; } = [];
 
         public string Target { get; } = target;
 
@@ -284,6 +310,8 @@ public sealed class FightTracker
 
         public void Add(DamageEvent e)
         {
+            _damageEvents.Add(e);
+
             if (!_attackers.TryGetValue(e.Attacker, out var c))
             {
                 c = new Combatant(e.Attacker);
@@ -341,6 +369,8 @@ public sealed class FightTracker
             return new FightSnapshot(Target, Start, LastActivity, seconds, Total, Total / seconds, IsActive, Killed, attackers)
             {
                 Timeline = ToPoints(_timeline),
+                DamageEvents = _damageEvents.ToArray(),
+                IncomingDamageEvents = IncomingDamageEvents.ToArray(),
             };
         }
 

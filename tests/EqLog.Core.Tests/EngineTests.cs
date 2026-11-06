@@ -13,6 +13,27 @@ public class EngineTests
     }
 
     [Fact]
+    public void FightSnapshotIncludesLoggedIncomingDamageForYouPetAndGroupMember()
+    {
+        var engine = new LogEngine { CharacterName = "Quethrosar" };
+        engine.ProcessLines([
+            L(0, "Guardian Golem hits YOU for 10 points of damage."),
+            L(1, "You slash Guardian Golem for 100 points of damage."),
+            L(2, "Guardian Golem hits Fluffy for 20 points of damage."),
+            L(3, "Guardian Golem hits Gibarn for 30 points of damage."),
+            L(4, "Fluffy hits Guardian Golem for 50 points of damage."),
+            L(5, "You have slain Guardian Golem!"),
+        ]);
+
+        var fight = Assert.IsType<FightSnapshot>(engine.Snapshot(T0.AddSeconds(6)).CurrentFight);
+        Assert.Equal(new[] { Names.You, "Fluffy", "Gibarn" }, fight.IncomingDamageEvents.Select(e => e.Target));
+        Assert.Equal(60, fight.IncomingDamageEvents.Sum(e => e.Amount));
+        Assert.Equal(150, fight.Total);
+        Assert.Equal(T0.AddSeconds(1), fight.Start);
+        Assert.Equal(5, fight.DurationSeconds);
+    }
+
+    [Fact]
     public void BuildsFightWithPerAttackerDps()
     {
         var engine = new LogEngine { CharacterName = "Quethrosar" };

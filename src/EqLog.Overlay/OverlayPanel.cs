@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Media;
+using EqLog.Core.Parsing;
 using EqLog.Core.Tracking;
 using EqLog.Core.Triggers;
 using System.Collections.ObjectModel;
@@ -12,7 +13,8 @@ namespace EqLog.Overlay;
 /// <summary>One line in an overlay: left/right text with an optional proportional bar behind it.</summary>
 public sealed record AbilityBreakdown(string Title, string Context, string RateLabel, IReadOnlyList<AbilityStats> Abilities,
     IReadOnlyList<DamageTimelinePoint>? Timeline = null, double TimelineSeconds = 0, DateTime? TimelineStart = null,
-    IReadOnlyList<AbilityTimeline>? AbilityTimelines = null);
+    IReadOnlyList<AbilityTimeline>? AbilityTimelines = null, IReadOnlyList<DamageEvent>? DamageEvents = null,
+    IReadOnlyList<DamageEvent>? IncomingDamageEvents = null);
 
 public sealed record SpawnTrackChange(string Zone, string Mob, bool Tracked);
 
@@ -1078,6 +1080,7 @@ public sealed class OverlayPanel : ContentControl
                 Padding = new Thickness(0),
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 Cursor = System.Windows.Input.Cursors.Hand,
+                ClickMode = row.Breakdown is null ? ClickMode.Release : ClickMode.Press,
                 ToolTip = row.Breakdown is not null ? "Click for ability breakdown" :
                     row.LootItem is not null ? $"Open {row.LootItem} on EQLWiki (right-click for quest references)" :
                     row.ToolTip ?? "Open on EQLWiki",

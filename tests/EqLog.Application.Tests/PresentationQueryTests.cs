@@ -3,6 +3,7 @@ using EqLog.Application.Presentation;
 using EqLog.Application.Sessions;
 using EqLog.Application.Tracking;
 using EqLog.Core;
+using EqLog.Core.Parsing;
 using EqLog.Core.Tracking;
 using EqLog.Core.Triggers;
 
@@ -10,6 +11,31 @@ namespace EqLog.Application.Tests;
 
 public sealed class PresentationQueryTests
 {
+    [Fact]
+    public void IncomingDamageFiltersRecipientsAndIncludesPullAndTrailingHitsInItsSpan()
+    {
+        var start = new DateTime(2026, 11, 6);
+        var events = new DamageEvent[]
+        {
+            new(start.AddSeconds(5), "a goblin", "Pet", 40, DamageKind.DirectSpell, "Fire", "Critical"),
+            new(start.AddSeconds(-2), "a goblin", "Pet", 20, DamageKind.Melee, null, null),
+            new(start, "a goblin", Names.You, 999, DamageKind.Melee, null, null),
+            new(start.AddSeconds(5), "a goblin", "pet", 10, DamageKind.DirectSpell, "fire", null),
+        };
+        var details = CombatQueries.IncomingDamage(events, "PET", start, 3);
+        Assert.Equal(start.AddSeconds(-2), details.Start);
+        Assert.Equal(8, details.Seconds);
+        Assert.Equal(3, details.Events.Count);
+        Assert.Equal(70, details.Abilities.Sum(a => a.Total));
+        Assert.Equal(70.0 / 8, details.Abilities.Sum(a => a.PerSecond));
+        Assert.Equal(new[] { 0, 7 }, details.Timeline.Select(p => p.Second));
+        var fire = Assert.Single(details.Abilities, a => a.Name == "Fire");
+        Assert.Equal(2, fire.Hits);
+        Assert.Equal(1, fire.Crits);
+        Assert.Equal(2, details.Timelines.Count);
+        Assert.Empty(CombatQueries.IncomingDamage(events, "Cleric", start, 3).Events);
+    }
+
     [Fact]
     public void SessionQueriesPreserveNormalizedLootOrderingAndDetachTheResult()
     {

@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Media;
+using EqLog.Core.Parsing;
 using EqLog.Core.Tracking;
 
 namespace EqLog.Overlay;
@@ -81,6 +82,32 @@ public sealed class AbilityBreakdownWindow : Window
         return table;
     }
 
+    internal static DataGrid BuildDamageEventsTable(System.Collections.IEnumerable rows)
+    {
+        var table = new DataGrid
+        {
+            IsReadOnly = true,
+            AutoGenerateColumns = false,
+            CanUserAddRows = false,
+            CanUserDeleteRows = false,
+            ItemsSource = rows,
+        };
+        table.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Time",
+            Binding = new Binding(nameof(DamageEvent.Time)) { StringFormat = "HH:mm:ss.fff" },
+            Width = DataGridLength.Auto,
+            MinWidth = 85,
+        });
+        AddColumn(table, "Attacker", nameof(DamageEvent.Attacker), null);
+        AddColumn(table, "Target", nameof(DamageEvent.Target), null);
+        AddColumn(table, "Type", nameof(DamageEvent.Kind), null);
+        AddColumn(table, "Source", nameof(DamageEvent.Source), null);
+        AddColumn(table, "Damage", nameof(DamageEvent.Amount), "N0");
+        AddColumn(table, "Modifier", nameof(DamageEvent.Modifier), null);
+        return table;
+    }
+
     internal static FrameworkElement BuildTimelineContent(AbilityBreakdown breakdown)
     {
         return BuildTimeline(breakdown.Timeline ?? [], breakdown.TimelineSeconds, breakdown.TimelineStart);
@@ -96,6 +123,7 @@ public sealed class AbilityBreakdownWindow : Window
     {
         int total = Math.Max(1, (int)Math.Ceiling(seconds));
         total = Math.Max(total, lanes.Max(l => l.Points.Max(p => p.Second)) + 1);
+        var slices = BuildTimeSlices(total, TimelineTickInterval(total));
         if (panel is null)
         {
             panel = new DockPanel { Margin = new Thickness(8) };
@@ -115,7 +143,7 @@ public sealed class AbilityBreakdownWindow : Window
 
         var info = (TextBlock)panel.Children[0];
         info.Text = $"Each row spans the full fight ({OverlayPresenters.Clock(total)}). Bars run from when a damage type started landing to when it finished; " +
-                    $"a gap over {DamageTimeline.SegmentGapSeconds} seconds starts a new bar. Hover a bar for times and damage.";
+                    $"a gap over {DamageTimeline.SegmentGapSeconds} seconds starts a new bar. Vertical marks scale with fight length; hover a bar for times and damage.";
         // Keep the scroll viewer and its content grid alive so refreshes retain the user's offset.
         var grid = (Grid)((ScrollViewer)panel.Children[1]).Content;
         grid.Children.Clear();
@@ -136,17 +164,12 @@ public sealed class AbilityBreakdownWindow : Window
             };
             Grid.SetRow(name, row);
             grid.Children.Add(name);
-            Grid.SetRow(BuildLane(segments, total, row, grid), row);
+            Grid.SetRow(BuildLane(segments, total, slices, grid), row);
             row++;
         }
 
-        var axis = new Grid { Margin = new Thickness(0, 4, 0, 0) };
-        var left = new TextBlock { Text = start is { } s0 ? $"0:00 ({s0:HH:mm:ss})" : "0:00" };
-        var right = new TextBlock { Text = OverlayPresenters.Clock(total), HorizontalAlignment = HorizontalAlignment.Right };
-        left.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
-        right.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
-        axis.Children.Add(left);
-        axis.Children.Add(right);
+        var axis = BuildLaneTimeAxis(slices, start);
+        axis.Margin = new Thickness(0, 4, 0, 0);
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         Grid.SetRow(axis, row);
         Grid.SetColumn(axis, 1);
@@ -155,7 +178,74 @@ public sealed class AbilityBreakdownWindow : Window
         return panel;
     }
 
-    private static FrameworkElement BuildLane(IReadOnlyList<DamageSegment> segments, int totalSeconds, int row, Grid grid)
+    internal static int TimelineTickInterval(int totalSeconds)
+    {
+        double targetInterval = Math.Max(1, totalSeconds) / 6.0;
+        double magnitude = Math.Pow(10, Math.Floor(Math.Log10(targetInterval)));
+        double normalized = targetInterval / magnitude;
+        double multiplier = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+        return Math.Max(1, (int)Math.Ceiling(multiplier * magnitude));
+    }
+
+    private static IReadOnlyList<int> BuildTimeSlices(int totalSeconds, int interval)
+    {
+        var slices = new List<int>();
+        int remaining = totalSeconds;
+        while (remaining > interval)
+        {
+            slices.Add(interval);
+            remaining -= interval;
+        }
+
+        slices.Add(remaining);
+        return slices;
+    }
+
+    private static Grid BuildLaneTimeAxis(IReadOnlyList<int> slices, DateTime? start)
+    {
+        var axis = new Grid();
+        for (int i = 0; i < slices.Count; i++)
+        {
+            axis.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(slices[i], GridUnitType.Star) });
+        }
+
+        int elapsed = 0;
+        var zero = new TextBlock
+        {
+            Text = start is { } value ? $"0:00 ({value:HH:mm:ss})" : "0:00",
+        };
+        zero.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
+        axis.Children.Add(zero);
+        for (int i = 0; i < slices.Count; i++)
+        {
+            elapsed += slices[i];
+            if (i == slices.Count - 1)
+            {
+                var end = new TextBlock
+                {
+                    Text = OverlayPresenters.Clock(elapsed),
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                };
+                end.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
+                Grid.SetColumn(end, i);
+                axis.Children.Add(end);
+                continue;
+            }
+
+            var tick = new TextBlock
+            {
+                Text = OverlayPresenters.Clock(elapsed),
+                HorizontalAlignment = HorizontalAlignment.Right,
+            };
+            tick.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
+            Grid.SetColumn(tick, i);
+            axis.Children.Add(tick);
+        }
+
+        return axis;
+    }
+
+    private static FrameworkElement BuildLane(IReadOnlyList<DamageSegment> segments, int totalSeconds, IReadOnlyList<int> slices, Grid grid)
     {
         var track = new Grid { Margin = new Thickness(0, 2, 0, 2) };
         var background = new Border { Opacity = 0.18 };
@@ -184,6 +274,24 @@ public sealed class AbilityBreakdownWindow : Window
             track.Children.Add(span);
         }
 
+        var guides = new Grid { IsHitTestVisible = false };
+        for (int i = 0; i < slices.Count; i++)
+        {
+            guides.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(slices[i], GridUnitType.Star) });
+            if (i < slices.Count - 1)
+            {
+                var line = new Border
+                {
+                    BorderThickness = new Thickness(0, 0, 1, 0),
+                    Opacity = 0.55,
+                };
+                line.SetResourceReference(Border.BorderBrushProperty, "NightMuted");
+                Grid.SetColumn(line, i);
+                guides.Children.Add(line);
+            }
+        }
+
+        track.Children.Add(guides);
         Grid.SetColumn(track, 1);
         grid.Children.Add(track);
         return track;

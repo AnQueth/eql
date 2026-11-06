@@ -1,14 +1,50 @@
 using EqLog.Core.Tracking;
+using EqLog.Core.Parsing;
 
 namespace EqLog.Application.Presentation;
 
 public sealed record FightDetails(IReadOnlyList<AbilityStats> Abilities, IReadOnlyList<AbilityTimeline> Timelines);
 public sealed record TimelineBucket(int StartSecond, int EndSecond, long Amount, double PerSecond);
 public sealed record HealingDetails(double OverhealPercent, IReadOnlyDictionary<string, long> HealerTotals);
+public sealed record IncomingDamageDetails(
+    DateTime Start,
+    double Seconds,
+    IReadOnlyList<AbilityStats> Abilities,
+    IReadOnlyList<DamageTimelinePoint> Timeline,
+    IReadOnlyList<AbilityTimeline> Timelines,
+    IReadOnlyList<DamageEvent> Events);
 
 /// <summary>Combat aggregation and timeline rules produce detached values for charts and presentation.</summary>
 public static class CombatQueries
 {
+    public static IncomingDamageDetails IncomingDamage(
+        IReadOnlyList<DamageEvent> incoming, string recipient, DateTime fightStart, double fightSeconds)
+    {
+        var events = incoming.Where(e => string.Equals(e.Target, recipient, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(e => e.Time).ToArray();
+        DateTime start = events.Length > 0 && events[0].Time < fightStart ? events[0].Time : fightStart;
+        DateTime end = fightStart.AddSeconds(Math.Max(1, fightSeconds) - 1);
+        if (events.Length > 0 && events[^1].Time > end)
+        {
+            end = events[^1].Time;
+        }
+
+        double seconds = Math.Max(1, (end - start).TotalSeconds + 1);
+        var totals = new AbilityTotals();
+        foreach (var e in events)
+        {
+            totals.Add(e.Source ?? (e.Kind == DamageKind.Melee ? "Melee" : e.Kind.ToString()), e.Amount, e.IsCritical);
+        }
+
+        var timeline = events.GroupBy(e => Math.Max(0, (int)(e.Time - start).TotalSeconds))
+            .OrderBy(g => g.Key).Select(g => new DamageTimelinePoint(g.Key, g.Sum(e => e.Amount))).ToArray();
+        var lanes = events.GroupBy(e => e.Source ?? (e.Kind == DamageKind.Melee ? "Melee" : e.Kind.ToString()),
+                StringComparer.OrdinalIgnoreCase)
+            .Select(g => new AbilityTimeline(g.Key, g.GroupBy(e => Math.Max(0, (int)(e.Time - start).TotalSeconds))
+                .OrderBy(p => p.Key).Select(p => new DamageTimelinePoint(p.Key, p.Sum(e => e.Amount))).ToArray()));
+        return new IncomingDamageDetails(start, seconds, totals.Snapshot(seconds), timeline, DamageTimeline.Merge(lanes), events);
+    }
+
     public static double PersonalDps(FightSnapshot fight)
     {
         return fight.You?.Dps ?? 0;

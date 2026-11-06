@@ -34,6 +34,7 @@ public sealed class OverlayChromeTests
                 }
                 AsyncTextFilterTests.VerifyQuestVirtualization();
                 VerifyMobInfoTitleAlwaysVisible();
+                VerifyBreakdownButtonsUsePressClickMode();
 
                 var panel = new OverlayPanel("timers", "Spell Timers", false);
                 var frame = Assert.IsType<Border>(panel.Content);
@@ -296,6 +297,46 @@ public sealed class OverlayChromeTests
         {
         });
         Assert.Equal(showKnown.IsChecked == true ? Visibility.Visible : Visibility.Collapsed, shownFilter.Visibility);
+    }
+
+    private static void VerifyBreakdownButtonsUsePressClickMode()
+    {
+        var panel = new OverlayPanel("dps", "DPS", false);
+        var breakdown = new AbilityBreakdown("Bob", "", "DPS", []);
+        panel.Update("a goblin", null, [new OverlayRow("Bob", Breakdown: breakdown)]);
+
+        var button = FindLogicalChild<Button>(panel, candidate => Equals(candidate.ToolTip, "Click for ability breakdown"))!;
+        Assert.Equal(ClickMode.Press, button.ClickMode);
+        int opened = 0;
+        panel.BreakdownRequested += _ => opened++;
+
+        button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+        Assert.Equal(1, opened);
+
+        panel.Update("a goblin", null, [new OverlayRow("Bob", "20 dps", Breakdown: breakdown with { Title = "Updated" })]);
+        var refreshedButton = FindLogicalChild<Button>(panel, candidate => Equals(candidate.ToolTip, "Click for ability breakdown"))!;
+        Assert.NotSame(button, refreshedButton);
+        Assert.Equal(ClickMode.Press, refreshedButton.ClickMode);
+    }
+
+    private static T? FindLogicalChild<T>(DependencyObject parent, Func<T, bool> predicate)
+        where T : DependencyObject
+    {
+        foreach (object child in LogicalTreeHelper.GetChildren(parent))
+        {
+            if (child is T match && predicate(match))
+            {
+                return match;
+            }
+
+            if (child is DependencyObject node && FindLogicalChild(node, predicate) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
     }
 
     private static void VerifyItemFilterToolbars()

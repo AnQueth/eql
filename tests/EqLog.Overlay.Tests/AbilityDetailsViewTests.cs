@@ -3,6 +3,7 @@ using System.Runtime.ExceptionServices;
 using System.Windows;
 using System.Windows.Controls;
 using EqLog.Core.Tracking;
+using EqLog.Core.Parsing;
 using Xunit;
 
 namespace EqLog.Overlay.Tests;
@@ -17,6 +18,44 @@ public sealed class AbilityDetailsViewTests
     private static AbilityBreakdown Breakdown(params AbilityStats[] rows)
     {
         return new AbilityBreakdown("Fight", "", "DPS", rows, Timeline: [], TimelineSeconds: 10, TimelineStart: DateTime.Now);
+    }
+
+    [Fact]
+    public void IncomingDamageShowsOnlyDamageTakenByPlayerAcrossUpdates()
+    {
+        RunOnSta(() =>
+        {
+            var start = new DateTime(2026, 11, 6, 12, 0, 0);
+            var breakdown = Breakdown() with
+            {
+                TimelineStart = start,
+                IncomingDamageEvents =
+                [
+                    new(start, "a goblin", Names.You, 10, DamageKind.Melee, null, null),
+                    new(start.AddSeconds(1), "a goblin", "Fluffy", 20, DamageKind.Melee, null, null),
+                    new(start.AddSeconds(2), "a goblin", "Cleric", 30, DamageKind.Melee, null, null),
+                ],
+            };
+            var view = new AbilityDetailsView(breakdown);
+            var tabs = Assert.IsType<TabControl>(view.Root);
+            var incoming = tabs.Items.OfType<TabItem>().Single(t => Equals(t.Header, "Incoming damage"));
+            var panel = Assert.IsType<DockPanel>(incoming.Content);
+            Assert.Empty(panel.Children.OfType<ComboBox>());
+            Assert.Empty(panel.Children.OfType<Button>());
+            var summary = Assert.IsType<TextBlock>(panel.Children[0]);
+            Assert.Contains("10 incoming damage", summary.Text);
+            Assert.DoesNotContain("20 incoming damage", summary.Text);
+            tabs.SelectedItem = incoming;
+            Assert.True(view.TryUpdate(breakdown));
+            Assert.Same(incoming, tabs.SelectedItem);
+            breakdown = breakdown with
+            {
+                IncomingDamageEvents = breakdown.IncomingDamageEvents!.Append(
+                    new DamageEvent(start.AddSeconds(3), "a goblin", "NewMember", 40, DamageKind.Melee, null, null)).ToArray(),
+            };
+            Assert.True(view.TryUpdate(breakdown));
+            Assert.Contains("10 incoming damage", summary.Text);
+        });
     }
 
     [Fact]
