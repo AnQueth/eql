@@ -43,6 +43,7 @@ eqlog_*.txt
 *.tmp
 *.bak
 *.log
+src/EqLog.Overlay/*_wpftmp.csproj
 Thumbs.db
 Desktop.ini
 .DS_Store

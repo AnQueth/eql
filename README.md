@@ -296,15 +296,13 @@ more than 7 seconds starts a new bar, so 6-second DoT ticks stay together. In **
 click a recipient, incoming healer, or **Observed healers** name for session ability totals.
 Damage-type graphs include vertical time guides that scale with fight length. **Damage data**
 lists individual damage events in time order.
-The **Incoming damage** tab in DPS breakdowns lets you select **You**, a pet, or a group member
-by their logged recipient name. Names observed taking hits from the selected enemy appear
-automatically; enter another exact logged name and click **Show** to select it manually.
-The tab shows incoming totals/DTPS, ability totals, both graphs, and chronological damage events.
+The **Incoming damage** tab in DPS breakdowns shows damage logged against **You**, including
+incoming totals/DTPS, ability totals, both graphs, and chronological damage events. Pet and group
+member recipients are not selectable in this view.
 It includes observed pull hits within the fight timeout before your first outgoing hit and
 trailing hits while the fight remains active; incoming rates use that extended span without
 changing outgoing DPS or fight-start rules. Only hits from that fight's named enemy are matched:
-unknown-caster damage and damage absent from your log cannot be reconstructed. Observed names
-are not proof of pet ownership or group membership.
+unknown-caster damage and damage absent from your log cannot be reconstructed.
 Choose **Full details** in the DPS overlay to show the same ability table and damage graph tabs
 directly in the overlay; **Compact** restores the current small rows. The selection is saved.
 Full details update live each second without resetting column widths, sorting, the selected tab,
