@@ -6,7 +6,7 @@
         What's New in 1.0.42
     </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
-        Released November 6, 2026 at 4:20 PM CT.
+        Released November 6, 2026 at 4:21 PM CT.
     </Paragraph>
     <Section>
         <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
