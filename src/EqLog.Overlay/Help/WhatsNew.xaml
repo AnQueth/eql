@@ -1,7 +1,58 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.42" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.43" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.43
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released November 7, 2026 at 10:28 AM CT.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Find tradeskill recipes and ingredient sellers
+        </Paragraph>
+        <Paragraph>
+            Enable Tradeskills under Settings &gt; General &gt; Overlays. Choose a tradeskill,
+            search by recipe name or crafted item, and select a recipe to see ingredient
+            quantities, its trivial, and its crafting container when the wiki lists them.
+            Choose Name only or Trivial, then name to order the recipe list.
+            The panel starts docked and can float; unlock a floating panel to use its controls.
+        </Paragraph>
+        <Paragraph>
+            Ingredient sellers are grouped by zone and ordered by name, with shop details
+            and coordinates when available. Click an ingredient or merchant to open its
+            wiki page. Current-zone merchants only follows the zone from your character
+            log and filters sellers without hiding any recipe ingredients.
+        </Paragraph>
+        <Paragraph>
+            The skill, search, and sort controls share one compact row. The recipe dropdown
+            displays loading activity while catalogs, combine details, or merchants are
+            being retrieved. Your selected skill, search, recipe, sort order, and zone filter
+            are saved. Refresh fetches new information; Reset all wiki caches under Settings
+            &gt; General &gt; Wiki caches also clears tradeskill data.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Use item-template recipes instead of partial overview rows
+        </Paragraph>
+        <Paragraph>
+            Recipes come from EQLWiki's item templates through batched API lookups, not from
+            recipe-table column guesses. Repeated references and redirected item names are
+            deduplicated, while genuine alternate combines remain available. Split overview
+            rows no longer create incomplete alternatives, such as the extra Fleeting Quiver
+            entries.
+        </Paragraph>
+        <Paragraph>
+            Some wiki item templates omit ingredients, containers, or trivials. Missing
+            information and lookup errors are shown explicitly rather than invented.
+            The wiki includes historical information, so recipes are references rather than
+            a guarantee they work in game. No listed merchant does not mean an ingredient
+            cannot be purchased elsewhere. Crafting quantities do not check or reserve your
+            inventory. Wiki results are cached for one day.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.42
     </Paragraph>

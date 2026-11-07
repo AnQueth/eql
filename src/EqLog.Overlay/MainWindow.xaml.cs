@@ -197,6 +197,7 @@ public partial class MainWindow : Window
         }
         _logSessions.SpellObserved += _wikiRepository.ObserveSpell;
         InitializeExaltations(state);
+        InitializeTradeskills(state);
         InitializeNpcCompendium(state);
         _persistence = new(_settingsPersistence, _tracking, _inventoryService, _wikiRepository);
         _chatChannels = [.. _settings.ChatChannels];
@@ -332,6 +333,10 @@ public partial class MainWindow : Window
             if (def.Key == "sky")
             {
                 ConfigureSkyToolbar(panel);
+            }
+            if (def.Key == "tradeskills")
+            {
+                ConfigureTradeskillToolbar(panel);
             }
             if (def.Key == "mobinfo")
             {
@@ -830,7 +835,7 @@ public partial class MainWindow : Window
 
     private static OverlayPlacement DefaultPlacement(OverlayDefinition def, int index, Rect work)
     {
-        if (def.Key is "npcs" or "wiki" or "inventory" or "merge" or "itemupgrades" or "moteplan" or "exaltations" or "forage")
+        if (def.Key is "npcs" or "wiki" or "inventory" or "merge" or "itemupgrades" or "moteplan" or "exaltations" or "forage" or "tradeskills")
         {
             return new OverlayPlacement
             {
@@ -1154,6 +1159,7 @@ public partial class MainWindow : Window
             {
                 "quests" => QuestOpportunities(),
                 "sky" => SkyOverlayContent(),
+                "tradeskills" => TradeskillContent(snap.Session.Zone),
                 "mobinfo" => MobInfoContent(),
                 "npcs" => NpcCompendiumContent(),
                 "inventory" => new("Inventory & loot quests", _characterName, []),

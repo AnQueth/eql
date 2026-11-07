@@ -127,6 +127,7 @@ public static class OverlayPresenters
         new("motes", "Motes", 300, 320, false, Motes),
         new("quests", "Quest opportunities", 420, 320, false, (_, _, _) => new("Quest opportunities", null, [])),
         new("sky", "Sky quest tracker", 380, 420, false, (_, _, _) => new("Sky quest tracker", null, [])),
+        new("tradeskills", "Tradeskills", 520, 580, false, (_, _, _) => new("Tradeskills", null, [])),
         new("mobinfo", "Mob info", 540, 620, false, (_, _, _) => new("Mob info", null, [])),
         new("npcs", "NPC compendium", 620, 720, false, (_, _, _) => new("NPC compendium", null, [])),
         new("wiki", "Wiki activity", 480, 360, false, WikiActivity),

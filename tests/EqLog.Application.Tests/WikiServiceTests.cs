@@ -37,6 +37,60 @@ public sealed class WikiServiceTests
         Assert.Equal(2, transport.Fetches);
     }
 
+    [Fact]
+    public async Task TradeskillCacheFailureRetriesWithoutRefetchAndForceFailureKeepsLastGoodPage()
+    {
+        var transport = new Transport();
+        var caches = new Caches { Fail = true };
+        await using var service = new WikiService(transport, new(), caches);
+        string key = TradeskillQueries.CacheKey(TradeskillPageKind.Skill, "Alchemy");
+
+        var first = await service.GetTradeskillAsync(TradeskillPageKind.Skill, "Alchemy", WikiPriority.Interactive, false, default);
+        Assert.NotNull(service.GetCacheError(key));
+        caches.Fail = false;
+        Assert.Same(first, await service.GetTradeskillAsync(TradeskillPageKind.Skill, "Alchemy", WikiPriority.Interactive, false, default));
+        Assert.Equal(1, transport.Fetches);
+        Assert.Equal(2, caches.Writes);
+        Assert.Null(service.GetCacheError(key));
+        transport.Fail = true;
+        await Assert.ThrowsAsync<WikiTransportException>(() =>
+            service.GetTradeskillAsync(TradeskillPageKind.Skill, "Alchemy", WikiPriority.Interactive, true, default));
+        Assert.Same(first, await service.GetTradeskillAsync(TradeskillPageKind.Skill, "Alchemy", WikiPriority.Interactive, false, default));
+    }
+
+    [Fact]
+    public async Task TradeskillKindsHaveSeparateCachesAndExpiredDataRefreshes()
+    {
+        var transport = new Transport();
+        await using var service = new WikiService(transport, new(), new Caches());
+        service.SeedTradeskill(new(TradeskillPageKind.Recipe, "Test_Item", DateTime.UtcNow.AddDays(-2), [], []));
+
+        await service.GetTradeskillAsync(TradeskillPageKind.Recipe, "Test Item", WikiPriority.Interactive, false, default);
+        await service.GetTradeskillAsync(TradeskillPageKind.Merchants, "Test_Item", WikiPriority.Interactive, false, default);
+        await service.GetTradeskillAsync(TradeskillPageKind.Recipe, "Test_Item", WikiPriority.Interactive, false, default);
+
+        Assert.Equal(2, transport.Fetches);
+    }
+
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(true, 0)]
+    public async Task TradeskillCatalogRefreshesOldParserDataEvenWhenRecentlyCached(bool currentVersion, int expectedFetches)
+    {
+        var transport = new Transport();
+        await using var service = new WikiService(transport, new(), new Caches());
+        service.SeedTradeskill(new(TradeskillPageKind.Skill, "Tailoring", DateTime.UtcNow, [], [])
+        {
+            CatalogVersion = currentVersion ? Tradeskills.CatalogVersion : 0,
+        });
+
+        var first = await service.GetTradeskillAsync(TradeskillPageKind.Skill, "Tailoring", WikiPriority.Interactive, false, default);
+        var second = await service.GetTradeskillAsync(TradeskillPageKind.Skill, "Tailoring", WikiPriority.Interactive, false, default);
+
+        Assert.Equal(expectedFetches, transport.Fetches);
+        Assert.Same(first, second);
+    }
+
     private sealed class Caches : IWikiCacheRepository
     {
         public IReadOnlyList<string> LoadWarnings { get; } = [];
@@ -76,6 +130,15 @@ public sealed class WikiServiceTests
         public Task SaveSkyAsync(SkyQuestCatalog catalog, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
+        }
+        public Task<IReadOnlyList<TradeskillWikiPage>> LoadTradeskillsAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyList<TradeskillWikiPage>>([]);
+        }
+        public Task SaveTradeskillAsync(TradeskillWikiPage result, CancellationToken cancellationToken = default)
+        {
+            Writes++;
+            return Fail ? Task.FromException(new IOException("Cache write failed.")) : Task.CompletedTask;
         }
         public Task FlushAsync(CancellationToken cancellationToken = default)
         {
@@ -142,6 +205,16 @@ public sealed class WikiServiceTests
         public Task<SkyQuestCatalog> FindSkyAsync(WikiRequestContext context, CancellationToken cancellationToken)
         {
             throw new NotSupportedException();
+        }
+        public Task<TradeskillWikiPage> FindTradeskillAsync(TradeskillPageKind kind, string title,
+            WikiRequestContext context, CancellationToken cancellationToken)
+        {
+            Fetches++;
+            return Fail ? Task.FromException<TradeskillWikiPage>(new WikiTransportException("Offline", new Exception("Offline"))) :
+                Task.FromResult(new TradeskillWikiPage(kind, title, DateTime.UtcNow, [], [])
+                {
+                    CatalogVersion = Tradeskills.CatalogVersion,
+                });
         }
     }
 }

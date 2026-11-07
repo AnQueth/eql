@@ -615,6 +615,44 @@ other prerequisites. Refresh the inventory export after turn-ins to update count
 Collection entries count as owned, with an explicit turn-in-availability warning. Sky adds the
 separate Collection count to the loose/worn storage counts when evaluating ownership.
 
+### Tradeskills
+
+Enable **Tradeskills** under **General > Overlays**. The panel starts hidden and docked and can float like other overlays;
+unlock a floating panel to interact. Choose one of the nine tradeskills, search by recipe name
+or crafted outcome, then select a recipe. Choose **Name only** or **Trivial, then name** to
+sort recipes; trivials sort numerically, with unknown values last.
+Skill, search, and sort controls share one compact row. The recipe dropdown shows catalog, combine-detail,
+and merchant-loading activity, then restores the selected recipe's label when loading finishes.
+Ingredients show required quantities, merchant names, towns/zones, and area/coordinates when the wiki lists them.
+Merchants are sorted by zone, then
+name, ignoring case. Click an ingredient or merchant to
+open its wiki page. An alternate-combine picker appears when the item page lists other recipes.
+
+**Current-zone merchants only** follows the zone recorded in your character log. It filters
+merchant locations, not ingredients: the full recipe remains visible even when some ingredients
+have no local seller. An unknown zone and missing merchant information are shown explicitly.
+No listed seller does not establish that an ingredient is obtainable only through crafting or drops.
+
+Repeated recipes across wiki sections are deduplicated by outcome and ingredients; genuinely
+different combines remain separate. The wiki mixes current and historical information, so displayed
+recipes are references, not a guarantee they work in game. Catalog recipes and selected-combine details
+both come from item templates, not skill-page table rows. Canonical page titles resolve redirects,
+and genuine item-template alternatives remain separate. Crafting quantities do not check your
+inventory or reserve items.
+
+Data comes from EQLWiki's MediaWiki API. Skill-page link discovery supplies candidate items;
+batched revision lookups read their raw `playercrafted` template fields into typed recipes,
+ingredients, quantities, containers, yields, and numeric trivial values. Ingredient merchant
+lookups read the `soldby` field. No HTML recipe-table or column-specific parsing is used.
+The documented `eqlmetadata` API provides page freshness/era flags, not recipes or vendor inventories.
+Some item templates name a tradeskill but omit ingredients or containers; these are shown explicitly
+as missing information rather than inferred from overview tables.
+Catalogs cached before item-template lookup are automatically refreshed on their next lookup.
+Wiki data loads on demand through the shared paced request queue and is cached for one day in
+`tradeskills.json`. **Refresh** reloads the selected skill, recipe, and ingredient merchants.
+Search, tradeskill, recipe selection, sort order, and zone-filter preference are saved. Wiki cache reset includes
+this data. Network, format, and cache errors remain visible; previously loaded merchant data is retained.
+
 ### Inventory export monitoring
 
 The app checks for `<Character>_<server>-Inventory.txt` in the **parent of the Logs folder** every two

@@ -467,6 +467,11 @@ public sealed class AppSettings
         get; set;
     }
     public string SkyFilter { get; set; } = "";
+    public string Tradeskill { get; set; } = "Alchemy";
+    public string TradeskillSearch { get; set; } = "";
+    public string TradeskillRecipe { get; set; } = "";
+    public bool TradeskillSortByTrivial { get; set; }
+    public bool TradeskillCurrentZoneOnly { get; set; }
 
     /// <summary>Watched Plane of Sky quests as "Class|Quest name" keys; may span classes.</summary>
     public List<string> SkyWatched { get; set; } = [];

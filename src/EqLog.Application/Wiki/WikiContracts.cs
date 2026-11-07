@@ -65,6 +65,8 @@ public interface IWikiTransport : IAsyncDisposable
     Task<QuestLookupResult> FindQuestAsync(string item, WikiRequestContext context, CancellationToken cancellationToken);
     Task<ItemEffectInfo> FindItemEffectsAsync(string item, WikiRequestContext context, CancellationToken cancellationToken);
     Task<SkyQuestCatalog> FindSkyAsync(WikiRequestContext context, CancellationToken cancellationToken);
+    Task<TradeskillWikiPage> FindTradeskillAsync(TradeskillPageKind kind, string title,
+        WikiRequestContext context, CancellationToken cancellationToken);
 }
 
 public interface IWikiCacheRepository
@@ -76,10 +78,12 @@ public interface IWikiCacheRepository
     Task<IReadOnlyList<QuestLookupResult>> LoadQuestsAsync(CancellationToken cancellationToken = default);
     Task<SkyQuestCatalog?> LoadSkyAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ItemEffectInfo>> LoadItemEffectsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TradeskillWikiPage>> LoadTradeskillsAsync(CancellationToken cancellationToken = default);
     Task SaveMobMetadataAsync(MobResistanceStore mobs, CancellationToken cancellationToken = default);
     Task SaveQuestAsync(QuestLookupResult result, CancellationToken cancellationToken = default);
     Task SaveSkyAsync(SkyQuestCatalog catalog, CancellationToken cancellationToken = default);
     Task SaveItemEffectsAsync(ItemEffectInfo result, CancellationToken cancellationToken = default);
+    Task SaveTradeskillAsync(TradeskillWikiPage result, CancellationToken cancellationToken = default);
     Task FlushAsync(CancellationToken cancellationToken = default);
     Task ResetAsync(MobResistanceStore mobs, CancellationToken cancellationToken = default);
 }

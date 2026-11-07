@@ -10,6 +10,7 @@ public sealed class WikiService : IAsyncDisposable
     private readonly Dictionary<string, Operation> _operations = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, QuestLookupResult> _quests = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ItemEffectInfo> _itemEffects = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, TradeskillWikiPage> _tradeskills = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _retryAfter = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _cacheErrors = new(StringComparer.OrdinalIgnoreCase);
     private readonly MobResistanceStore _mobs;
@@ -236,8 +237,43 @@ public sealed class WikiService : IAsyncDisposable
             {
                 operation.Context.Promote(priority);
             }
-
         }
+    }
+
+    public void SeedTradeskill(TradeskillWikiPage page)
+    {
+        lock (_gate)
+        {
+            _tradeskills[TradeskillQueries.CacheKey(page.Kind, page.Title)] = page;
+        }
+    }
+
+    /// <summary>Loads one skill, recipe, or ingredient's merchants through the shared cache and HTTP lane.</summary>
+    public Task<TradeskillWikiPage> GetTradeskillAsync(TradeskillPageKind kind, string title,
+        WikiPriority priority, bool force, CancellationToken token)
+    {
+        title = title.Trim().Replace('_', ' ');
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
+        string key = TradeskillQueries.CacheKey(kind, title);
+        return GetAsync(key, priority, force, async operation =>
+        {
+            TradeskillWikiPage? cached = null;
+            lock (_gate)
+            {
+                if (!operation.Force && _tradeskills.TryGetValue(key, out var entry) &&
+                    (kind != TradeskillPageKind.Skill || entry.CatalogVersion == Tradeskills.CatalogVersion) &&
+                    DateTime.UtcNow - entry.CheckedUtc < TimeSpan.FromDays(1))
+                {
+                    operation.CacheHit = true;
+                    cached = entry;
+                }
+            }
+            var ct = operation.Cancellation.Token;
+            var result = cached ?? await _transport.FindTradeskillAsync(kind, title, operation.Context, ct).ConfigureAwait(false);
+            SeedTradeskill(result);
+            await PersistCacheAsync(key, () => _caches.SaveTradeskillAsync(result, ct)).ConfigureAwait(false);
+            return result;
+        }, token);
     }
 
     /// <summary>Retries failed cache writes without refetching successfully parsed data.</summary>
@@ -430,6 +466,7 @@ public sealed class WikiService : IAsyncDisposable
                 ObjectDisposedException.ThrowIf(_disposed, this);
                 _quests.Clear();
                 _itemEffects.Clear();
+                _tradeskills.Clear();
                 _sky = null;
                 _retryAfter.Clear();
                 _cacheErrors.Clear();

@@ -14,6 +14,10 @@ public sealed class WikiCacheRepository(string folder, bool mobWritesAllowed = t
     private readonly SemaphoreSlim _questGate = new(1, 1);
     private readonly SemaphoreSlim _effectGate = new(1, 1);
     private readonly SemaphoreSlim _skyGate = new(1, 1);
+    private readonly SemaphoreSlim _tradeskillGate = new(1, 1);
+    private readonly Dictionary<string, TradeskillWikiPage> _tradeskills = new(StringComparer.OrdinalIgnoreCase);
+    private byte[]? _savedTradeskillsHash;
+    private Exception? _tradeskillError;
     private readonly Dictionary<string, QuestLookupResult> _quests = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, QuestLookupResult> _savedQuests = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ItemEffectInfo> _effects = new(StringComparer.OrdinalIgnoreCase);
@@ -35,6 +39,7 @@ public sealed class WikiCacheRepository(string folder, bool mobWritesAllowed = t
     private string LegacyQuestPath { get; } = Path.Combine(folder, "quest-lookups.json");
     private string EffectPath { get; } = Path.Combine(folder, "item-effects.json");
     private string SkyPath { get; } = Path.Combine(folder, "sky-quests.json");
+    private string TradeskillPath { get; } = Path.Combine(folder, "tradeskills.json");
     private string MobPath { get; } = Path.Combine(folder, "mob-resistances.json");
     public void ProtectMobWrites(bool writesAllowed)
     {
@@ -138,6 +143,67 @@ public sealed class WikiCacheRepository(string folder, bool mobWritesAllowed = t
         return _mobs.SaveAsync(MobPath, mobs, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<TradeskillWikiPage>> LoadTradeskillsAsync(CancellationToken cancellationToken = default)
+    {
+        await _tradeskillGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!File.Exists(TradeskillPath))
+            {
+                return [];
+            }
+            var pages = await AtomicFile.ReadJsonAsync<TradeskillWikiPage[]>(TradeskillPath, ct: cancellationToken).ConfigureAwait(false)
+                ?? throw new JsonException("Empty tradeskill cache.");
+            if (pages.Any(page => page is null || !Enum.IsDefined(page.Kind) || string.IsNullOrWhiteSpace(page.Title) ||
+                page.Recipes is null || page.Merchants is null ||
+                page.Kind == TradeskillPageKind.Skill && page.Recipes.Count == 0 ||
+                page.Recipes.Any(recipe => recipe is null || string.IsNullOrWhiteSpace(recipe.Key) ||
+                    string.IsNullOrWhiteSpace(recipe.PageTitle) || recipe.Name is null || recipe.Outcome is null ||
+                    recipe.Skill is null || recipe.Trivial is null || recipe.Container is null || recipe.Ingredients is null ||
+                    recipe.Ingredients.Any(ingredient => ingredient is null || ingredient.Quantity <= 0 ||
+                        string.IsNullOrWhiteSpace(ingredient.PageTitle) || ingredient.Item is null || ingredient.Source is null)) ||
+                page.Merchants.Any(merchant => merchant is null || string.IsNullOrWhiteSpace(merchant.Name) ||
+                    string.IsNullOrWhiteSpace(merchant.PageTitle) || string.IsNullOrWhiteSpace(merchant.Zone) ||
+                    merchant.ZonePageTitle is null || merchant.Area is null || merchant.Location is null)))
+            {
+                throw new JsonException("Invalid tradeskill cache.");
+            }
+            foreach (var page in pages)
+            {
+                _tradeskills[TradeskillQueries.CacheKey(page.Kind, page.Title)] = page;
+            }
+            _savedTradeskillsHash = AtomicFile.HashJson(_tradeskills.Values.ToArray());
+            return pages;
+        }
+        catch (Exception ex) when (IsStorageFailure(ex))
+        {
+            _tradeskillError = ex;
+            throw;
+        }
+        finally
+        {
+            _tradeskillGate.Release();
+        }
+    }
+
+    public async Task SaveTradeskillAsync(TradeskillWikiPage result, CancellationToken cancellationToken = default)
+    {
+        await _tradeskillGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            string key = TradeskillQueries.CacheKey(result.Kind, result.Title);
+            if (!_tradeskills.TryGetValue(key, out var newer) || newer.CheckedUtc <= result.CheckedUtc)
+            {
+                _tradeskills[key] = result;
+            }
+            await WriteTradeskillsAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _tradeskillGate.Release();
+        }
+    }
+
     public async Task SaveQuestAsync(QuestLookupResult result, CancellationToken cancellationToken = default)
     {
         await _questGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -191,7 +257,8 @@ public sealed class WikiCacheRepository(string folder, bool mobWritesAllowed = t
 
     public Task FlushAsync(CancellationToken cancellationToken = default)
     {
-        return Task.WhenAll(FlushQuestsAsync(cancellationToken), FlushEffectsAsync(cancellationToken), FlushSkyAsync(cancellationToken));
+        return Task.WhenAll(FlushQuestsAsync(cancellationToken), FlushEffectsAsync(cancellationToken),
+            FlushSkyAsync(cancellationToken), FlushTradeskillsAsync(cancellationToken));
     }
 
     private async Task FlushQuestsAsync(CancellationToken token)
@@ -244,6 +311,37 @@ public sealed class WikiCacheRepository(string folder, bool mobWritesAllowed = t
             _savedQuests[result.Item] = result;
         }
     }
+
+    private async Task FlushTradeskillsAsync(CancellationToken token)
+    {
+        await _tradeskillGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            await WriteTradeskillsAsync(token).ConfigureAwait(false);
+        }
+        finally
+        {
+            _tradeskillGate.Release();
+        }
+    }
+
+    private async Task WriteTradeskillsAsync(CancellationToken token)
+    {
+        Protect(_tradeskillError, "Tradeskill");
+        if (_tradeskills.Count == 0)
+        {
+            return;
+        }
+        var pages = _tradeskills.Values.ToArray();
+        byte[] hash = AtomicFile.HashJson(pages);
+        if (_savedTradeskillsHash is not null && hash.AsSpan().SequenceEqual(_savedTradeskillsHash))
+        {
+            return;
+        }
+        await AtomicFile.WriteJsonAsync(TradeskillPath, pages, ct: token).ConfigureAwait(false);
+        _savedTradeskillsHash = hash;
+    }
+
     private async Task WriteEffectsAsync(CancellationToken token)
     {
         Protect(_effectError, "Item-effect");
@@ -285,16 +383,27 @@ public sealed class WikiCacheRepository(string folder, bool mobWritesAllowed = t
                 await _skyGate.WaitAsync(cancellationToken).ConfigureAwait(false);
                 try
                 {
-                    await WikiCacheReset.ResetAsync(folder, mobs, _mobs).ConfigureAwait(false);
-                    _quests.Clear();
-                    _savedQuests.Clear();
-                    _effects.Clear();
-                    _savedEffectsHash = null;
-                    _sky = null;
-                    _savedSky = null;
-                    _questError = null;
-                    _effectError = null;
-                    _skyError = null;
+                    await _tradeskillGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        await WikiCacheReset.ResetAsync(folder, mobs, _mobs).ConfigureAwait(false);
+                        _quests.Clear();
+                        _savedQuests.Clear();
+                        _effects.Clear();
+                        _savedEffectsHash = null;
+                        _sky = null;
+                        _savedSky = null;
+                        _questError = null;
+                        _effectError = null;
+                        _skyError = null;
+                        _tradeskills.Clear();
+                        _savedTradeskillsHash = null;
+                        _tradeskillError = null;
+                    }
+                    finally
+                    {
+                        _tradeskillGate.Release();
+                    }
                 }
                 finally
                 {

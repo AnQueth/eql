@@ -35,6 +35,8 @@ public partial class MainWindow
         {
             get; init;
         }
+        public IReadOnlyList<TradeskillWikiPage> Tradeskills { get; init; } = [];
+        public Exception? TradeskillError { get; init; }
         public IReadOnlyList<string> WikiWarnings { get; init; } = [];
         public required IReadOnlyList<ThemePalette> Themes
         {
@@ -110,6 +112,8 @@ public partial class MainWindow
                 ItemEffectsError = wiki.Result.Effects.Error,
                 SkyCatalog = wiki.Result.Sky.Value,
                 SkyError = wiki.Result.Sky.Error,
+                Tradeskills = wiki.Result.Tradeskills.Value ?? [],
+                TradeskillError = wiki.Result.Tradeskills.Error,
                 WikiWarnings = wiki.Result.Warnings,
             };
         }

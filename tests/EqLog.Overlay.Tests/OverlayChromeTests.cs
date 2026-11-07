@@ -33,6 +33,8 @@ public sealed class OverlayChromeTests
                     application.Resources[key] = Brushes.Gray;
                 }
                 AsyncTextFilterTests.VerifyQuestVirtualization();
+                TradeskillOverlayTests.VerifyMerchantListScrolling();
+                TradeskillOverlayTests.VerifyCompactToolbarAndRecipeLoading();
                 VerifyMobInfoTitleAlwaysVisible();
                 VerifyBreakdownButtonsUsePressClickMode();
 

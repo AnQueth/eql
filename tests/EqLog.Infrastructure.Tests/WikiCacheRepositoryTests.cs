@@ -77,6 +77,44 @@ public sealed class WikiCacheRepositoryTests : IDisposable
         Assert.False(File.Exists(Path.Combine(_folder, "quest-lookups.jsonl")));
     }
 
+    [Fact]
+    public async Task TradeskillCacheRoundTripsAllKindsAndResetDoesNotRestoreDirtyPages()
+    {
+        var repository = new WikiCacheRepository(_folder);
+        var ingredient = new TradeskillIngredient("Test Leaf", "Test Leaf", 2, "Bought");
+        var recipe = new TradeskillRecipe("key", "Practice Combine", "Practice Potion", "Practice Potion",
+            "Alchemy", "25", "Test Bag", 1, [ingredient]);
+        var merchant = new TradeskillMerchant("Test Merchant", "Test Merchant", "Halas", "Halas", "Shop", "(12, -34)");
+        await repository.SaveTradeskillAsync(new(TradeskillPageKind.Skill, "Alchemy", DateTime.UtcNow, [recipe], []));
+        await repository.SaveTradeskillAsync(new(TradeskillPageKind.Recipe, "Practice Potion", DateTime.UtcNow, [recipe], []));
+        await repository.SaveTradeskillAsync(new(TradeskillPageKind.Merchants, "Test Leaf", DateTime.UtcNow, [], [merchant]));
+
+        var pages = await new WikiCacheRepository(_folder).LoadTradeskillsAsync();
+
+        Assert.Equal(3, pages.Count);
+        Assert.Equal(2, Assert.Single(pages.Single(page => page.Kind == TradeskillPageKind.Recipe).Recipes).Ingredients[0].Quantity);
+        Assert.Equal(merchant, Assert.Single(pages.Single(page => page.Kind == TradeskillPageKind.Merchants).Merchants));
+        await repository.ResetAsync(new());
+        await repository.FlushAsync();
+        Assert.False(File.Exists(Path.Combine(_folder, "tradeskills.json")));
+    }
+
+    [Fact]
+    public async Task CorruptTradeskillCacheIsProtectedUntilExplicitReset()
+    {
+        Directory.CreateDirectory(_folder);
+        string path = Path.Combine(_folder, "tradeskills.json");
+        await File.WriteAllTextAsync(path, "[{\"Kind\":0,\"Title\":\"Alchemy\",\"Recipes\":null}]");
+        var repository = new WikiCacheRepository(_folder);
+        await Assert.ThrowsAsync<JsonException>(() => repository.LoadTradeskillsAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            repository.SaveTradeskillAsync(new(TradeskillPageKind.Skill, "Alchemy", DateTime.UtcNow, [], [])));
+        Assert.Contains("\"Recipes\":null", await File.ReadAllTextAsync(path));
+        await repository.ResetAsync(new());
+        await repository.SaveTradeskillAsync(new(TradeskillPageKind.Merchants, "Test Leaf", DateTime.UtcNow, [], []));
+        Assert.Single(await repository.LoadTradeskillsAsync());
+    }
+
     private static QuestLookupResult Quest()
     {
         return new("Item", DateTime.UtcNow, []);

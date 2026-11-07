@@ -110,6 +110,14 @@ internal sealed class WikiTestComposition : IAsyncDisposable
         {
             return Task.CompletedTask;
         }
+        public Task<IReadOnlyList<TradeskillWikiPage>> LoadTradeskillsAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyList<TradeskillWikiPage>>([]);
+        }
+        public Task SaveTradeskillAsync(TradeskillWikiPage result, CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
         public Task SaveItemEffectsAsync(ItemEffectInfo result, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;

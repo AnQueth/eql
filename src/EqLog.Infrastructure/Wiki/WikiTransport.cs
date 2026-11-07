@@ -69,6 +69,12 @@ public sealed class WikiTransport : IWikiTransport
         });
     }
 
+    public Task<TradeskillWikiPage> FindTradeskillAsync(TradeskillPageKind kind, string title,
+        WikiRequestContext context, CancellationToken cancellationToken)
+    {
+        return FetchAsync(context, () => new TradeskillWikiClient(_client).FetchAsync(kind, title, cancellationToken));
+    }
+
     private async Task<T> FetchAsync<T>(WikiRequestContext context, Func<Task<T>> fetch)
     {
         _context.Value = context;

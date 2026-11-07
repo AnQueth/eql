@@ -74,6 +74,7 @@ public partial class MainWindow
                 _skyCatalog = null;
                 _skyOverlayLoadAttempted = false;
                 _skyStatus = "Wiki cache reset. Reloading when next shown.";
+                ResetTradeskillView();
                 _spawnWikiPending.Clear();
                 _spawnWikiRetry.Clear();
                 _npcWikiSelection = null;

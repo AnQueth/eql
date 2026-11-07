@@ -80,7 +80,7 @@
         </GroupBox>
         <GroupBox Header="Wiki caches" DockPanel.Dock="Top">
             <StackPanel>
-                <TextBlock Text="Clear all cached NPCs, spells, item quest references, Sky quests, and item effects. Next lookups fetch fresh wiki information without restarting. Tracking history, inventory, and settings are kept."
+                <TextBlock Text="Clear all cached NPCs, spells, item quest references, Sky quests, tradeskills, and item effects. Next lookups fetch fresh wiki information without restarting. Tracking history, inventory, and settings are kept."
                            TextWrapping="Wrap" />
                 <Button x:Name="ResetWikiCacheButton" Content="Reset all wiki caches" HorizontalAlignment="Left"
                         Margin="0,8,0,0" Click="ResetWikiCache_Click" />
