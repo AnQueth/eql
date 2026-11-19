@@ -21,7 +21,7 @@ public sealed record MoteSnapshot(
     }
 }
 
-/// <summary>Mote tiers, taken from the item name ("Mote of X Potential"); no fixed list of tiers is assumed.</summary>
+/// <summary>Mote tiers and fragment names, taken from their item names; no fixed list of tiers is assumed.</summary>
 public static partial class MoteTiers
 {
     /// <summary>Tier name used for the plain "Mote of Potential".</summary>
@@ -39,9 +39,54 @@ public static partial class MoteTiers
         return m.Groups["t"].Success ? m.Groups["t"].Value : PlainTier;
     }
 
+    /// <summary>The tracking key for a mote or fragment loot item.</summary>
+    public static string? TrackedTierOf(string item)
+    {
+        var fragment = FragmentRegex().Match(item);
+        if (fragment.Success)
+        {
+            string tier = fragment.Groups["t"].Success ? fragment.Groups["t"].Value : PlainTier;
+            return FragmentItemName(tier);
+        }
+
+        return TierOf(item);
+    }
+
+    public static string BaseTier(string tier)
+    {
+        var fragment = FragmentRegex().Match(tier);
+        if (!fragment.Success)
+        {
+            return tier;
+        }
+
+        return fragment.Groups["t"].Success ? fragment.Groups["t"].Value : PlainTier;
+    }
+
+    public static bool IsFragment(string tier)
+    {
+        return FragmentRegex().IsMatch(tier);
+    }
+
+    /// <summary>The fragment item name for a tier, including the plain Potential tier.</summary>
+    public static string FragmentItemName(string tier)
+    {
+        if (tier.Equals(PlainTier, StringComparison.OrdinalIgnoreCase))
+        {
+            return "Fragment of Potential";
+        }
+
+        return $"Fragment of {tier} Potential";
+    }
+
     /// <summary>The item name for a tier: "Major" gives "Mote of Major Potential".</summary>
     public static string ItemName(string tier)
     {
+        if (FragmentRegex().IsMatch(tier))
+        {
+            return tier;
+        }
+
         if (tier.Equals(PlainTier, StringComparison.OrdinalIgnoreCase))
         {
             return "Mote of Potential";
@@ -62,6 +107,9 @@ public static partial class MoteTiers
 
     [GeneratedRegex(@"^Motes? of (?:(?<t>.+?) )?Potential$", RegexOptions.IgnoreCase)]
     private static partial Regex MoteRegex();
+
+    [GeneratedRegex(@"^Fragment of (?:(?<t>.+?) )?Potential$", RegexOptions.IgnoreCase)]
+    private static partial Regex FragmentRegex();
 }
 
 /// <summary>
@@ -103,7 +151,7 @@ public sealed class MoteTracker
             case KillEvent k:
                 OnKill(k, character);
                 break;
-            case LootEvent l when MoteTiers.TierOf(l.Item) is string tier:
+            case LootEvent l when MoteTiers.TrackedTierOf(l.Item) is string tier:
                 OnMote(l, tier, character);
                 break;
         }

@@ -1,7 +1,98 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.43" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.44" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.44
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released November 18, 2026 at 11:17 PM CT.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Look back at each level
+        </Paragraph>
+        <Paragraph>
+            Enable Leveling Analyzer under Settings &gt; General &gt; Overlays. The Levels
+            grid lists start and end dates, level, builds recorded at the time, your logged
+            killing blows, and logged minutes. Newest starts appear first. Reaching the same
+            level again creates a separate row, and the current level's end stays blank.
+            Select a row to see where its XP came from, grouped by zone.
+        </Paragraph>
+        <Paragraph>
+            Use the From and To calendar pickers, or choose Today, Yesterday, Last 7 days,
+            Last week (Mon-Sun), or All history. Both selected dates are included; Last 7 days
+            includes today and the previous six calendar days. Dates and zone filters select
+            levels with matching activity, while each row keeps that level's complete totals
+            and dates. Unlock a floating panel to use its controls.
+        </Paragraph>
+        <Paragraph>
+            History is saved locally and imported automatically from your selected character
+            log. Open older logs to backfill it; missing logs cannot be reconstructed. Run
+            /who after switching builds so future history can record the class loadout.
+            Unknown builds are not guessed, and gear snapshots are not recorded. Split XP
+            by build is optional; the build column is always available.
+        </Paragraph>
+        <Paragraph>
+            A * beside a date means the boundary was observed rather than confirmed by a
+            logged level-up. Select the row for details. Minutes include logged downtime
+            but exclude gaps over 30 minutes; they are not the wall-clock span between dates.
+            XP amounts missing from the log, including reward amounts and death losses,
+            are not invented. Reset tracking data also clears leveling history for rebuilding.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Compare sustained XP runs
+        </Paragraph>
+        <Paragraph>
+            In Leveling Analyzer, switch to Best places and choose a 5, 15, 30, or 60 minute
+            window. Compare zones at the same level using the best fully observed continuous
+            run, its start time, and the XP actually logged during that window.
+            Results show measured XP percentages, not projected hourly gains.
+        </Paragraph>
+        <Paragraph>
+            Incomplete runs and runs with unknown XP amounts are not ranked. Try a shorter
+            window, or return to Levels for the complete history and XP-by-zone details.
+            XP is gross logged gain, not a net total after deaths.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            See and spend owned fragments
+        </Paragraph>
+        <Paragraph>
+            Motes and Mote upgrade planner now recognize Fragment of Potential items
+            separately from normal motes, including inventory ownership and logged drops.
+            Run /outputfile inventory after looting or spending resources to refresh owned
+            counts. Loot history alone does not confirm what you still own.
+        </Paragraph>
+        <Paragraph>
+            In Mote upgrade planner, Use owned motes and fragments includes both resources.
+            Prefer fragments is on by default and spends usable fragments first, smallest
+            fragment tier first. Turn it off to use the smallest usable tier, normal motes
+            before fragments within that tier. This also applies to spare-copy feeding
+            and farming estimates.
+        </Paragraph>
+        <Paragraph>
+            A fragment gives twice its named mote's points and shares that mote's equipment
+            rank limit. The summary shows available fragments even when the plan does not
+            need them; steps and totals distinguish fragments actually spent. Instructions
+            combine consecutive ranks covered by one resource use, while Math retains
+            the per-rank point and carry breakdown. Condensing and Void-Touched resources
+            are not used in upgrade plans.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Avoid a resistance-history timeout
+        </Paragraph>
+        <Paragraph>
+            Loading damage profiles no longer uses the regular expression that could time
+            out when normalizing legacy character and class-loadout keys. Existing saved
+            resistance and damage history remains compatible; no reset is needed.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.43
     </Paragraph>

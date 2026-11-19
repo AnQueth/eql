@@ -9,7 +9,7 @@ namespace EqLog.Application.Settings;
 
 public enum PersistedFeature
 {
-    Settings, SpellDurations, Spawns, Motes, Inventory, Mobs, Npcs, Wiki,
+    Settings, SpellDurations, Spawns, Motes, Inventory, Mobs, Npcs, Wiki, Leveling,
 }
 public sealed record PersistenceOutcome(PersistedFeature Feature, Exception? Error);
 public sealed record PersistenceResult(IReadOnlyList<PersistenceOutcome> Outcomes)
@@ -41,6 +41,7 @@ public sealed class ApplicationPersistenceService(SettingsService settings, Trac
             AttemptAsync(PersistedFeature.SpellDurations, tracking.SaveSpellDurationsAsync(engine)),
             AttemptAsync(PersistedFeature.Spawns, tracking.SaveSpawnsAsync(engine)),
             AttemptAsync(PersistedFeature.Motes, tracking.SaveMotesAsync(engine)),
+            AttemptAsync(PersistedFeature.Leveling, tracking.SaveLevelingAsync(engine)),
             AttemptAsync(PersistedFeature.Inventory, inventory.SaveAsync()),
             AttemptAsync(PersistedFeature.Wiki, wiki.SaveCachesAsync()),
             AttemptAsync(PersistedFeature.Mobs, mobsWritable ? tracking.SaveMobsAsync(mobs) :

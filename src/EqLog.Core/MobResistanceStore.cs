@@ -337,8 +337,38 @@ public sealed class MobResistanceStore
 
     private static string DamageProfileKey(string character)
     {
-        return Regex.Replace(MobKey(character), @"^(.+) [A-Z]{3}(?:/[A-Z]{3})* (\d+)$", "$1 $2",
-            RegexOptions.None, TimeSpan.FromSeconds(1));
+        string key = MobKey(character);
+        int levelSeparator = key.LastIndexOf(' ');
+        if (levelSeparator <= 0)
+        {
+            return key;
+        }
+        foreach (char digit in key.AsSpan(levelSeparator + 1))
+        {
+            if (!char.IsDigit(digit))
+            {
+                return key;
+            }
+        }
+        int classSeparator = key.LastIndexOf(' ', levelSeparator - 1);
+        if (classSeparator <= 0)
+        {
+            return key;
+        }
+        var classes = key.AsSpan(classSeparator + 1, levelSeparator - classSeparator - 1);
+        if (classes.Length % 4 != 3)
+        {
+            return key;
+        }
+        for (int index = 0; index < classes.Length; index++)
+        {
+            char value = classes[index];
+            if (index % 4 == 3 ? value != '/' : value is < 'A' or > 'Z')
+            {
+                return key;
+            }
+        }
+        return string.Concat(key.AsSpan(0, classSeparator), key.AsSpan(levelSeparator));
     }
 
     private decimal? DamageBaseline(string spell, string character)

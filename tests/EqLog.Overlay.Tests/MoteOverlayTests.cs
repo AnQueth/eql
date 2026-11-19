@@ -71,6 +71,61 @@ public sealed class MoteOverlayTests
     }
 
     [Fact]
+    public void PlannerGuideCombinesLevelsCoveredByOneResourceAndKeepsMathPerLevel()
+    {
+        OnSta(() =>
+        {
+            foreach (var kind in Enum.GetValues<MoteUpgradeKind>())
+            {
+                foreach (bool fragment in new[] { false, true })
+                {
+                    int resourceRank = kind == MoteUpgradeKind.Equipment
+                        ? fragment ? 3 : 4
+                        : fragment ? 2 : 3;
+                    var resources = new Dictionary<int, int> { [resourceRank] = 1 };
+                    var model = MotePlanningService.Prepare(PlanRequest(0, 4) with
+                    {
+                        Kind = kind,
+                    }, fragment ? new Dictionary<int, int>() : resources, [], fragment ? resources : null);
+                    string resource = MotePlanningQueries.ResourceName(model.TierIds, resourceRank, fragment);
+
+                    foreach (var page in new[] { MotePlanPage.Upgrade, MotePlanPage.WhatIf })
+                    {
+                        var lines = Texts(Render(model, page));
+                        Assert.Contains($"• +0 → +2: use your {resource} ×1", lines);
+                        Assert.DoesNotContain(lines, text => text.StartsWith("• +1"));
+                        Assert.Contains(lines, text => text.StartsWith("• +2 → +3: add "));
+                        Assert.DoesNotContain(lines, text => text.Contains("leftover points cover it"));
+                    }
+
+                    var math = Render(model, MotePlanPage.Math).Children.OfType<Grid>().First();
+                    Assert.Equal(["+0 → +1", "1", "0", $"{resource} ×1", "", "3"], TableRow(math, 1));
+                    Assert.Equal(["+1 → +2", "2", "3", "", "", "1"], TableRow(math, 2));
+                }
+            }
+        });
+    }
+
+    [Theory]
+    [InlineData(2, 15)]
+    [InlineData(4, 3)]
+    public void PlannerGuideCombinesCarryOnlyThroughTheSelectedTarget(int targetRank, int carry)
+    {
+        OnSta(() =>
+        {
+            var model = MotePlanningService.Prepare(PlanRequest(0, targetRank), new Dictionary<int, int>(), [],
+                new Dictionary<int, int> { [9] = 1 });
+            var lines = Texts(Render(model));
+
+            Assert.Contains($"• +0 → +{targetRank}: use your Fragment of Ascendant Potential ×1", lines);
+            Assert.Single(lines, text => text.StartsWith("• "));
+            Assert.Contains($"Stop at +{targetRank}. No further upgrades are planned.", lines);
+            Assert.Contains($"The last resource or merge leaves {carry} extra points. " +
+                "Resources add fixed amounts; do not add more points after reaching your target.", lines);
+        });
+    }
+
+    [Fact]
     public void PlannerMathRendersOriginalHeadersRowsTotalsAndToolTips()
     {
         OnSta(() =>
@@ -82,7 +137,7 @@ public sealed class MoteOverlayTests
             Assert.Equal(["Step", "Need", "Have", "Use", "Missing", "Carry"], TableRow(tables[0], 0));
             Assert.Equal(["+4 → +5", "16", "0", "", "Major ×4", "4"], TableRow(tables[0], 1));
             Assert.Equal(["+5 → +6", "32", "4", "", "Greater ×5", "2"], TableRow(tables[0], 2));
-            Assert.Equal("Need: points for the step. Have: points carried in. Use: owned motes and spare copies spent. " +
+            Assert.Equal("Need: points for the step. Have: points carried in. Use: owned motes, fragments and spare copies spent. " +
                 "Missing: motes still to get. Carry: extra points that roll into the next step.", tables[0].ToolTip);
             Assert.Equal(["Owned motes used", "none"], TableRow(tables[1], 0));
             Assert.Equal(["Copies merged", "none"], TableRow(tables[1], 1));
@@ -116,7 +171,7 @@ public sealed class MoteOverlayTests
             Assert.Equal(["Copy", "To", "Feed", "Merge pts", "Wasted"], TableRow(tables[0], 0));
             Assert.Equal(["+0", "+3", "Infinitesimal ×1, Minor ×2, Lesser ×2", "8", ""], TableRow(tables[0], 1));
             Assert.Equal(TableRow(tables[0], 1), TableRow(tables[0], 2));
-            Assert.Equal("Feed each copy these motes, using only the tier that matches each rank, then merge it into the main item. " +
+            Assert.Equal("Feed each copy these motes or fragments, using only tiers that work at each rank, then merge it into the main item. " +
                 "Wasted: points past the copy's last rank, which merging doesn't pass on.", tables[0].ToolTip);
             Assert.Equal(["+4 → +5", "16", "0", "copy +3 ×2", "", "0"], TableRow(tables[1], 1));
             Assert.Equal(["Feeding saves", "Major ×3"], TableRow(tables[2], 3));
@@ -165,11 +220,11 @@ public sealed class MoteOverlayTests
                     Assert.Equal(FontWeights.SemiBold, text.FontWeight);
                 });
             Assert.Contains("Each number is the TOTAL to farm from where you are now. Do not add the numbers together.", Texts(host));
-            Assert.Contains("These numbers use the motes, spare copies and progress selected above.", Texts(host));
-            Assert.Contains("Feeding is on: the plan may spend your motes to raise farmed copies before merging them.", Texts(host));
+            Assert.Contains("These numbers use the motes, fragments, spare copies and progress selected above.", Texts(host));
+            Assert.Contains("Feeding is on: the plan may spend your motes or fragments to raise farmed copies before merging them.", Texts(host));
             var comparison = Assert.Single(host.Children.OfType<Expander>());
             Assert.Equal("Compare: copies only, one level at a time", comparison.Header);
-            Assert.Equal(["No motes, no spare copies, no feeding, and no saved progress. " +
+            Assert.Equal(["No motes or fragments, no spare copies, no feeding, and no saved progress. " +
                 "Just merge +4 copies for ONE level at a time:", "+7 to +8: 8 copies at +4.",
                 "+8 to +9: 16 copies at +4.", "+9 to +10: 32 copies at +4."],
                 Texts(Assert.IsType<StackPanel>(comparison.Content)));
@@ -233,11 +288,13 @@ public sealed class MoteOverlayTests
                 MainWindow.PlanSummary(invalid, MotePlanPage.Farm));
             var complete = MotePlanningService.Prepare(PlanRequest(5, 5), new Dictionary<int, int>(), []);
             Assert.Equal(["Already at the +5 target. No points needed."], Texts(Render(complete)));
-            Assert.Equal("Each step uses the smallest usable motes first, including higher tiers when needed. " +
-                "Spare copies are merged after motes. Condensing and Void-Touched motes are not used.",
+            Assert.Equal("Prefer fragments spends usable fragments before normal motes; off uses the smallest usable tier, normal motes first. " +
+                "Fragments are worth twice their named mote and share its equipment +rank limit. " +
+                "Spare copies are merged after motes and fragments. Condensing and Void-Touched resources are not used.",
                 MainWindow.PlanSummaryToolTip(MoteUpgradeKind.Equipment));
-            Assert.Equal("Spell motes double in value each tier (1 to 512 points) and work at any +level. " +
-                "Smallest motes are spent first. Condensing and Void-Touched motes are not used.",
+            Assert.Equal("Spell motes double in value each tier (1 to 512 points); fragments are worth twice their named mote. " +
+                "Both work at any +level. Prefer fragments spends fragments first; off uses the smallest tier, normal motes first. " +
+                "Condensing and Void-Touched resources are not used.",
                 MainWindow.PlanSummaryToolTip(MoteUpgradeKind.Spell));
             var invalidAtZero = MotePlanningService.Prepare(PlanRequest(0, 1) with
             {
@@ -266,7 +323,73 @@ public sealed class MoteOverlayTests
             Assert.Equal(["+2 → +3", "4", "0", "", "Lesser ×1", "0"], TableRow(tables[0], 3));
             Assert.DoesNotContain("Copies merged", tables[1].Children.OfType<TextBlock>().Select(text => text.Text));
             Assert.Empty(MainWindow.PlanSummary(model, MotePlanPage.Math));
-            Assert.Contains("Why Lesser? One of that mote is exactly what each step needs, so nothing is wasted.", Texts(Render(model)));
+            Assert.Contains("Why Lesser? One of those resources is exactly what each step needs, so nothing is wasted.", Texts(Render(model)));
+        });
+    }
+
+    [Fact]
+    public void PlannerShowsOwnedFragmentsAndExplainsSelectedPriority()
+    {
+        var owned = new Dictionary<int, int>
+        {
+            [1] = 22, [2] = 7, [3] = 15, [4] = 14, [5] = 99,
+            [6] = 39, [7] = 11, [8] = 3, [9] = 2,
+        };
+        var fragments = new Dictionary<int, int> { [3] = 1, [5] = 56, [6] = 3, [9] = 1 };
+        var request = PlanRequest(0, 10);
+        var model = MotePlanningService.Prepare(request, owned, [], fragments);
+
+        Assert.Equal(4, model.AvailableFragments.Count);
+        Assert.Equal(56, Assert.Single(model.AvailableFragments, resource => resource.Rank == 5).Count);
+        Assert.Equal(4, model.FragmentsUsed.Count);
+        foreach (var page in Enum.GetValues<MotePlanPage>())
+        {
+            string summary = MainWindow.PlanSummary(model, page);
+            Assert.Contains("Owned fragments available (last inventory export): " +
+                "Fragment of Lesser Potential ×1, Fragment of Major Potential ×56, " +
+                "Fragment of Greater Potential ×3, Fragment of Ascendant Potential ×1.", summary);
+            Assert.Contains("Usable fragments are spent before normal motes, smallest fragment tier first.", summary);
+            Assert.Contains("Fragments have the same equipment rank limit as their named mote.", summary);
+            Assert.Contains("Run /outputfile inventory after looting or spending resources to refresh these counts.", summary);
+        }
+
+        var normalFirst = MotePlanningService.Prepare(request with
+        {
+            PreferFragments = false,
+        }, owned, [], fragments);
+        Assert.Equal(new MoteResourceCount(9, "Ascendant", 1, IsFragment: true), Assert.Single(normalFirst.FragmentsUsed));
+        Assert.Contains("Regular motes are used first within each tier; unused fragments are kept.",
+            MainWindow.PlanSummary(normalFirst, MotePlanPage.Upgrade));
+
+        var disabled = MotePlanningService.Prepare(request with
+        {
+            UseMotes = false,
+        }, owned, [], fragments);
+        Assert.Empty(disabled.AvailableFragments);
+        Assert.Empty(disabled.FragmentsUsed);
+        Assert.DoesNotContain("Owned fragments available", MainWindow.PlanSummary(disabled, MotePlanPage.Upgrade));
+    }
+
+    [Fact]
+    public void PlannerRendersFragmentUseAndTotalsSeparately()
+    {
+        OnSta(() =>
+        {
+            var fragments = new Dictionary<int, int> { [5] = 1 };
+            var model = MotePlanningService.Prepare(PlanRequest(4, 5), new Dictionary<int, int>(), [], fragments);
+            var host = Render(model, MotePlanPage.Math);
+            var tables = host.Children.OfType<Grid>().ToArray();
+
+            Assert.Equal(10, model.Steps[0].MotePoints);
+            Assert.Equal(["+4 → +5", "16", "0", "Fragment of Major Potential ×1", "Major ×2", "4"],
+                TableRow(tables[0], 1));
+            Assert.Equal("Need: points for the step. Have: points carried in. Use: owned motes, fragments and spare copies spent. " +
+                "Missing: motes still to get. Carry: extra points that roll into the next step.",
+                tables[0].ToolTip);
+            var labels = tables.SelectMany(table => table.Children.OfType<TextBlock>())
+                .Select(text => text.Text);
+            Assert.Contains("Owned fragments used", labels);
+            Assert.Contains("Fragment of Major Potential ×1", labels);
         });
     }
 
@@ -520,14 +643,17 @@ public sealed class MoteOverlayTests
         var content = RenderMotes(engine.Snapshot(now), engine, inventory);
         var tiers = TierRows(content);
 
-        Assert.Equal(MoteValues.Tiers, tiers.Select(row => row.Left));
-        Assert.Equal(MoteValues.MaxRank, tiers.Length);
+        Assert.Equal(MoteValues.Tiers.SelectMany(tier => new[] { tier, MoteTiers.FragmentItemName(tier) }),
+            tiers.Select(row => row.Left));
+        Assert.Equal(MoteValues.MaxRank * 2, tiers.Length);
         Assert.All(tiers, row =>
         {
             Assert.Equal("0  (0)", row.Right);
             Assert.Equal(expectedOwned, row.ExtraColumn);
-            Assert.False(string.IsNullOrEmpty(row.ValueColumn));
-            Assert.NotEqual("?", row.ValueColumn);
+            int rank = Assert.IsType<int>(MoteValues.RankOf(row.Left));
+            int multiplier = MoteTiers.IsFragment(row.Left) ? 2 : 1;
+            Assert.Equal($"{MoteValues.ItemPoints(rank) * multiplier}/{MoteValues.SpellPoints(rank) * multiplier} " +
+                $"≤+{MoteValues.ItemMaxTier(rank)}", row.ValueColumn);
             Assert.Equal(MoteTiers.ItemName(row.Left), row.LootItem);
         });
         var total = Assert.Single(content.Rows, row => row.Left == "Total");
@@ -549,7 +675,8 @@ public sealed class MoteOverlayTests
         var content = RenderMotes(engine.Snapshot(now), engine, inventory);
         var tiers = TierRows(content);
 
-        Assert.Equal(MoteValues.Tiers, tiers.Select(row => row.Left));
+        Assert.Equal(MoteValues.Tiers.SelectMany(tier => new[] { tier, MoteTiers.FragmentItemName(tier) }),
+            tiers.Select(row => row.Left));
         Assert.Equal("3", Assert.Single(tiers, row => row.Left == "Greater").ExtraColumn);
         Assert.All(tiers.Where(row => row.Left != "Greater"), row =>
         {
@@ -602,26 +729,37 @@ public sealed class MoteOverlayTests
         var content = RenderMotes(snapshot, engine, inventory);
         var tiers = TierRows(content);
 
-        Assert.Equal(
-            ["Infinitesimal", "Minor", "Lesser", "Potential", "Major", "Greater", "Superior", "Grand", "Ascendant", "Infinite",
-                "Alpha", "transcendent", "Zulu"],
-            tiers.Select(row => MoteTiers.TierOf(row.LootItem!)));
+        string[] knownAndUnknownTiers = MoteValues.Tiers.Concat(["Alpha", "transcendent", "Zulu"]).ToArray();
+        Assert.Equal(knownAndUnknownTiers.SelectMany(tier => new[] { tier, MoteTiers.FragmentItemName(tier) }),
+            tiers.Select(row => row.Left));
 
         Assert.Equal(("Tier", "Gear/Spell", "session (all)", "Owned"),
             (content.Rows[0].Left, content.Rows[0].ValueColumn, content.Rows[0].Right, content.Rows[0].ExtraColumn));
         Assert.Contains("the first number is for gear; the second is for spells", content.Rows[0].ToolTip);
         Assert.Contains("5/16 ≤+4 means 5 gear points at +4 or lower", content.Rows[0].ToolTip);
-        var byTier = tiers.ToDictionary(row => MoteTiers.TierOf(row.LootItem!)!, StringComparer.OrdinalIgnoreCase);
+        var byTier = tiers.ToDictionary(row => row.Left, StringComparer.OrdinalIgnoreCase);
         Assert.All(tiers, row =>
         {
-            Assert.Equal(MoteTiers.TierOf(row.LootItem!), row.Left);
+            Assert.Equal(MoteTiers.TrackedTierOf(row.LootItem!), row.Left);
         });
-        Assert.Equal(
-            ["1/1 ≤+0", "1/2 ≤+1", "2/4 ≤+2", "4/8 ≤+3", "5/16 ≤+4",
-                "6/32 ≤+5", "7/64 ≤+6", "8/128 ≤+7", "9/256 ≤+8", "10/512 ≤+9", "?", "?", "?"],
-            tiers.Select(row => row.ValueColumn));
+        var expectedValues = knownAndUnknownTiers.SelectMany(tier =>
+        {
+            int? rank = MoteValues.RankOf(tier);
+            if (rank is null)
+            {
+                return new[] { "?", "?" };
+            }
+
+            return new[]
+            {
+                $"{MoteValues.ItemPoints(rank.Value)}/{MoteValues.SpellPoints(rank.Value)} ≤+{MoteValues.ItemMaxTier(rank.Value)}",
+                $"{MoteValues.ItemPoints(rank.Value) * 2}/{MoteValues.SpellPoints(rank.Value) * 2} ≤+{MoteValues.ItemMaxTier(rank.Value)}",
+            };
+        });
+        Assert.Equal(expectedValues, tiers.Select(row => row.ValueColumn));
         Assert.Contains("Adds 5 points to gear at +4 or lower.", byTier["Major"].ToolTip);
         Assert.Contains("No upgrade value is known for Alpha", byTier["Alpha"].ToolTip);
+        Assert.Contains("Adds 10 points to gear at +4 or lower.", byTier["Fragment of Major Potential"].ToolTip);
         Assert.Equal(("0  (0)", "7"), (byTier["Infinitesimal"].Right, byTier["Infinitesimal"].ExtraColumn));
         Assert.Equal(("0  (800)", "9"), (byTier["Minor"].Right, byTier["Minor"].ExtraColumn));
         Assert.Equal(("5  (0)", "0"), (byTier["Potential"].Right, byTier["Potential"].ExtraColumn));
@@ -646,7 +784,8 @@ public sealed class MoteOverlayTests
         var tiers = TierRows(content);
 
         Assert.Equal("Major", snapshot.Motes.Session[0].Tier);
-        Assert.Equal(MoteValues.Tiers, tiers.Select(row => MoteTiers.TierOf(row.LootItem!)));
+        Assert.Equal(MoteValues.Tiers.SelectMany(tier => new[] { tier, MoteTiers.FragmentItemName(tier) }),
+            tiers.Select(row => row.Left));
         Assert.Equal("1  (1)", Assert.Single(tiers, row => row.Left == "Infinitesimal").Right);
         Assert.Equal("20  (20)", Assert.Single(tiers, row => row.Left == "Major").Right);
         Assert.All(tiers.Where(row => row.Left != "Infinitesimal" && row.Left != "Major"), row =>
@@ -659,6 +798,28 @@ public sealed class MoteOverlayTests
         });
         var recent = content.Rows.SkipWhile(row => row.Left != "Recent").Skip(1).ToArray();
         Assert.Equal(["Mote of Infinitesimal Potential", "Mote of Major Potential"], recent.Select(row => row.LootItem));
+    }
+
+    [Fact]
+    public void MotesRenderFragmentsWithDoubledUpgradeValues()
+    {
+        var engine = new LogEngine { CharacterName = "Que" };
+        engine.ProcessLines(
+        [
+            "[Wed Oct 21 18:00:10 2026] --You have looted a Mote of Major Potential from Reward Chest.--",
+            "[Wed Oct 21 18:00:20 2026] --You have looted a Fragment of Major Potential from Reward Chest.--",
+        ]);
+        var snapshot = engine.Snapshot(new DateTime(2026, 10, 21, 19, 0, 0));
+
+        var content = RenderMotes(snapshot, engine, inventory: null);
+        var mote = Assert.Single(TierRows(content), row => row.Left == "Major");
+        var fragment = Assert.Single(TierRows(content), row => row.Left == "Fragment of Major Potential");
+
+        Assert.Equal("5/16 ≤+4", mote.ValueColumn);
+        Assert.Equal("Fragment of Major Potential", fragment.LootItem);
+        Assert.Equal("10/32 ≤+4", fragment.ValueColumn);
+        Assert.Contains("Adds 10 points to gear at +4 or lower.", fragment.ToolTip);
+        Assert.Contains("Fragments add twice the points", content.Rows[0].ToolTip);
     }
 
     [Theory]
@@ -676,15 +837,16 @@ public sealed class MoteOverlayTests
         var total = Assert.Single(content.Rows, row => row.Left == "Total");
         string inventoryTip = "No inventory export: export inventory to confirm owned counts." +
             "\nOwned excludes collection, installed items and historical drops." +
-            "\nLoot logs do not change Owned. Run /outputfile inventory after looting, spending, or moving motes to refresh.";
+            "\nLoot logs do not change Owned. Run /outputfile inventory after looting, spending, or moving motes or fragments to refresh.";
         Assert.Equal(inventoryTip, total.ToolTip);
         Assert.Equal(item, tier.LootItem);
         Assert.Equal(value, tier.ValueColumn);
         Assert.Equal($"{item} (rank {rank})\n" +
             $"Adds {rank} points to gear at +{limit} or lower.\n" +
             $"Adds {spellPoints} points to spells at any rank.\n\n" + inventoryTip, tier.ToolTip);
-        Assert.Equal("A mote adds points to gear and spells. In the Gear/Spell column, the first number is for gear; the second is for spells.\n" +
-            "The ≤+N part means this mote works on gear at +N or lower. Motes work on spells at any rank.\n" +
+        Assert.Equal("Fragments add twice the points of their named mote, with the same gear rank limit. " +
+            "In the Gear/Spell column, the first number is for gear; the second is for spells.\n" +
+            "The ≤+N part means this resource works on gear at +N or lower. Motes and fragments work on spells at any rank.\n" +
             "Example: 5/16 ≤+4 means 5 gear points at +4 or lower, or 16 spell points at any rank. " +
             "Values are from the EQLWiki Mote Guide.\n\n" + inventoryTip, content.Rows[0].ToolTip);
     }

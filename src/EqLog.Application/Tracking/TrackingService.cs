@@ -8,7 +8,8 @@ public sealed record TrackingStorageLocations(string Folder, string Durations, s
     string Mobs, string Npcs, string LegacyNpcs);
 public sealed record TrackingLoadFailure(string Store, Exception Error);
 public sealed record TrackingStartup(SpellDurationStore Durations, SpawnStore Spawns, MoteStore Motes,
-    MobResistanceStore? Mobs, NpcCompendium? Npcs, IReadOnlyList<TrackingLoadFailure> Failures);
+    MobResistanceStore? Mobs, NpcCompendium? Npcs, IReadOnlyList<TrackingLoadFailure> Failures,
+    LevelingHistory? Leveling = null);
 
 public interface ITrackingResetRepository
 {
@@ -19,7 +20,7 @@ public interface ITrackingResetRepository
 /// <summary>Tracking startup, persistence, lazy history and reset requests without exposing storage paths to views.</summary>
 public sealed class TrackingService(ISpellDurationRepository durations, ISpawnRepository spawns, IMoteRepository motes,
     IMobResistanceRepository mobs, INpcCompendiumRepository npcs, ITrackingResetRepository reset,
-    TrackingStorageLocations locations)
+    TrackingStorageLocations locations, ILevelingHistoryRepository leveling)
 {
     private readonly TrackingPersistenceCoordinator _saves = new(durations, spawns, motes);
     private readonly Dictionary<string, Exception> _loadErrors = new();
@@ -31,14 +32,16 @@ public sealed class TrackingService(ISpellDurationRepository durations, ISpawnRe
         var moteLoad = AttemptAsync("motes", () => motes.LoadAsync(locations.Motes, cancellationToken));
         var mobLoad = AttemptAsync("mobs", () => mobs.LoadAsync(locations.Mobs, cancellationToken));
         var npcLoad = AttemptAsync("npcs", () => npcs.LoadAsync(locations.Npcs, locations.LegacyNpcs, cancellationToken));
-        await Task.WhenAll(durationLoad, spawnLoad, moteLoad, mobLoad, npcLoad).ConfigureAwait(false);
+        var levelingLoad = AttemptAsync("leveling", () => leveling.LoadAsync(
+            Path.Combine(locations.Folder, "leveling-history.json"), cancellationToken));
+        await Task.WhenAll(durationLoad, spawnLoad, moteLoad, mobLoad, npcLoad, levelingLoad).ConfigureAwait(false);
         TrackingLoadFailure[] failures;
         lock (_loadErrors)
         {
             failures = _loadErrors.Select(pair => new TrackingLoadFailure(pair.Key, pair.Value)).ToArray();
         }
         return new(durationLoad.Result ?? new(), spawnLoad.Result ?? new(), moteLoad.Result ?? new(),
-            mobLoad.Result, npcLoad.Result, failures);
+            mobLoad.Result, npcLoad.Result, failures, levelingLoad.Result);
     }
 
     private async Task<T?> AttemptAsync<T>(string store, Func<Task<T>> load) where T : class
@@ -71,6 +74,12 @@ public sealed class TrackingService(ISpellDurationRepository durations, ISpawnRe
     {
         Protect("motes");
         await _saves.SaveMotesAsync(engine, locations.Motes, cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+    public async Task SaveLevelingAsync(LogEngine engine, CancellationToken cancellationToken = default)
+    {
+        Protect("leveling");
+        await leveling.SaveAsync(Path.Combine(locations.Folder, "leveling-history.json"),
+            engine.Leveling, cancellationToken).ConfigureAwait(false);
     }
     public async Task SaveMobsAsync(MobResistanceStore store, CancellationToken cancellationToken = default)
     {

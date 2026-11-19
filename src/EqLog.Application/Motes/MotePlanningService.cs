@@ -8,7 +8,8 @@ namespace EqLog.Application.Motes;
 public static class MotePlanningService
 {
     public static MotePlanReadModel Prepare(
-        MotePlanningRequest request, IReadOnlyDictionary<int, int> owned, IEnumerable<InventoryExportItem> inventory)
+        MotePlanningRequest request, IReadOnlyDictionary<int, int> owned, IEnumerable<InventoryExportItem> inventory,
+        IReadOnlyDictionary<int, int>? ownedFragments = null)
     {
         bool equipment = request.Kind == MoteUpgradeKind.Equipment;
         var kind = equipment ? UpgradeKind.Equipment : UpgradeKind.Spell;
@@ -34,7 +35,9 @@ public static class MotePlanningService
             ? (request.Page == MotePlanPage.WhatIf ? request.HypotheticalCopies : copies)
             : [];
         var plannerMotes = request.UseMotes ? owned : new Dictionary<int, int>();
-        var plan = MoteUpgradePlanner.Plan(kind, startRank, progress, plannerMotes, spare, feed, targetRank);
+        var plannerFragments = request.UseMotes ? ownedFragments ?? new Dictionary<int, int>() : new Dictionary<int, int>();
+        var plan = MoteUpgradePlanner.Plan(kind, startRank, progress, plannerMotes, spare, feed,
+            targetRank, plannerFragments, request.PreferFragments);
         var steps = plan.Steps.Select(step =>
         {
             var used = Uses(step.Used, equipment);
@@ -66,7 +69,8 @@ public static class MotePlanningService
             for (int target = startRank + 1; target <= targetRank; target++)
             {
                 int additional = MoteUpgradePlanner.MinimumAdditionalCopiesToFinish(
-                    startRank, progress, plannerMotes, spare, feed, targetRank: target);
+                    startRank, progress, plannerMotes, spare, feed, targetRank: target,
+                    ownedFragments: plannerFragments, preferFragments: request.PreferFragments);
                 farmTargets.Add(new MoteFarmTarget(target, additional));
                 int rank = target - 1;
                 int count = (MoteValues.PointsToNext(rank) + copyPoints - 1) / copyPoints;
@@ -91,7 +95,11 @@ public static class MotePlanningService
             hypothetical ? new MoteWhatIfCalculation(copies.Sum(MoteValues.CopyPoints), spare.Sum(MoteValues.CopyPoints)) : null,
             feedingStatus, fodderRank, feed?.FodderCopies ?? 0,
             Array.AsReadOnly(steps), Array.AsReadOnly(fed),
-            Counts(plan.MotesUsed), Counts(plan.CopiesUsed, copies: true), Counts(plan.Missing),
+            Counts(plan.MotesUsed), Counts(plan.FragmentsUsed, fragments: true),
+            Counts(plannerFragments.Where(pair => pair.Key is >= 1 and <= MoteValues.MaxRank && pair.Value > 0)
+                .ToDictionary(), fragments: true),
+            request.PreferFragments,
+            Counts(plan.CopiesUsed, copies: true), Counts(plan.Missing),
             Counts(savings.Where(pair => pair.Value > 0).ToDictionary()),
             Counts(savings.Where(pair => pair.Value < 0).ToDictionary(pair => pair.Key, pair => -pair.Value)),
             fed.Count(copy => copy.IsFodder), fed.Sum(copy => copy.Wasted),
@@ -103,13 +111,15 @@ public static class MotePlanningService
     {
         return Array.AsReadOnly(uses.Select(use => new MoteResourceUse(use.Rank, use.Count, use.IsCopy,
             use.Count * (use.IsCopy ? MoteValues.CopyPoints(use.Rank) :
-                equipment ? MoteValues.ItemPoints(use.Rank) : MoteValues.SpellPoints(use.Rank)))).ToArray());
+                MoteValues.Points(equipment ? UpgradeKind.Equipment : UpgradeKind.Spell, use.Rank, use.IsFragment)),
+            use.IsFragment)).ToArray());
     }
 
-    private static IReadOnlyList<MoteResourceCount> Counts(IReadOnlyDictionary<int, int> counts, bool copies = false)
+    private static IReadOnlyList<MoteResourceCount> Counts(
+        IReadOnlyDictionary<int, int> counts, bool copies = false, bool fragments = false)
     {
         return Array.AsReadOnly(counts.OrderBy(pair => pair.Key).Select(pair =>
-            new MoteResourceCount(pair.Key, copies ? "" : MoteValues.Tiers[pair.Key - 1], pair.Value)).ToArray());
+            new MoteResourceCount(pair.Key, copies ? "" : MoteValues.Tiers[pair.Key - 1], pair.Value, fragments)).ToArray());
     }
 
     private static bool ParsePoints(string text, int maximum, out int points)

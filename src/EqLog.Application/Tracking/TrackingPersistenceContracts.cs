@@ -34,6 +34,12 @@ public interface IMoteRepository
         CancellationToken cancellationToken = default);
 }
 
+public interface ILevelingHistoryRepository
+{
+    Task<LevelingHistory> LoadAsync(string path, CancellationToken cancellationToken = default);
+    Task SaveAsync(string path, LevelingHistory history, CancellationToken cancellationToken = default);
+}
+
 public interface IMobResistanceRepository
 {
     Task<MobResistanceStore> LoadAsync(string path, CancellationToken cancellationToken = default);

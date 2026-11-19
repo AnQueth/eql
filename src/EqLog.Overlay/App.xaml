@@ -50,6 +50,15 @@
             <Setter Property="Padding" Value="8,6" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
+        <Style TargetType="DatePicker" BasedOn="{StaticResource {x:Type Control}}">
+            <Setter Property="Background" Value="{DynamicResource NightBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource NightBorder}" />
+            <Setter Property="Padding" Value="3" />
+            <Setter Property="MinHeight" Value="32" />
+        </Style>
+        <Style TargetType="DatePickerTextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Padding" Value="3" />
+        </Style>
         <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type Control}}">
             <Setter Property="Background" Value="{DynamicResource NightRaised}" />
             <Setter Property="BorderBrush" Value="{DynamicResource NightBorder}" />

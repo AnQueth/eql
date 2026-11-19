@@ -136,6 +136,7 @@ public static class OverlayPresenters
         new("moteplan", "Mote upgrade planner", 520, 560, false, (_, _, _) => new("Mote upgrade planner", null, [])),
         new("exaltations", "Exaltations", 620, 560, false, (_, _, _) => new("Exaltations", null, [])),
         new("merge", "Ready to merge", 680, 620, false, (_, _, _) => new("Ready to merge", null, [])),
+        new("leveling", "Leveling Analyzer", 680, 620, false, (_, _, _) => new("Leveling Analyzer", null, [])),
     ];
 
     private const int MaxRequestRows = 15;
@@ -264,10 +265,11 @@ public static class OverlayPresenters
             ? $"Export {exported.ToLocalTime():g}; owned counts are confirmed by this export."
             : "No inventory export: export inventory to confirm owned counts.") +
             "\nOwned excludes collection, installed items and historical drops." +
-            "\nLoot logs do not change Owned. Run /outputfile inventory after looting, spending, or moving motes to refresh.";
+            "\nLoot logs do not change Owned. Run /outputfile inventory after looting, spending, or moving motes or fragments to refresh.";
         string valuesTip =
-            "A mote adds points to gear and spells. In the Gear/Spell column, the first number is for gear; the second is for spells.\n" +
-            "The ≤+N part means this mote works on gear at +N or lower. Motes work on spells at any rank.\n" +
+            "Fragments add twice the points of their named mote, with the same gear rank limit. " +
+            "In the Gear/Spell column, the first number is for gear; the second is for spells.\n" +
+            "The ≤+N part means this resource works on gear at +N or lower. Motes and fragments work on spells at any rank.\n" +
             "Example: 5/16 ≤+4 means 5 gear points at +4 or lower, or 16 spell points at any rank. " +
             "Values are from the EQLWiki Mote Guide.";
         rows.Add(new("Tier", "session (all)", Foreground: Header, Bold: true,

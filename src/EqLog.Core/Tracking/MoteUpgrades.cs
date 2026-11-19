@@ -24,9 +24,10 @@ public static class MoteValues
     /// <summary>The mote's rank (1-10), or null for a tier the guide doesn't list.</summary>
     public static int? RankOf(string tier)
     {
+        string baseTier = MoteTiers.BaseTier(tier);
         for (int i = 0; i < Tiers.Count; i++)
         {
-            if (Tiers[i].Equals(tier, StringComparison.OrdinalIgnoreCase))
+            if (Tiers[i].Equals(baseTier, StringComparison.OrdinalIgnoreCase))
             {
                 return i + 1;
             }
@@ -58,6 +59,13 @@ public static class MoteValues
         return kind == UpgradeKind.Spell ? SpellPoints(rank) : ItemPoints(rank);
     }
 
+    /// <summary>Points one mote or fragment adds to gear or a spell.</summary>
+    public static int Points(UpgradeKind kind, int rank, bool fragment)
+    {
+        int points = Points(kind, rank);
+        return fragment ? points * 2 : points;
+    }
+
     /// <summary>Points needed to go from +<paramref name="rank"/> to the next rank (1, 2, 4 ... 512).</summary>
     public static int PointsToNext(int rank)
     {
@@ -71,8 +79,8 @@ public static class MoteValues
     }
 }
 
-/// <summary>Something spent on one upgrade step: <paramref name="Count"/> motes of <paramref name="Rank"/>, or item copies at +Rank.</summary>
-public sealed record UpgradeUse(int Rank, int Count, bool IsCopy);
+/// <summary>Something spent on one upgrade step: motes, fragments, or item copies at +Rank.</summary>
+public sealed record UpgradeUse(int Rank, int Count, bool IsCopy, bool IsFragment = false);
 
 /// <summary>
 /// One +N to +N+1 step. <paramref name="Missing"/> counts motes of the matching tier (rank N+1) still needed after
@@ -142,7 +150,20 @@ public sealed record UpgradePlan(UpgradeKind Kind, IReadOnlyList<UpgradeStep> St
         {
             return Steps.SelectMany(s => s.Used)
                 .Concat(FedCopies.SelectMany(f => f.Motes))
-                .Where(u => !u.IsCopy)
+                .Where(u => !u.IsCopy && !u.IsFragment)
+                .GroupBy(u => u.Rank)
+                .ToDictionary(g => g.Key, g => g.Sum(u => u.Count));
+        }
+    }
+
+    /// <summary>Owned fragments spent per rank, including fragments fed to copies.</summary>
+    public IReadOnlyDictionary<int, int> FragmentsUsed
+    {
+        get
+        {
+            return Steps.SelectMany(s => s.Used)
+                .Concat(FedCopies.SelectMany(f => f.Motes))
+                .Where(u => !u.IsCopy && u.IsFragment)
                 .GroupBy(u => u.Rank)
                 .ToDictionary(g => g.Key, g => g.Sum(u => u.Count));
         }
@@ -185,7 +206,8 @@ public sealed record UpgradePlan(UpgradeKind Kind, IReadOnlyList<UpgradeStep> St
     {
         get
         {
-            return MotesUsed.Sum(kv => (long)kv.Value << kv.Key);
+            return MotesUsed.Sum(kv => (long)kv.Value << kv.Key) +
+                FragmentsUsed.Sum(kv => (long)kv.Value << (kv.Key + 1));
         }
     }
 
@@ -213,8 +235,10 @@ public sealed record UpgradePlan(UpgradeKind Kind, IReadOnlyList<UpgradeStep> St
 
             for (int rank = 1; rank <= MoteValues.MaxRank; rank++)
             {
-                int before = Baseline.MotesUsed.GetValueOrDefault(rank) + Baseline.Missing.GetValueOrDefault(rank);
-                int after = MotesUsed.GetValueOrDefault(rank) + Missing.GetValueOrDefault(rank);
+                int before = Baseline.MotesUsed.GetValueOrDefault(rank) +
+                    Baseline.FragmentsUsed.GetValueOrDefault(rank) * 2 + Baseline.Missing.GetValueOrDefault(rank);
+                int after = MotesUsed.GetValueOrDefault(rank) +
+                    FragmentsUsed.GetValueOrDefault(rank) * 2 + Missing.GetValueOrDefault(rank);
                 if (before != after)
                 {
                     saved[rank] = before - after;
@@ -246,9 +270,12 @@ public static class MoteUpgradePlanner
     /// <param name="copies">+rank of each spare equipment copy to merge in (ignored for spells).</param>
     /// <param name="feed">Feed spare copies with motes first (equipment only); null plans without feeding.</param>
     /// <param name="targetRank">Rank at which to stop, between the current rank and +10. Defaults to +10.</param>
+    /// <param name="ownedFragments">Owned fragments by rank (1-10); each fragment adds twice its named mote's points.</param>
+    /// <param name="preferFragments">Spend usable fragments before normal motes; otherwise use the smallest tier, normal motes first.</param>
     public static UpgradePlan Plan(UpgradeKind kind, int startRank, int startPoints,
         IReadOnlyDictionary<int, int> ownedMotes, IReadOnlyList<int> copies, FeedOptions? feed = null,
-        int targetRank = MoteValues.MaxRank)
+        int targetRank = MoteValues.MaxRank, IReadOnlyDictionary<int, int>? ownedFragments = null,
+        bool preferFragments = true)
     {
         if (startRank is < 0 or > MoteValues.MaxRank)
         {
@@ -269,6 +296,15 @@ public static class MoteUpgradePlanner
             }
         }
 
+        var fragments = new int[MoteValues.MaxRank + 1];
+        foreach (var (rank, count) in ownedFragments ?? new Dictionary<int, int>())
+        {
+            if (rank is >= 1 and <= MoteValues.MaxRank && count > 0)
+            {
+                fragments[rank] += count;
+            }
+        }
+
         var spareCopies = kind == UpgradeKind.Equipment
             ? copies.Where(c => c is >= 0 and <= MoteValues.MaxRank).OrderBy(c => c).ToList()
             : [];
@@ -286,7 +322,9 @@ public static class MoteUpgradePlanner
         int points = startRank < MoteValues.MaxRank
             ? Math.Clamp(startPoints, 0, MoteValues.PointsToNext(startRank) - 1)
             : 0;
-        var baseline = new UpgradePlan(kind, Simulate(kind, startRank, points, (int[])motes.Clone(), [.. availableCopies], targetRank));
+        var baseline = new UpgradePlan(kind,
+            Simulate(kind, startRank, points, (int[])motes.Clone(), (int[])fragments.Clone(),
+                [.. availableCopies], targetRank, preferFragments));
         if (kind != UpgradeKind.Equipment || feed is not { Enabled: true } || startRank >= targetRank)
         {
             return baseline;
@@ -294,9 +332,11 @@ public static class MoteUpgradePlanner
 
         int remaining = (1 << targetRank) - (1 << startRank) - points;
         var fedMotes = (int[])motes.Clone();
-        var fed = Feed(fedMotes, spareCopies, extraCopyCount, extraCopyRank, feed.FeedUsableMotes,
-            startRank, targetRank, remaining);
-        var fedSteps = Simulate(kind, startRank, points, fedMotes, fed.Select(f => f.EndRank).OrderBy(r => r).ToList(), targetRank);
+        var fedFragments = (int[])fragments.Clone();
+        var fed = Feed(fedMotes, fedFragments, spareCopies, extraCopyCount, extraCopyRank, feed.FeedUsableMotes,
+            startRank, targetRank, remaining, preferFragments);
+        var fedSteps = Simulate(kind, startRank, points, fedMotes, fedFragments,
+            fed.Select(f => f.EndRank).OrderBy(r => r).ToList(), targetRank, preferFragments);
         var fedPlan = new UpgradePlan(kind, fedSteps, fed.Where(f => f.Motes.Count > 0).ToArray(), baseline);
         return fedPlan.FedCopies.Count > 0 && fedPlan.IsBetterThan(baseline)
             ? fedPlan
@@ -316,10 +356,13 @@ public static class MoteUpgradePlanner
     /// <param name="copies">Available spare equipment copies by rank.</param>
     /// <param name="feed">Feeding settings and any extra copies already available to farm.</param>
     /// <param name="targetRank">Rank at which to stop, between the current rank and +10.</param>
+    /// <param name="ownedFragments">Owned fragments by rank (1-10).</param>
+    /// <param name="preferFragments">Use the same resource preference as the upgrade plan.</param>
     /// <returns>The minimum number of additional copies of the selected farm rank required to reach the target.</returns>
     public static int MinimumAdditionalCopiesToFinish(int startRank, int startPoints,
         IReadOnlyDictionary<int, int> ownedMotes, IReadOnlyList<int> copies, FeedOptions feed,
-        int targetRank = MoteValues.MaxRank)
+        int targetRank = MoteValues.MaxRank, IReadOnlyDictionary<int, int>? ownedFragments = null,
+        bool preferFragments = true)
     {
         ArgumentNullException.ThrowIfNull(ownedMotes);
         ArgumentNullException.ThrowIfNull(copies);
@@ -338,7 +381,8 @@ public static class MoteUpgradePlanner
         int effectivePoints = startRank < MoteValues.MaxRank
             ? Math.Clamp(startPoints, 0, MoteValues.PointsToNext(startRank) - 1)
             : 0;
-        var current = Plan(UpgradeKind.Equipment, startRank, effectivePoints, ownedMotes, copies, feed, targetRank);
+        var current = Plan(UpgradeKind.Equipment, startRank, effectivePoints, ownedMotes, copies, feed,
+            targetRank, ownedFragments, preferFragments);
         int pointsRemaining = Math.Max(0, (1 << targetRank) - (1 << startRank) - effectivePoints);
         int farmCopyPoints = MoteValues.CopyPoints(feed.FodderRank);
         int high = CeilDiv(pointsRemaining, farmCopyPoints);
@@ -355,7 +399,8 @@ public static class MoteUpgradePlanner
             {
                 FodderCopies = Math.Max(0, feed.FodderCopies) + additional,
             };
-            var candidate = Plan(UpgradeKind.Equipment, startRank, effectivePoints, ownedMotes, copies, candidateFeed, targetRank);
+            var candidate = Plan(UpgradeKind.Equipment, startRank, effectivePoints, ownedMotes, copies,
+                candidateFeed, targetRank, ownedFragments, preferFragments);
             if (candidate.MissingPoints == 0)
             {
                 high = additional;
@@ -384,11 +429,11 @@ public static class MoteUpgradePlanner
 
     /// <summary>
     /// Raises spare copies one rank at a time, always the lowest copy first so each small mote goes where it is still
-    /// allowed. Usable motes are spent smallest first, including higher tiers when needed. A rank is
+    /// allowed. Resources follow the selected fragment preference, including higher tiers when needed. A rank is
     /// only started if owned motes can finish it. Stops once copies hold enough points for the selected target.
     /// </summary>
-    private static List<FedCopy> Feed(int[] motes, IReadOnlyList<int> copies, int fodder, int fodderRank,
-        bool feedUsable, int mainRank, int targetRank, int remaining)
+    private static List<FedCopy> Feed(int[] motes, int[] fragments, IReadOnlyList<int> copies, int fodder, int fodderRank,
+        bool feedUsable, int mainRank, int targetRank, int remaining, bool preferFragments)
     {
         var feeders = copies.Select(c => new Feeder(c, isFodder: false))
             .Concat(Enumerable.Range(0, fodder).Select(_ => new Feeder(fodderRank, isFodder: true)))
@@ -410,7 +455,7 @@ public static class MoteUpgradePlanner
                 break;
             }
 
-            if (next.Rank >= targetRank || !TryRaise(next, motes, feedUsable, mainRank, targetRank))
+            if (next.Rank >= targetRank || !TryRaise(next, motes, fragments, feedUsable, mainRank, targetRank, preferFragments))
             {
                 next.Active = false;
             }
@@ -420,24 +465,31 @@ public static class MoteUpgradePlanner
             .ToList();
     }
 
-    private static bool TryRaise(Feeder feeder, int[] motes, bool feedUsable, int mainRank, int targetRank)
+    private static bool TryRaise(Feeder feeder, int[] motes, int[] fragments, bool feedUsable, int mainRank,
+        int targetRank, bool preferFragments)
     {
         int needed = MoteValues.PointsToNext(feeder.Rank);
         int points = feeder.Progress;
         var take = new List<UpgradeUse>();
-        for (int moteRank = 1; moteRank <= MoteValues.MaxRank && points < needed; moteRank++)
+        foreach (var (moteRank, isFragment) in ResourceOrder(preferFragments))
         {
+            if (points >= needed)
+            {
+                break;
+            }
+
+            int[] available = isFragment ? fragments : motes;
             bool allowed = feeder.Rank <= MoteValues.ItemMaxTier(moteRank) &&
                 (feedUsable || MoteValues.ItemMaxTier(moteRank) < mainRank);
-            if (motes[moteRank] == 0 || !allowed)
+            if (available[moteRank] == 0 || !allowed)
             {
                 continue;
             }
 
-            int value = MoteValues.ItemPoints(moteRank);
-            int count = Math.Min(motes[moteRank], CeilDiv(needed - points, value));
+            int value = MoteValues.Points(UpgradeKind.Equipment, moteRank, isFragment);
+            int count = Math.Min(available[moteRank], CeilDiv(needed - points, value));
             points += count * value;
-            take.Add(new UpgradeUse(moteRank, count, IsCopy: false));
+            AddResourceUse(take, moteRank, count, isFragment);
         }
 
         if (points < needed)
@@ -447,8 +499,9 @@ public static class MoteUpgradePlanner
 
         foreach (var use in take)
         {
-            motes[use.Rank] -= use.Count;
-            int index = feeder.Motes.FindIndex(u => u.Rank == use.Rank);
+            int[] available = use.IsFragment ? fragments : motes;
+            available[use.Rank] -= use.Count;
+            int index = feeder.Motes.FindIndex(u => u.Rank == use.Rank && u.IsFragment == use.IsFragment);
             if (index < 0)
             {
                 feeder.Motes.Add(use);
@@ -472,8 +525,8 @@ public static class MoteUpgradePlanner
         return true;
     }
 
-    private static List<UpgradeStep> Simulate(UpgradeKind kind, int startRank, int points, int[] motes, List<int> spareCopies,
-        int targetRank)
+    private static List<UpgradeStep> Simulate(UpgradeKind kind, int startRank, int points, int[] motes,
+        int[] fragments, List<int> spareCopies, int targetRank, bool preferFragments)
     {
         var steps = new List<UpgradeStep>();
         for (int rank = startRank; rank < targetRank; rank++)
@@ -484,9 +537,15 @@ public static class MoteUpgradePlanner
             // At the target there is no later step to benefit from motes added before a sufficient merge.
             bool copiesFinishTarget = rank == targetRank - 1 &&
                 points + spareCopies.Sum(copy => (long)MoteValues.CopyPoints(copy)) >= needed;
-            for (int moteRank = 1; moteRank <= MoteValues.MaxRank && points < needed && !copiesFinishTarget; moteRank++)
+            foreach (var (moteRank, isFragment) in ResourceOrder(preferFragments))
             {
-                if (motes[moteRank] == 0 ||
+                if (points >= needed || copiesFinishTarget)
+                {
+                    break;
+                }
+
+                int[] available = isFragment ? fragments : motes;
+                if (available[moteRank] == 0 ||
                     (kind == UpgradeKind.Equipment && rank > MoteValues.ItemMaxTier(moteRank)))
                 {
                     continue;
@@ -495,14 +554,14 @@ public static class MoteUpgradePlanner
                 if (kind == UpgradeKind.Equipment && moteRank > rank + 1 &&
                     points + spareCopies.Sum(copy => (long)MoteValues.CopyPoints(copy)) >= needed)
                 {
-                    break;
+                    continue;
                 }
 
-                int value = MoteValues.Points(kind, moteRank);
-                int count = Math.Min(motes[moteRank], CeilDiv(needed - points, value));
-                motes[moteRank] -= count;
+                int value = MoteValues.Points(kind, moteRank, isFragment);
+                int count = Math.Min(available[moteRank], CeilDiv(needed - points, value));
+                available[moteRank] -= count;
                 points += count * value;
-                used.Add(new UpgradeUse(moteRank, count, IsCopy: false));
+                AddResourceUse(used, moteRank, count, isFragment);
             }
 
             while (points < needed && spareCopies.Count > 0)
@@ -528,6 +587,26 @@ public static class MoteUpgradePlanner
         return steps;
     }
 
+    private static IEnumerable<(int Rank, bool IsFragment)> ResourceOrder(bool preferFragments)
+    {
+        if (preferFragments)
+        {
+            for (int rank = 1; rank <= MoteValues.MaxRank; rank++)
+            {
+                yield return (rank, true);
+            }
+        }
+
+        for (int rank = 1; rank <= MoteValues.MaxRank; rank++)
+        {
+            yield return (rank, false);
+            if (!preferFragments)
+            {
+                yield return (rank, true);
+            }
+        }
+    }
+
     private static void AddCopy(List<UpgradeUse> used, int rank)
     {
         int index = used.FindIndex(u => u.IsCopy && u.Rank == rank);
@@ -540,6 +619,22 @@ public static class MoteUpgradePlanner
             used[index] = used[index] with
             {
                 Count = used[index].Count + 1
+            };
+        }
+    }
+
+    private static void AddResourceUse(List<UpgradeUse> used, int rank, int count, bool isFragment)
+    {
+        int index = used.FindIndex(u => !u.IsCopy && u.Rank == rank && u.IsFragment == isFragment);
+        if (index < 0)
+        {
+            used.Add(new UpgradeUse(rank, count, IsCopy: false, IsFragment: isFragment));
+        }
+        else
+        {
+            used[index] = used[index] with
+            {
+                Count = used[index].Count + count
             };
         }
     }

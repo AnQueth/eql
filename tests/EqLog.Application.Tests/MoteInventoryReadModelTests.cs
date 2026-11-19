@@ -1,5 +1,6 @@
 using EqLog.Application.Inventory;
 using EqLog.Application.Motes;
+using EqLog.Core;
 using EqLog.Core.Parsing;
 using EqLog.Core.Tracking;
 
@@ -16,8 +17,8 @@ public sealed class MoteInventoryReadModelTests
     {
         var inventory = MoteInventoryReadModel.Capture([], "Queth", exported ? Now : null);
         var model = inventory.Prepare(Snapshot(), Now);
-        Assert.Equal(["Infinitesimal", "Minor", "Lesser", "Potential", "Major", "Greater",
-            "Superior", "Grand", "Ascendant", "Infinite"], model.Tiers.Select(t => t.Tier));
+        Assert.Equal(MoteValues.Tiers.SelectMany(tier => new[] { tier, MoteTiers.FragmentItemName(tier) }),
+            model.Tiers.Select(t => t.Tier));
         Assert.All(model.Tiers, tier =>
         {
             Assert.Equal(expected, tier.Owned);
@@ -58,6 +59,30 @@ public sealed class MoteInventoryReadModelTests
         });
     }
 
+    [Fact]
+    public void CaptureTracksOwnedFragmentsSeparatelyWithoutAddingThemToPlannerRanks()
+    {
+        var inventory = MoteInventoryReadModel.Capture(
+        [
+            Item("Queth", "Mote of Major Potential", 2),
+            Item("Queth", "Fragment of Major Potential", 3),
+        ], "Queth", Now);
+
+        var model = inventory.Prepare(Snapshot(), Now);
+
+        Assert.Equal(2, Assert.Single(model.Tiers, tier => tier.Tier == "Major").Owned);
+        var fragment = Assert.Single(model.Tiers, tier => tier.Tier == "Fragment of Major Potential");
+        Assert.Equal("Fragment of Major Potential", fragment.ItemName);
+        Assert.Equal(3, fragment.Owned);
+        Assert.Equal(5, fragment.Rank);
+        Assert.Equal(10, fragment.EquipmentPoints);
+        Assert.Equal(32, fragment.SpellPoints);
+        Assert.Equal(4, fragment.MaximumEquipmentRank);
+        Assert.Equal(5, model.OwnedTotal);
+        Assert.Equal(new Dictionary<int, int> { [5] = 2 }, inventory.OwnedByRank);
+        Assert.Equal(new Dictionary<int, int> { [5] = 3 }, inventory.OwnedFragmentsByRank);
+    }
+
     [Theory]
     [InlineData("Infinitesimal", "Mote of Infinitesimal Potential", 1, 0, 1)]
     [InlineData("Potential", "Mote of Potential", 4, 3, 8)]
@@ -76,6 +101,42 @@ public sealed class MoteInventoryReadModelTests
     }
 
     [Fact]
+    public void InventoryExportPreservesFragmentStacksInOverviewAndPlannerInventory()
+    {
+        string text = string.Join("\n",
+            "Location\tName\tID\tCount\tSlots",
+            "General 6-Slot1\tMote of Greater Potential\t148595\t33\t11",
+            "General 6-Slot2\tMote of Major Potential\t148594\t266\t11",
+            "General 6-Slot3\tMote of Minor Potential\t148591\t5\t11",
+            "General 6-Slot4\tFragment of Major Potential\t148795\t14\t11",
+            "General 6-Slot5\tMote of Infinitesimal Potential\t148590\t20\t11",
+            "General 6-Slot6\tMote of Lesser Potential\t148592\t43\t11",
+            "General 6-Slot7\tFragment of Grand Potential\t148798\t2\t11",
+            "General 6-Slot8\tMote of Potential\t148593\t19\t11",
+            "General 6-Slot9\tFragment of Greater Potential\t148796\t3\t11",
+            "General 6-Slot10\tFragment of Lesser Potential\t148793\t15\t11",
+            "General 6-Slot11\tMote of Grand Potential\t148597\t4\t11",
+            "General 6-Slot12\tFragment of Potential\t148794\t3\t11");
+        var state = new QuestInventory();
+        state.ApplyExport("Queth", InventoryExport.Parse(text), Now);
+
+        var inventory = new InventoryReadModel(state).Motes("queth");
+        var model = inventory.Prepare(Snapshot(), Now);
+
+        Assert.Equal(427, model.OwnedTotal);
+        Assert.Equal(37, model.Tiers.Where(tier => MoteTiers.IsFragment(tier.Tier)).Sum(tier => tier.Owned));
+        Assert.Equal(new Dictionary<int, int> { [3] = 15, [4] = 3, [5] = 14, [6] = 3, [8] = 2 },
+            inventory.OwnedFragmentsByRank);
+        Assert.Equal(new Dictionary<int, int> { [1] = 20, [2] = 5, [3] = 43, [4] = 19, [5] = 266, [6] = 33, [8] = 4 },
+            inventory.OwnedByRank);
+        foreach (var (rank, count) in inventory.OwnedFragmentsByRank)
+        {
+            string name = MoteTiers.FragmentItemName(MoteValues.Tiers[rank - 1]);
+            Assert.Equal(count, Assert.Single(model.Tiers, tier => tier.ItemName == name).Owned);
+        }
+    }
+
+    [Fact]
     public void UnknownTiersFromInventoryAndLogFollowKnownRanksAndHaveNoInventedUpgradeValue()
     {
         var inventory = MoteInventoryReadModel.Capture([Item("Queth", "Mote of Condensing Potential", 2)], "Queth", Now);
@@ -85,10 +146,13 @@ public sealed class MoteInventoryReadModelTests
             AllTime = new[] { new MoteCount("Infinite", 8), new MoteCount("Mystery", 7), new MoteCount("Major", 12) },
         };
         var model = inventory.Prepare(snapshot, Now);
-        Assert.Equal(["Condensing", "Mystery", "Void-Touched"], model.Tiers.Skip(10).Select(t => t.Tier));
+        Assert.Equal(["Condensing", "Fragment of Condensing Potential",
+            "Mystery", "Fragment of Mystery Potential",
+            "Void-Touched", "Fragment of Void-Touched Potential"],
+            model.Tiers.Skip(MoteValues.Tiers.Count * 2).Select(t => t.Tier));
         Assert.Equal(3, Assert.Single(model.Tiers, t => t.Tier == "Major").SessionCount);
         Assert.Equal(12, Assert.Single(model.Tiers, t => t.Tier == "Major").AllTimeCount);
-        Assert.All(model.Tiers.Skip(10), tier =>
+        Assert.All(model.Tiers.Skip(MoteValues.Tiers.Count * 2), tier =>
         {
             Assert.Null(tier.Rank);
             Assert.Null(tier.EquipmentPoints);

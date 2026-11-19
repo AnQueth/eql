@@ -122,7 +122,7 @@ The sections below cover individual features, settings, and tracking behavior in
 Use **Settings > General > Tracking data > Reset tracking data...** to rebuild tracking from logs.
 After confirmation, the app saves settings and closes. Open it again to complete the reset and
 reprocess the selected log. NPC encounters, resistance observations, learned spell durations and
-overrides, spawn timers and overrides, mote history, and tracked inventory are moved into
+overrides, spawn timers and overrides, mote and leveling history, and tracked inventory are moved into
 `%AppData%\EqLogOverlay\tracking-backups` before fresh tracking stores load.
 Settings, alert triggers, layout, themes, original game logs, and lookup caches are preserved.
 Only data present in available logs and inventory exports can be rebuilt; other log files must
@@ -339,6 +339,7 @@ Unlock floating overlays with Ctrl+Shift+L to click; docked panels remain intera
 | Spawn Timers | Respawn countdowns for the named mobs you track in the current zone (see below) |
 | Motes | Motes of Potential looted per tier (session and all time), motes/hr, recent drops, drop rates here, and each tier's upgrade value (see below) |
 | Mote upgrade planner | Motes and spare item copies needed for each step from an item's or spell's current +rank to +10 (see below) |
+| Leveling Analyzer | Saved leveling history by date, zone and level, sustained XP windows, and optional build grouping |
 | Sky quest tracker | Plane of Sky class quests, rewards, required items, drop sources, and watched quests |
 | Inventory & loot quests | Owned counts by storage location, item/quest wiki links, and quest completion |
 | Ready to merge | Upgrade-rank merge candidates with quantities and exact storage locations |
@@ -939,16 +940,75 @@ and settings are kept. Resistance categories can temporarily show unknown until 
 is fetched again. Reset progress and any file errors appear inline; an incomplete reset can be
 retried. Reset is blocked if mob tracking data could not be loaded, to avoid overwriting history.
 
+## Leveling Analyzer
+
+Enable **Leveling Analyzer** in the overlay list. It starts hidden and docked; it can also float
+over the game like the other overlays. Unlock floating overlays to use its controls.
+
+- **Levels** is the default view, starting with **All history**. A scrollable, read-only grid has
+  **Started**, **Ended**, **Level**, **Build at the time**, **Kills**, and **Minutes** columns.
+  Rows are sorted by start date/time descending, then level descending. Each time you reach
+  a level has its own row; repeated levels in different leveling runs are not combined.
+  The current (latest recorded) level has a **blank Ended** cell.
+- Builds always show the class loadouts recorded during that level, including **Unknown** for
+  unrecorded periods; multiple observed builds share the row. **Kills** counts your logged
+  killing blows. **Minutes** is logged play time, including non-XP downtime but excluding gaps
+  over 30 minutes, not the wall-clock difference between the start and end dates.
+- Select a grid row for its **XP-by-zone breakdown** and timestamp notes. Visits and days within
+  that level are combined. Levels without any recorded XP still appear. XP logged without a
+  known level is kept separate rather than assigned to a guessed level.
+- Logged level-ups provide exact start/end times. A **\*** marks a first-observed start or an
+  end inferred from the next observed level; select the row to see which timestamps are uncertain.
+  An unavailable completed-level end is **Unknown**, not blank. Existing history is compatible;
+  replaying an available log fills in its level-up timestamps without duplicating XP.
+- Choose **All history**, **Today**, **Yesterday**, **Last 7 days**, **Last week (Mon-Sun)**,
+  or **Custom dates**. In Levels, dates and zones select levels with matching recorded activity;
+  each selected level retains its full recorded dates and XP breakdown, even outside that period.
+  **From** and **To** are always-visible calendar date pickers; editing either selects **Custom dates**.
+  Presets populate both pickers, while **All history** leaves them unrestricted. Both selected dates
+  are included. **Last 7 days** means today and the preceding six calendar days. Dates follow
+  the local game-log clock.
+- **Best places** compares zones within each character level. Choose a **5, 15, 30 or 60 minute**
+  window to find the fastest sustained XP gain and its date. Only fully observed, minute-aligned
+  windows within one visit and level qualify. The prominent result is the **measured gain in
+  the selected window**, not an hourly projection. Groups without a qualifying window are
+  excluded from Best places but their XP remains visible in Levels; try a shorter
+  window for brief visits. Travel/idle-only places are not ranked. The duration selector
+  appears only in Best places and does not affect Levels. No extrapolated hourly rates are shown.
+- Filter by **Zone** or **Level**. **Split XP by build** is optional and off by default; enabling it
+  separates XP sources by the class loadouts recorded by `/who`, without creating extra level
+  rows. The build column remains visible regardless of this grouping option.
+  Current gear is never substituted for historical gear; gear snapshots are not recorded here.
+- History imports automatically while the selected log is read and is saved locally across restarts.
+  Open older logs to backfill them. Rereading the same log does not duplicate its observations.
+  Deleted logs and details never written to a log cannot be reconstructed.
+
+Elapsed time includes pulling, medding and other logged downtime. A gap of more than 30 minutes
+between log lines starts another visit and is not counted as online time. Zone changes, logins
+and known level changes also split visits. In Best places, the latest-window summary is shown
+only when complete, using minutes through the latest recorded activity in the selected period,
+not necessarily live activity.
+
+These are **recorded XP gains**, not guaranteed net XP: deaths can lose an unlogged amount.
+Reward-XP events are listed separately, without inventing their percentage. Missing combat XP
+percentages or character levels prevent affected windows from being ranked, but their recorded
+XP events remain visible in Levels. Hover a result for the measurement caveats.
+History is saved in `leveling-history.json` in the app's data folder; a corrupt file is reported
+and protected from overwriting until repaired or reset.
+
 ## Motes
 
-The **Motes** overlay counts the Motes of Potential you loot, from corpses and Reward Chests:
+The **Motes** overlay counts the Motes and Fragments of Potential you loot, from corpses and Reward Chests:
 
 - The **Owned** column shows your selected character's current inventory beside the drop
   counts in each tier row and the total row. Owned includes carried/bank counts from the
   last inventory export; collection, installed items and historical drops are
   excluded. `?` means inventory is not loaded. Hover for the export date and freshness
   details. Run `/outputfile inventory` after spending,
-  selling, or moving motes to refresh counts; log drops alone cannot detect those changes.
+  selling, or moving motes or fragments to refresh counts; log drops alone cannot detect those changes.
+- Fragments have separate rows beside their corresponding mote tier and count toward **Owned** and the
+  upgrade planner's available fragments. Their session/all-time loot counts can be zero even when you own
+  a stack: those columns track logged drops, not the inventory export.
 - Every known tier has a row, even when none are owned or recorded. Additional tiers found in drops or inventory
   appear automatically. Each row shows this session's count and, in brackets, the all-time count. Known tiers appear
   from lowest to highest upgrade rank; unrecognized tiers follow in alphabetical order. The subtitle shows the session
@@ -1014,9 +1074,15 @@ on spare copies before merging them.
   item sets **Current** to your best exported copy's rank. Every exported item is selectable, including
   Equipment storage, other collections, installed augments/exaltations, and motes; selection does not
   verify that the game permits upgrading that item. Enter **Points** if it already has progress toward the next rank.
-- **Use owned motes** spends the motes confirmed by your last inventory export. For equipment, each rank uses
-  the smallest usable motes first, falling back to higher tiers when smaller tiers are missing or insufficient.
+- **Use owned motes and fragments** spends resources confirmed by your last inventory export.
+  **Prefer fragments** (on by default) spends usable fragments first, smallest fragment tier first,
+  then falls back to normal motes. Turn it off to use the smallest usable tier, with normal motes
+  before fragments within each tier. This preference applies to all task tabs and spare-copy feeding.
+  Fragments add twice their named mote's points and share its equipment rank limit.
   Higher tiers are saved when spare copies can already finish the step.
+  The summary lists all available owned fragments, including those the plan does not need to spend;
+  the upgrade steps list only resources actually used. Run `/outputfile inventory` after looting or spending
+  resources to refresh ownership counts. Loot messages alone do not confirm what you still own.
 - **Use inventory copies** (equipment only) then merges spare copies of the same item from your inventory export,
   lowest first. A +N copy counts as exactly +N (2^N points), with no partial progress. One copy at the current rank
   is treated as the item being upgraded. Copies ranked above **Current** are never counted as spares (pick their rank
@@ -1035,13 +1101,15 @@ on spare copies before merging them.
   stop working at the next rank, and their points carry over.
   A plain-language **What to do** list comes first, including why a tier is needed (for example, Infinite is the only
   mote that still works on a +9 item); open **Math** for the full tables of the actual-inventory plan.
+  When one resource use covers multiple levels, the guide combines them into one instruction (for example,
+  **+0 → +2: use your Fragment of Lesser Potential ×1**). **Math** keeps the per-level point and carry breakdown.
 - **Feed copies with motes first** (off by default) raises spare copies with motes before merging them. A lower-rank
   copy may still take motes the main item can no longer use, and raising a copy to +N costs 2^N − 1 points while
   merging it gives 2^N, so feeding can turn those motes into a more valuable copy. For example, with the main item
   at +4, two +0 copies fed Infinitesimal ×1, Minor ×2 and Lesser ×2 each reach +3 and merge for the whole 16 points
   of +4 → +5, saving three Majors. The overlay lists what to feed each copy, then the steps for the main item, plus
   what feeding saves and what it spends instead.
-  - The lowest copy is always raised first, using the smallest usable motes and falling back to higher tiers as needed. A rank is only started if
+  - The lowest copy is always raised first, following **Prefer fragments** and falling back to higher tiers as needed. A rank is only started if
     your motes can finish it. Points past a copy's last rank are shown as **Wasted**, because merging only passes on
     exactly 2^N.
   - **Include motes the item can still use** (on by default) also feeds motes the main item could take now, which
@@ -1109,6 +1177,7 @@ Settings are stored in `%AppData%\EqLogOverlay\`:
 - `spell-durations.json`: learned samples, overrides, wiki duration estimates, relearn start times, untracked spells and removed spell/rank names
 - `spawn-timers.json`: respawn samples, overrides, relearn start times, tracked mobs and the last kill/sighting per zone, so countdowns keep running across restarts and new log files
 - `motes.json`: all-time mote totals per character and mote drops/kills per zone and mob
+- `leveling-history.json`: minute-resolution XP history, observed zone/level/class loadout, elapsed time, kills/deaths, and per-log replay watermarks
 - `mob-resistances.json`: resistance observations by zone/mob, replay watermarks, and cached EQLWiki NPC data
 - `spell-info.jsonl`: cached EQLWiki spell resist types, appended one line per spell (latest wins); an older `mob-resistances.spells.jsonl` is renamed to this on load
 - `npc-compendium\`: NPC name/zone catalog, historical considers, active encounters and import watermarks in `index.json`, with completed encounter summaries and per-spell damage/outcome counts appended to one `npcs\*.jsonl` file per NPC (no raw log lines). An older single `npc-compendium.json` is migrated automatically and renamed to `npc-compendium.json.migrated`, which can be deleted afterwards.

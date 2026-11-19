@@ -174,6 +174,39 @@ public class PartialResistanceTests
     }
 
     [Theory]
+    [InlineData("  Tester \tNEC\n050  ", "TESTER 050")]
+    [InlineData("Tester Von Name WIZ/ENC 50", "TESTER VON NAME 50")]
+    [InlineData("Tester\n50", "TESTER 50")]
+    [InlineData("Tester WIZ/ENC \u0665\u0660", "TESTER \u0665\u0660")]
+    [InlineData("Tester WIZ/EN 50", "TESTER WIZ/EN 50")]
+    [InlineData("Tester WIZ//ENC 50", "TESTER WIZ//ENC 50")]
+    [InlineData("Tester WIZ/ENC 5x", "TESTER WIZ/ENC 5X")]
+    [InlineData("WIZ 50", "WIZ 50")]
+    public void LearnedDamage_ProfileSuffixParsingPreservesLegacyKeyCompatibility(string profile, string expected)
+    {
+        var store = CreateStore();
+        store.Record("trial", 1, "Sky", "Target", "Conflagration X", false, T0, profile, 1000);
+        var snapshot = Assert.IsType<MobResistancePersistenceSnapshot>(store.CapturePersistenceSnapshot());
+        var samples = snapshot.Data.Mobs["SKY\nTARGET"]["CONFLAGRATION X"].DamageSamples;
+        Assert.Equal(expected, Assert.Single(Assert.IsType<Dictionary<string, Dictionary<long, long>>>(samples)).Key);
+    }
+
+    [Fact]
+    public void LearnedDamage_LongLegacyProfileCanBeNormalizedAndAssessedWithoutTimedMatching()
+    {
+        string name = new('A', 100_000);
+        string classes = string.Join("/", Enumerable.Repeat("WIZ", 10_000));
+        var store = CreateStore();
+        Learn(store, $"{name} {classes} 50", "Conflagration X", 1000);
+        store.Record("trial", 1, "Sky", "Target", "Conflagration X", false, T0, $"{name}\n50", 500);
+
+        var fire = Fire(store);
+        Assert.Equal(4, fire.Landed);
+        Assert.Equal(1, fire.EstimatedPartial);
+        Assert.Equal(0, fire.UnassessedDamage);
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData("Other player")]
     [InlineData("You")]

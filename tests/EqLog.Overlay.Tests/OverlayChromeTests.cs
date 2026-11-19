@@ -35,6 +35,7 @@ public sealed class OverlayChromeTests
                 AsyncTextFilterTests.VerifyQuestVirtualization();
                 TradeskillOverlayTests.VerifyMerchantListScrolling();
                 TradeskillOverlayTests.VerifyCompactToolbarAndRecipeLoading();
+                LevelingOverlayTests.VerifyGridAndDatePickerInteraction();
                 VerifyMobInfoTitleAlwaysVisible();
                 VerifyBreakdownButtonsUsePressClickMode();
 
@@ -660,9 +661,9 @@ public sealed class OverlayChromeTests
 
             var scroll = PanelScroll(panel);
             var stack = Assert.IsType<StackPanel>(scroll.Content);
-            Assert.Equal(MoteValues.MaxRank + 2, stack.Children.Count);
-            Assert.True(scroll.ScrollableHeight <= 1,
-                $"The default {(docked ? "docked" : "floating")} overlay hides {scroll.ScrollableHeight:0.#} pixels.");
+            Assert.Equal(MoteValues.MaxRank * 2 + 2, stack.Children.Count);
+            Assert.True(scroll.ScrollableHeight > 1,
+                $"The {(docked ? "docked" : "floating")} overlay must scroll to show every mote and fragment.");
         }
     }
 

@@ -10,6 +10,16 @@ public sealed record MoteTargetRanks(int Selected, IReadOnlyList<int> Ranks);
 /// <summary>Inventory selection and input bounds for the mote planner.</summary>
 public static class MotePlanningQueries
 {
+    public static string ResourceName(IReadOnlyList<string> tiers, int rank, bool fragment)
+    {
+        return ResourceName(tiers[rank - 1], fragment);
+    }
+
+    public static string ResourceName(string tier, bool fragment)
+    {
+        return fragment ? MoteTiers.FragmentItemName(tier) : tier;
+    }
+
     public static IReadOnlyList<int> Ranks
     {
         get;

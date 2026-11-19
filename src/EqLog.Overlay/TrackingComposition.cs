@@ -14,6 +14,6 @@ internal static class TrackingComposition
             MobRepository, new NpcCompendiumRepository(), new TrackingResetRepository(),
             new(paths.Folder, paths.Durations, paths.Spawns, paths.Motes,
                 Path.Combine(paths.Folder, "mob-resistances.json"), Path.Combine(paths.Folder, "npc-compendium"),
-                Path.Combine(paths.Folder, "npc-compendium.json")));
+                Path.Combine(paths.Folder, "npc-compendium.json")), new LevelingHistoryRepository());
     }
 }

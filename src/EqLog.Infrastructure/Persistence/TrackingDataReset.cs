@@ -7,7 +7,7 @@ public static class TrackingDataReset
     private static readonly string[] Files =
     [
         "spell-durations.json", "spawn-timers.json", "motes.json", "mob-resistances.json",
-        "quest-inventory.json", "npc-compendium.json",
+        "quest-inventory.json", "npc-compendium.json", "leveling-history.json",
     ];
 
     /// <summary>Persists a reset request in <paramref name="folder"/> without changing loaded stores.</summary>

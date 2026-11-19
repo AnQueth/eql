@@ -346,7 +346,7 @@ public sealed class OverlayPanel : ContentControl
         layout.Children.Add(_titleFrame);
         DockPanel.SetDock(_toolbar, Dock.Top);
         layout.Children.Add(_toolbar);
-        if (key is "quests" or "sky" or "npcs" or "exaltations" or "tradeskills")
+        if (key is "quests" or "sky" or "npcs" or "exaltations" or "tradeskills" or "leveling")
         {
             _virtualList = new VirtualRowList(BuildRow)
             {
@@ -520,7 +520,7 @@ public sealed class OverlayPanel : ContentControl
             if (source is System.Windows.Controls.Primitives.ButtonBase or
                 System.Windows.Controls.Primitives.TextBoxBase or
                 System.Windows.Controls.Primitives.ScrollBar or System.Windows.Controls.Primitives.Thumb or ComboBox or TabItem or Hyperlink or
-                DataGrid or GridSplitter or Slider)
+                DataGrid or DatePicker or GridSplitter or Slider)
             {
                 return true;
             }

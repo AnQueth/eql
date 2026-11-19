@@ -69,6 +69,47 @@ public sealed class MotePlanningTests
         Assert.Equal(48, model.RemainingPoints);
     }
 
+    [Fact]
+    public void EquipmentPlanUsesFragmentsAsDoublePointsAndListsThemSeparately()
+    {
+        var fragments = new Dictionary<int, int> { [5] = 1 };
+        var model = MotePlanningService.Prepare(Request(4, 5), new Dictionary<int, int>(), [], fragments);
+
+        var step = Assert.Single(model.Steps);
+        Assert.Equal(10, step.MotePoints);
+        Assert.Equal([new MoteResourceUse(5, 1, IsCopy: false, Points: 10, IsFragment: true)], step.Used);
+        Assert.Empty(model.MotesUsed);
+        Assert.Equal([new MoteResourceCount(5, "Major", 1, IsFragment: true)], model.FragmentsUsed);
+        Assert.Equal(new MoteResourceCount(5, "Major", 2), Assert.Single(model.Missing));
+    }
+
+    [Theory]
+    [InlineData(MotePlanPage.Upgrade, true)]
+    [InlineData(MotePlanPage.Upgrade, false)]
+    [InlineData(MotePlanPage.Math, true)]
+    [InlineData(MotePlanPage.Math, false)]
+    [InlineData(MotePlanPage.WhatIf, true)]
+    [InlineData(MotePlanPage.WhatIf, false)]
+    [InlineData(MotePlanPage.Farm, true)]
+    [InlineData(MotePlanPage.Farm, false)]
+    public void ResourcePreferenceAppliesToEveryTaskTab(MotePlanPage page, bool preferFragments)
+    {
+        var request = Request(4, 5) with
+        {
+            Page = page,
+            PreferFragments = preferFragments,
+        };
+        var model = MotePlanningService.Prepare(request,
+            new Dictionary<int, int> { [5] = 10 }, [], new Dictionary<int, int> { [5] = 1 });
+
+        var step = Assert.Single(model.Steps);
+        Assert.Equal(preferFragments, model.PreferFragments);
+        Assert.Equal(preferFragments, step.Used[0].IsFragment);
+        Assert.Equal(preferFragments ? 2 : 4, Assert.Single(model.MotesUsed).Count);
+        Assert.Equal(preferFragments ? 1 : 0, model.FragmentsUsed.Sum(resource => resource.Count));
+        Assert.Empty(model.Missing);
+    }
+
     [Theory]
     [InlineData(MotePlanPage.Upgrade)]
     [InlineData(MotePlanPage.Farm)]

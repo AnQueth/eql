@@ -14,6 +14,7 @@ public sealed partial class GameSession
     private readonly SpellDurationStore _durations;
     private readonly SpawnStore _spawns;
     private readonly MoteStore _motes;
+    private readonly LevelingHistory _leveling;
     internal MobResistanceStore Mobs
     {
         get;
@@ -34,11 +35,12 @@ public sealed partial class GameSession
         _durations = startup.Durations;
         _spawns = startup.Spawns;
         _motes = startup.Motes;
+        _leveling = startup.Leveling ?? new();
         Mobs = startup.Mobs ?? new();
         Npcs = startup.Npcs ?? new();
         MobsWritable = startup.Mobs is not null;
         NpcsWritable = startup.Npcs is not null;
-        Engine = new(_durations, _spawns, _motes, Mobs, npcs: Npcs);
+        Engine = new(_durations, _spawns, _motes, Mobs, npcs: Npcs, leveling: _leveling);
     }
 
     public long Revision
@@ -58,7 +60,7 @@ public sealed partial class GameSession
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(file);
-        var engine = new LogEngine(_durations, _spawns, _motes, Mobs, file.Path, Npcs)
+        var engine = new LogEngine(_durations, _spawns, _motes, Mobs, file.Path, Npcs, _leveling)
         {
             CharacterName = file.CharacterName,
             ResetOnLogin = resetOnLogin,
@@ -66,6 +68,11 @@ public sealed partial class GameSession
         source.Start(file, engine);
         Engine = engine;
         Revision++;
+    }
+
+    public LevelingReport LevelingReport(LevelingRequest request)
+    {
+        return LevelingQueries.Prepare(_leveling.Snapshot(request.Character, DateTime.MinValue, DateTime.MaxValue), request);
     }
 
     public Task<LogSessionFrame> CaptureFrameAsync(LogSessionService source, bool includeChat,

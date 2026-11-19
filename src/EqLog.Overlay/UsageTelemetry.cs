@@ -38,6 +38,7 @@ internal enum UsageFeature
     ItemUpgradesPanel,
     MoteUpgradePlannerPanel,
     ExaltationsPanel,
+    LevelingAnalyzerPanel,
     OtherPanel,
 }
 
@@ -186,6 +187,7 @@ internal static class UsageTelemetry
             "itemupgrades" => UsageFeature.ItemUpgradesPanel,
             "moteplan" => UsageFeature.MoteUpgradePlannerPanel,
             "exaltations" => UsageFeature.ExaltationsPanel,
+            "leveling" => UsageFeature.LevelingAnalyzerPanel,
             _ => UsageFeature.OtherPanel,
         };
     }

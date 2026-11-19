@@ -360,6 +360,8 @@ presented as unknown merely because damage assessment is unsupported.
 Unmodified non-critical damage histograms are persisted by character/level and exact
 ranked spell inside each mob's outcomes. Legacy character/classes/level keys are normalized
 for baseline aggregation and invalidation without rewriting saved histograms or duplicating hits.
+Legacy class/level suffixes are recognized with character scans rather than a timed regex,
+so delayed history queries cannot trigger a profile-normalization regex timeout.
 After at least three eligible samples across mobs/zones,
 the sample-count-weighted median supplies the baseline (the middle two values are averaged
 for an even sample count). Hits below 90% of this baseline are reduced-damage estimates,
@@ -462,6 +464,7 @@ ownership does not change their names or require a new schema/data migration.
 | `settings.json` | `SettingsRepository` | Existing JSON options, unknown fields, docking/workspace graph, hash deduplication and atomic replacement |
 | `quest-inventory.json` | `QuestInventoryRepository` | Compact fields, confirmed counts, rank/completion/upgrade history, log watermarks and legacy normalization |
 | `spell-durations.json`, `spawn-timers.json`, `motes.json` | Specific tracking repositories | Existing snapshot records, dirty revisions, atomic saves and replay watermarks |
+| `leveling-history.json` | `LevelingHistoryRepository` via `TrackingService` | Immutable minute snapshots, optional exact level-up timestamps and per-log watermarks; replay backfills missing timestamps without duplicating XP; ordered atomic saves, dirty retries and protected corrupt-file handling |
 | `mob-resistances.json` | Shared `MobResistanceRepository` | Resistance samples, wiki metadata, legacy normalization and one save/reset gate |
 | `npc-compendium\index.json`, `npc-compendium\npcs\*.jsonl` | `NpcCompendiumRepository` | Append-before-index ordering, encounter IDs/source indices, lazy history, torn-tail recovery and duplicate handling |
 | Legacy `npc-compendium.json` | `NpcCompendiumRepository` | Existing first-load migration and `.json.migrated` backup |

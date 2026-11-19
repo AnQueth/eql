@@ -183,6 +183,117 @@ public class MoteUpgradeTests
     }
 
     [Fact]
+    public void FragmentValuesDoubleTheirNamedMoteAndKeepItsRankLimit()
+    {
+        foreach (string tier in MoteValues.Tiers)
+        {
+            string fragment = MoteTiers.FragmentItemName(tier);
+            int rank = Assert.IsType<int>(MoteValues.RankOf(fragment));
+
+            Assert.Equal(MoteValues.ItemPoints(rank) * 2, MoteValues.Points(UpgradeKind.Equipment, rank, fragment: true));
+            Assert.Equal(MoteValues.SpellPoints(rank) * 2, MoteValues.Points(UpgradeKind.Spell, rank, fragment: true));
+        }
+    }
+
+    [Theory]
+    [InlineData(UpgradeKind.Equipment)]
+    [InlineData(UpgradeKind.Spell)]
+    public void PlannerUsesOneFragmentAsTwiceItsNamedMote(UpgradeKind kind)
+    {
+        var plan = MoteUpgradePlanner.Plan(kind, 0, 0, NoMotes, [], targetRank: 1,
+            ownedFragments: new Dictionary<int, int> { [1] = 1 });
+
+        var step = Assert.Single(plan.Steps);
+        Assert.Equal([new UpgradeUse(1, 1, IsCopy: false, IsFragment: true)], step.Used);
+        Assert.Equal(1, step.CarryAfter);
+        Assert.Empty(plan.MotesUsed);
+        Assert.Equal(new Dictionary<int, int> { [1] = 1 }, plan.FragmentsUsed);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void PlannerUsesSelectedResourcePriorityAndNormalMotesForRemainingPoints(bool preferFragments)
+    {
+        var motes = new Dictionary<int, int> { [5] = 10 };
+        var fragments = new Dictionary<int, int> { [5] = 1 };
+        var plan = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 4, 0, motes, [], targetRank: 5,
+            ownedFragments: fragments, preferFragments: preferFragments);
+
+        var step = Assert.Single(plan.Steps);
+        UpgradeUse[] expected = preferFragments ?
+        [
+            new UpgradeUse(5, 1, IsCopy: false, IsFragment: true),
+            new UpgradeUse(5, 2, IsCopy: false),
+        ] : [new UpgradeUse(5, 4, IsCopy: false)];
+        Assert.Equal(expected, step.Used);
+        Assert.Equal(0, step.Missing);
+        Assert.Equal(4, step.CarryAfter);
+        Assert.Equal(10, motes[5]);
+        Assert.Equal(1, fragments[5]);
+    }
+
+    [Theory]
+    [InlineData(UpgradeKind.Equipment, true, 1)]
+    [InlineData(UpgradeKind.Spell, true, 3)]
+    [InlineData(UpgradeKind.Equipment, false, 0)]
+    [InlineData(UpgradeKind.Spell, false, 0)]
+    public void FragmentPreferenceControlsPriorityOverLowerTierNormalMotes(UpgradeKind kind, bool preferFragments, int carry)
+    {
+        var plan = MoteUpgradePlanner.Plan(kind, 0, 0, new Dictionary<int, int> { [1] = 10 }, [],
+            targetRank: 1, ownedFragments: new Dictionary<int, int> { [2] = 1 }, preferFragments: preferFragments);
+
+        var step = Assert.Single(plan.Steps);
+        Assert.Equal([new UpgradeUse(preferFragments ? 2 : 1, 1, IsCopy: false, IsFragment: preferFragments)], step.Used);
+        Assert.Equal(carry, step.CarryAfter);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void FeedingUsesSelectedResourcePriorityAndFallsBackForRemainingPoints(bool preferFragments)
+    {
+        var plan = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 5, 0,
+            new Dictionary<int, int> { [5] = 10 }, [4], new FeedOptions(), targetRank: 6,
+            ownedFragments: new Dictionary<int, int> { [5] = 1 }, preferFragments: preferFragments);
+
+        var fed = Assert.Single(plan.FedCopies);
+        Assert.Equal(5, fed.EndRank);
+        UpgradeUse[] expected = preferFragments ?
+        [
+            new UpgradeUse(5, 1, IsCopy: false, IsFragment: true),
+            new UpgradeUse(5, 2, IsCopy: false),
+        ] : [new UpgradeUse(5, 4, IsCopy: false)];
+        Assert.Equal(expected, fed.Motes);
+        Assert.Empty(plan.Missing);
+    }
+
+    [Fact]
+    public void EquipmentFragmentsKeepTheirNamedMoteRankLimit()
+    {
+        var plan = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 5, 0, NoMotes, [], targetRank: 6,
+            ownedFragments: new Dictionary<int, int> { [5] = 1 });
+
+        var step = Assert.Single(plan.Steps);
+        Assert.Empty(plan.FragmentsUsed);
+        Assert.Equal("Greater", step.MissingTier);
+        Assert.Equal(6, step.Missing);
+    }
+
+    [Fact]
+    public void FeedingCanUseFragmentsAndReportsTheirActualResourceType()
+    {
+        var plan = MoteUpgradePlanner.Plan(UpgradeKind.Equipment, 5, 0, NoMotes, [0],
+            new FeedOptions(), targetRank: 6, ownedFragments: new Dictionary<int, int> { [5] = 1 });
+
+        var fed = Assert.Single(plan.FedCopies);
+        Assert.Equal(3, fed.EndRank);
+        Assert.Equal([new UpgradeUse(5, 1, IsCopy: false, IsFragment: true)], fed.Motes);
+        Assert.Equal(new Dictionary<int, int> { [5] = 1 }, plan.FragmentsUsed);
+        Assert.Equal(4, plan.Missing[6]);
+    }
+
+    [Fact]
     public void UnknownTierHasNoRank()
     {
         Assert.Null(MoteValues.RankOf("Transcendent"));

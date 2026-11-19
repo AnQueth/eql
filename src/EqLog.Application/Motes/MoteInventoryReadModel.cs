@@ -26,14 +26,21 @@ public sealed class MoteInventoryReadModel
     private readonly IReadOnlyDictionary<string, int> _ownedByTier;
     private readonly DateTime? _exportTime;
 
-    private MoteInventoryReadModel(Dictionary<string, int> ownedByTier, Dictionary<int, int> ownedByRank, DateTime? exportTime)
+    private MoteInventoryReadModel(Dictionary<string, int> ownedByTier, Dictionary<int, int> ownedByRank,
+        Dictionary<int, int> ownedFragmentsByRank, DateTime? exportTime)
     {
         _ownedByTier = new ReadOnlyDictionary<string, int>(ownedByTier);
         OwnedByRank = new ReadOnlyDictionary<int, int>(ownedByRank);
+        OwnedFragmentsByRank = new ReadOnlyDictionary<int, int>(ownedFragmentsByRank);
         _exportTime = exportTime;
     }
 
     public IReadOnlyDictionary<int, int> OwnedByRank
+    {
+        get;
+    }
+
+    public IReadOnlyDictionary<int, int> OwnedFragmentsByRank
     {
         get;
     }
@@ -45,10 +52,11 @@ public sealed class MoteInventoryReadModel
     {
         var byTier = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var byRank = new Dictionary<int, int>();
+        var fragmentsByRank = new Dictionary<int, int>();
         foreach (var item in items)
         {
             if (!item.Character.Equals(characterName, StringComparison.OrdinalIgnoreCase) ||
-                MoteTiers.TierOf(ItemNames.Normalize(item.Item)) is not string tier)
+                MoteTiers.TrackedTierOf(ItemNames.Normalize(item.Item)) is not string tier)
             {
                 continue;
             }
@@ -56,11 +64,12 @@ public sealed class MoteInventoryReadModel
             byTier[tier] = byTier.GetValueOrDefault(tier) + item.Owned;
             if (item.Owned > 0 && MoteValues.RankOf(tier) is int rank)
             {
-                byRank[rank] = byRank.GetValueOrDefault(rank) + item.Owned;
+                var rankCounts = MoteTiers.IsFragment(tier) ? fragmentsByRank : byRank;
+                rankCounts[rank] = rankCounts.GetValueOrDefault(rank) + item.Owned;
             }
         }
 
-        return new MoteInventoryReadModel(byTier, byRank, exportTime);
+        return new MoteInventoryReadModel(byTier, byRank, fragmentsByRank, exportTime);
     }
 
     public MoteOverviewReadModel Prepare(MoteSnapshot snapshot, DateTime now)
@@ -70,8 +79,12 @@ public sealed class MoteInventoryReadModel
         var tiers = allTime.Keys.Union(session.Keys, StringComparer.OrdinalIgnoreCase)
             .Union(_ownedByTier.Keys, StringComparer.OrdinalIgnoreCase)
             .Union(MoteValues.Tiers, StringComparer.OrdinalIgnoreCase)
+            .Union(MoteValues.Tiers.Select(MoteTiers.FragmentItemName), StringComparer.OrdinalIgnoreCase)
+            .SelectMany(tier => new[] { MoteTiers.BaseTier(tier), MoteTiers.FragmentItemName(MoteTiers.BaseTier(tier)) })
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(t => MoteValues.RankOf(t) ?? int.MaxValue)
-            .ThenBy(t => t, StringComparer.OrdinalIgnoreCase);
+            .ThenBy(MoteTiers.BaseTier, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(t => MoteTiers.IsFragment(t) ? 1 : 0);
         var rows = new List<MoteTierReadModel>();
         foreach (string tier in tiers)
         {
@@ -79,10 +92,11 @@ public sealed class MoteInventoryReadModel
             int? owned = _exportTime.HasValue || _ownedByTier.ContainsKey(tier)
                 ? _ownedByTier.GetValueOrDefault(tier) : null;
             int? rank = MoteValues.RankOf(tier);
+            bool isFragment = MoteTiers.IsFragment(tier);
             rows.Add(new MoteTierReadModel(tier, MoteTiers.ItemName(tier), count,
                 allTime.GetValueOrDefault(tier), owned, rank,
-                rank is int gearRank ? MoteValues.ItemPoints(gearRank) : null,
-                rank is int spellRank ? MoteValues.SpellPoints(spellRank) : null,
+                rank is int gearRank ? MoteValues.Points(UpgradeKind.Equipment, gearRank, isFragment) : null,
+                rank is int spellRank ? MoteValues.Points(UpgradeKind.Spell, spellRank, isFragment) : null,
                 rank is int maxRank ? MoteValues.ItemMaxTier(maxRank) : null));
         }
 

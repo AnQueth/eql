@@ -28,7 +28,8 @@ public sealed record MotePlanningRequest(
     MotePlanPage Page,
     string Name,
     bool HasInventoryExport,
-    IReadOnlyList<int> HypotheticalCopies);
+    IReadOnlyList<int> HypotheticalCopies,
+    bool PreferFragments = true);
 
 public enum MoteInputStatus
 {
@@ -59,7 +60,7 @@ public enum MoteMissingReason
     OnlyUsableEquipmentTier,
 }
 
-public sealed record MoteResourceUse(int Rank, int Count, bool IsCopy, int Points);
+public sealed record MoteResourceUse(int Rank, int Count, bool IsCopy, int Points, bool IsFragment = false);
 
 public sealed record MoteUpgradeStep(
     int FromRank, int ToRank, int Needed, int StartPoints, IReadOnlyList<MoteResourceUse> Used,
@@ -69,7 +70,7 @@ public sealed record MoteUpgradeStep(
 public sealed record MoteFedCopy(
     int StartRank, int EndRank, bool IsFodder, IReadOnlyList<MoteResourceUse> Motes, int MergePoints, int Wasted);
 
-public sealed record MoteResourceCount(int Rank, string Tier, int Count);
+public sealed record MoteResourceCount(int Rank, string Tier, int Count, bool IsFragment = false);
 
 public sealed record MoteFarmTarget(int TargetRank, int AdditionalCopies);
 
@@ -84,7 +85,10 @@ public sealed record MotePlanReadModel(
     bool HasInventoryExport, string ItemName, MoteCopySelection CopySelection,
     MoteWhatIfCalculation? WhatIf, MoteFeedingStatus FeedingStatus, int FodderRank, int FodderCopies,
     IReadOnlyList<MoteUpgradeStep> Steps, IReadOnlyList<MoteFedCopy> FedCopies,
-    IReadOnlyList<MoteResourceCount> MotesUsed, IReadOnlyList<MoteResourceCount> CopiesUsed,
+    IReadOnlyList<MoteResourceCount> MotesUsed, IReadOnlyList<MoteResourceCount> FragmentsUsed,
+    IReadOnlyList<MoteResourceCount> AvailableFragments,
+    bool PreferFragments,
+    IReadOnlyList<MoteResourceCount> CopiesUsed,
     IReadOnlyList<MoteResourceCount> Missing, IReadOnlyList<MoteResourceCount> FeedingSavings,
     IReadOnlyList<MoteResourceCount> FeedingCosts, int ExtraCopiesFed, int FeedingWaste,
     int TotalRequiredPoints, int RemainingPoints,

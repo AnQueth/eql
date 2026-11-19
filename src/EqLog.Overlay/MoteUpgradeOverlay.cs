@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using EqLog.Application.Motes;
 using EqLog.Core;
+using EqLog.Core.Tracking;
 
 namespace EqLog.Overlay;
 
@@ -22,6 +23,7 @@ public partial class MainWindow
     private bool _refreshingPlanTarget;
     private TextBox? _planPoints;
     private CheckBox? _planUseMotes;
+    private CheckBox? _planPreferFragments;
     private CheckBox? _planUseCopies;
     private TabControl? _planTabs;
     private TabItem? _planFarmTab;
@@ -54,7 +56,7 @@ public partial class MainWindow
             SelectedIndex = 0,
             MinWidth = 100,
             Margin = new Thickness(0, 0, 6, 0),
-            ToolTip = "Equipment motes are worth 1-10 points and only work up to a +rank limit; spell motes double in value and have no limit.",
+            ToolTip = "Fragments are worth twice their named mote and share its equipment +rank limit. Motes and fragments work on spells at any rank.",
         };
         _planName = new TextBox
         {
@@ -94,11 +96,12 @@ public partial class MainWindow
         UpdatePlanTargetRanks(_planTargetRank, 0);
         _planUseMotes = new CheckBox
         {
-            Content = "Use owned motes",
+            Content = "Use owned motes and fragments",
             IsChecked = true,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 10, 0),
-            ToolTip = "Spend the motes confirmed by your last inventory export before listing missing ones. Run /outputfile inventory after looting or spending motes.",
+            ToolTip = "Spend the motes and fragments confirmed by your last inventory export before listing missing motes. " +
+                "Run /outputfile inventory after looting or spending either.",
         };
         _planUseCopies = new CheckBox
         {
@@ -107,23 +110,33 @@ public partial class MainWindow
             VerticalAlignment = VerticalAlignment.Center,
             ToolTip = "Merge spare copies of this item from your inventory export. A +N copy counts as exactly +N (2^N points).",
         };
+        _planPreferFragments = new CheckBox
+        {
+            Content = "Prefer fragments",
+            IsChecked = true,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 10, 0),
+            ToolTip = "Spend usable fragments before normal motes, smallest fragment tier first. " +
+                "Off: use the smallest usable tier, normal motes before fragments within each tier. " +
+                "Applies to upgrades, spare-copy feeding, and farming estimates.",
+        };
         _planFeed = new CheckBox
         {
-            Content = "Feed copies with motes first",
+            Content = "Feed copies with motes/fragments first",
             IsChecked = false,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 10, 0),
-            ToolTip = "Raise spare copies before merging them. A lower-rank copy may still take motes the main item can no longer use, " +
+            ToolTip = "Raise spare copies before merging them. A lower-rank copy may still take motes or fragments the main item can no longer use, " +
                 "so it can be worth raising first. The planner uses feeding only when it helps.",
         };
         _planFeedUsable = new CheckBox
         {
-            Content = "Include motes the item can still use",
+            Content = "Include motes/fragments the item can still use",
             IsChecked = true,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 10, 0),
-            ToolTip = "Also feed copies with motes the main item could take now. Helps when you have more of a tier than the main item " +
-                "can use before it outgrows them. Off: only feed motes the main item can no longer use.",
+            ToolTip = "Also feed copies with motes or fragments the main item could take now. Helps when you have more of a tier than the main item " +
+                "can use before it outgrows them. Off: only feed resources the main item can no longer use.",
         };
         _planFodder = new TextBox
         {
@@ -154,6 +167,7 @@ public partial class MainWindow
         optionsRow.Children.Add(PlanGroup("Stop at", _planTargetRank));
         var resourcesRow = new WrapPanel { Margin = new Thickness(0, 4, 0, 4) };
         resourcesRow.Children.Add(_planUseMotes);
+        resourcesRow.Children.Add(_planPreferFragments);
         resourcesRow.Children.Add(_planUseCopies);
         var feedRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
         feedRow.Children.Add(_planFeed);
@@ -237,6 +251,10 @@ public partial class MainWindow
             RefreshMotePlan();
         };
         _planUseCopies.Click += (_, _) =>
+        {
+            RefreshMotePlan();
+        };
+        _planPreferFragments.Click += (_, _) =>
         {
             RefreshMotePlan();
         };
@@ -326,16 +344,19 @@ public partial class MainWindow
             return;
         }
 
-        string signature = _characterName + "|" + string.Join(",", OwnedMotesByRank().OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}:{kv.Value}"));
+        var owned = OwnedMoteInventory();
+        string signature = _characterName + "|" +
+            string.Join(",", owned.OwnedByRank.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}:{kv.Value}")) + "|" +
+            string.Join(",", owned.OwnedFragmentsByRank.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}:{kv.Value}"));
         if (signature != _planSignature || !ReferenceEquals(_planNamesSource, _inventoryRows))
         {
             RefreshMotePlan();
         }
     }
 
-    private IReadOnlyDictionary<int, int> OwnedMotesByRank()
+    private MoteInventoryReadModel OwnedMoteInventory()
     {
-        return MoteInventoryReadModel.Capture(_questInventory.Items, _characterName).OwnedByRank;
+        return MoteInventoryReadModel.Capture(_questInventory.Items, _characterName);
     }
 
     /// <summary>All export rows for this character, or none if the export is for someone else.</summary>
@@ -546,8 +567,16 @@ public partial class MainWindow
         }
 
         _planPoints.IsEnabled = MotePlanningQueries.CanAddProgress(startRank);
-        var owned = OwnedMotesByRank();
-        _planSignature = _characterName + "|" + string.Join(",", owned.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}:{kv.Value}"));
+        if (_planPreferFragments is not null)
+        {
+            _planPreferFragments.IsEnabled = _planUseMotes.IsChecked == true;
+        }
+        var ownedInventory = OwnedMoteInventory();
+        var owned = ownedInventory.OwnedByRank;
+        var fragments = ownedInventory.OwnedFragmentsByRank;
+        _planSignature = _characterName + "|" +
+            string.Join(",", owned.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}:{kv.Value}")) + "|" +
+            string.Join(",", fragments.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}:{kv.Value}"));
         string name = PlanTargetName(kind, _planName, _planInventoryName);
         var inventory = PlanInventoryRows();
         var copies = equipment ? MotePlanningQueries.SelectCopies(inventory, name, startRank).Spares.ToList() : [];
@@ -558,8 +587,8 @@ public partial class MainWindow
             _planUseMotes.IsChecked == true, _planUseCopies.IsChecked == true,
             (MotePlanPage)activeTab, name,
             _inventoryRowsCharacter is not null && _inventoryRowsCharacter.Equals(_characterName, StringComparison.OrdinalIgnoreCase),
-            _planHypotheticalCopies.ToArray());
-        var model = MotePlanningService.Prepare(request, owned, inventory);
+            _planHypotheticalCopies.ToArray(), _planPreferFragments?.IsChecked == true);
+        var model = MotePlanningService.Prepare(request, owned, inventory, fragments);
         _planSummary.ToolTip = PlanSummaryToolTip(model.Kind);
         _planSummary.Text = PlanSummary(model, request.Page);
         _planSummary.Visibility = _planSummary.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -616,10 +645,12 @@ public partial class MainWindow
     internal static string PlanSummaryToolTip(MoteUpgradeKind kind)
     {
         return kind == MoteUpgradeKind.Equipment
-            ? "Each step uses the smallest usable motes first, including higher tiers when needed. " +
-                "Spare copies are merged after motes. Condensing and Void-Touched motes are not used."
-            : "Spell motes double in value each tier (1 to 512 points) and work at any +level. " +
-                "Smallest motes are spent first. Condensing and Void-Touched motes are not used.";
+            ? "Prefer fragments spends usable fragments before normal motes; off uses the smallest usable tier, normal motes first. " +
+                "Fragments are worth twice their named mote and share its equipment +rank limit. " +
+                "Spare copies are merged after motes and fragments. Condensing and Void-Touched resources are not used."
+            : "Spell motes double in value each tier (1 to 512 points); fragments are worth twice their named mote. " +
+                "Both work at any +level. Prefer fragments spends fragments first; off uses the smallest tier, normal motes first. " +
+                "Condensing and Void-Touched resources are not used.";
     }
 
     internal static string PlanSummary(MotePlanReadModel model, MotePlanPage page)
@@ -639,6 +670,19 @@ public partial class MainWindow
         if (model.FodderStatus == MoteInputStatus.Invalid && page == MotePlanPage.Farm)
         {
             notes.Add($"Extra copies must be a whole number from 0 to {model.MaximumFodderCopies}; using 0.");
+        }
+
+        if (model.AvailableFragments.Count > 0)
+        {
+            notes.Add($"Owned fragments available (last inventory export): {DescribeCounts(model.AvailableFragments)}.");
+            notes.Add(model.PreferFragments
+                ? "Usable fragments are spent before normal motes, smallest fragment tier first."
+                : "Regular motes are used first within each tier; unused fragments are kept.");
+            if (model.Kind == MoteUpgradeKind.Equipment)
+            {
+                notes.Add("Fragments have the same equipment rank limit as their named mote.");
+            }
+            notes.Add("Run /outputfile inventory after looting or spending resources to refresh these counts.");
         }
 
         if (model.Kind == MoteUpgradeKind.Equipment)
@@ -698,7 +742,7 @@ public partial class MainWindow
 
         blocks.Add(new MotePlanLine("Each number is the TOTAL to farm from where you are now. Do not add the numbers together.",
             Muted: true));
-        blocks.Add(new MotePlanLine("These numbers use the motes, spare copies and progress selected above.", Muted: true));
+        blocks.Add(new MotePlanLine("These numbers use the motes, fragments, spare copies and progress selected above.", Muted: true));
         if (model.FodderCopies > 0)
         {
             blocks.Add(new MotePlanLine($"The {model.FodderCopies:N0} extra copies you entered are already counted. " +
@@ -707,13 +751,13 @@ public partial class MainWindow
 
         if (model.FeedingStatus is MoteFeedingStatus.Used or MoteFeedingStatus.NotBeneficial or MoteFeedingStatus.NotNeeded)
         {
-            blocks.Add(new MotePlanLine("Feeding is on: the plan may spend your motes to raise farmed copies before merging them.",
+            blocks.Add(new MotePlanLine("Feeding is on: the plan may spend your motes or fragments to raise farmed copies before merging them.",
                 Muted: true));
         }
 
         var comparison = new List<string>
         {
-            $"No motes, no spare copies, no feeding, and no saved progress. " +
+            $"No motes or fragments, no spare copies, no feeding, and no saved progress. " +
                 $"Just merge +{fodderRank} copies for ONE level at a time:",
         };
         foreach (var step in model.CopyOnlySteps)
@@ -738,7 +782,7 @@ public partial class MainWindow
                 f.Wasted > 0 ? f.Wasted.ToString("N0") : "",
             })).ToArray();
             blocks.Add(Table(["Copy", "To", "Feed", "Merge pts", "Wasted"], feedRows,
-                "Feed each copy these motes, using only the tier that matches each rank, then merge it into the main item. " +
+                "Feed each copy these motes or fragments, using only tiers that work at each rank, then merge it into the main item. " +
                 "Wasted: points past the copy's last rank, which merging doesn't pass on."));
             blocks.Add(new MotePlanHeading("Upgrade the main item", Detail: true, Subsequent: true));
         }
@@ -753,13 +797,17 @@ public partial class MainWindow
             s.CarryAfter.ToString("N0"),
         })).ToArray();
         blocks.Add(Table(["Step", "Need", "Have", "Use", "Missing", "Carry"], rows,
-            "Need: points for the step. Have: points carried in. Use: owned motes and spare copies spent. " +
+            "Need: points for the step. Have: points carried in. Use: owned motes, fragments and spare copies spent. " +
             "Missing: motes still to get. Carry: extra points that roll into the next step."));
 
         var totals = new List<(string, string)>
         {
             ("Owned motes used", DescribeCounts(plan.MotesUsed)),
         };
+        if (plan.FragmentsUsed.Count > 0)
+        {
+            totals.Add(("Owned fragments used", DescribeCounts(plan.FragmentsUsed)));
+        }
         if (plan.Kind == MoteUpgradeKind.Equipment)
         {
             totals.Add(("Copies merged", DescribeCounts(plan.CopiesUsed, copies: true)));
@@ -821,17 +869,26 @@ public partial class MainWindow
         }
 
         blocks.Add(new MotePlanLine($"{number}. Level up your {thing}:"));
-        foreach (var step in plan.Steps)
+        for (int index = 0; index < plan.Steps.Count; index++)
         {
+            var step = plan.Steps[index];
+            int toRank = step.ToRank;
+            while (index + 1 < plan.Steps.Count &&
+                plan.Steps[index + 1].Used.Count == 0 && plan.Steps[index + 1].Missing == 0)
+            {
+                index++;
+                toRank = plan.Steps[index].ToRank;
+            }
+
             var parts = new List<string>();
             var motes = step.Used.Where(u => !u.IsCopy).ToList();
             var copiesUsed = step.Used.Where(u => u.IsCopy).ToList();
             if (step.Classification == MoteStepClassification.OutgrownMotesBeforeSufficientCopies)
             {
                 string copyText = DescribeCopies(copiesUsed);
-                blocks.Add(new MotePlanLine($"• +{step.FromRank} → +{step.ToRank}: merge {copyText} (that alone makes +{step.ToRank}). " +
+                blocks.Add(new MotePlanLine($"• +{step.FromRank} → +{toRank}: merge {copyText} (that alone makes +{step.ToRank}). " +
                     $"Use your {DescribeUses(motes, plan.TierIds)} first anyway: they stop working at +{step.ToRank}, " +
-                    $"so their {step.MotePoints:N0} points carry into +{step.ToRank} → +{step.ToRank + 1}", Indent: true));
+                    $"so their {step.MotePoints:N0} points carry into +{step.ToRank} → +{Math.Max(toRank, step.ToRank + 1)}", Indent: true));
                 continue;
             }
 
@@ -855,13 +912,13 @@ public partial class MainWindow
                 parts.Add("leftover points cover it");
             }
 
-            blocks.Add(new MotePlanLine($"• +{step.FromRank} → +{step.ToRank}: {string.Join(", then ", parts)}", Indent: true));
+            blocks.Add(new MotePlanLine($"• +{step.FromRank} → +{toRank}: {string.Join(", then ", parts)}", Indent: true));
         }
 
         blocks.Add(new MotePlanLine($"Stop at +{targetRank}. No further upgrades are planned.", Muted: true));
         if (plan.Steps[^1].CarryAfter > 0)
         {
-            blocks.Add(new MotePlanLine($"The last mote or merge leaves {plan.Steps[^1].CarryAfter:N0} extra points. " +
+            blocks.Add(new MotePlanLine($"The last resource or merge leaves {plan.Steps[^1].CarryAfter:N0} extra points. " +
                 "Resources add fixed amounts; do not add more points after reaching your target.", Muted: true));
         }
 
@@ -872,7 +929,7 @@ public partial class MainWindow
             string why;
             if (!equipment)
             {
-                why = $"Why {string.Join(", ", tiers)}? One of that mote is exactly what each step needs, so nothing is wasted.";
+                why = $"Why {string.Join(", ", tiers)}? One of those resources is exactly what each step needs, so nothing is wasted.";
             }
             else if (missingSteps.Count == 1)
             {
@@ -883,7 +940,7 @@ public partial class MainWindow
             }
             else
             {
-                why = "Why these motes? Motes stop working once an item gets too high, so each step asks for the smallest one that still works: " +
+                why = "Why these resources? Motes and fragments stop working once an item gets too high, so each step asks for the smallest one that still works: " +
                     string.Join(", ", missingSteps.Select(s => $"+{s.FromRank} needs {s.MissingTier}")) + ".";
             }
 
@@ -913,7 +970,7 @@ public partial class MainWindow
     {
         return string.Join(", ", used.Select(u => u.IsCopy
             ? $"copy +{u.Rank}{(u.Count > 1 ? $" ×{u.Count}" : "")}"
-            : $"{tierIds[u.Rank - 1]} ×{u.Count}"));
+            : $"{MotePlanningQueries.ResourceName(tierIds, u.Rank, u.IsFragment)} ×{u.Count}"));
     }
 
     private static string DescribeCounts(IReadOnlyList<MoteResourceCount> counts, bool copies = false)
@@ -923,7 +980,8 @@ public partial class MainWindow
             return "none";
         }
 
-        return string.Join(", ", counts.Select(count => $"{(copies ? $"+{count.Rank}" : count.Tier)} ×{count.Count:N0}"));
+        return string.Join(", ", counts.Select(count =>
+            $"{(copies ? $"+{count.Rank}" : MotePlanningQueries.ResourceName(count.Tier, count.IsFragment))} ×{count.Count:N0}"));
     }
 
     internal static void RenderMotePlan(

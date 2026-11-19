@@ -228,7 +228,7 @@ public sealed class OverlayWindow : Window
         }
 
         int always = NativeMethods.WS_EX_TOOLWINDOW | NativeMethods.WS_EX_LAYERED;
-        bool typing = Panel.Key is "npcs" or "inventory" or "moteplan" || _sliderInteraction || _textInteraction || _dragInteraction;
+        bool typing = Panel.Key is "npcs" or "inventory" or "moteplan" or "leveling" || _sliderInteraction || _textInteraction || _dragInteraction;
         if (_locked || !typing)
         {
             always |= NativeMethods.WS_EX_NOACTIVATE;

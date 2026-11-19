@@ -52,7 +52,7 @@ public sealed class ApplicationPersistenceTests
         var failure = Assert.Single(result.Failures);
         Assert.Equal(PersistedFeature.Settings, failure.Feature);
         Assert.IsAssignableFrom<IOException>(failure.Error);
-        Assert.Equal(8, result.Outcomes.Count);
+        Assert.Equal(9, result.Outcomes.Count);
         Assert.True(File.Exists(Path.Combine(fixture.Folder, "quest-inventory.json")));
     }
 
@@ -96,7 +96,8 @@ public sealed class ApplicationPersistenceTests
                 mobs, new NpcCompendiumRepository(), new TrackingResetRepository(),
                 new(Folder, Path.Combine(Folder, "spell-durations.json"), Path.Combine(Folder, "spawn-timers.json"),
                     Path.Combine(Folder, "motes.json"), Path.Combine(Folder, "mob-resistances.json"),
-                    Path.Combine(Folder, "npc-compendium"), Path.Combine(Folder, "npc-compendium.json")));
+                    Path.Combine(Folder, "npc-compendium"), Path.Combine(Folder, "npc-compendium.json")),
+                new LevelingHistoryRepository());
             var inventory = new InventoryService(new InventoryExportSource(),
                 new QuestInventoryRepository(Path.Combine(Folder, "quest-inventory.json")), new());
             inventory.SelectSession("log", "Que");

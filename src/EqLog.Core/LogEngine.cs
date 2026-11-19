@@ -56,10 +56,18 @@ public sealed class LogEngine
     private long _lines;
     private DateTime? _lastLogTime;
     private WhoLoadoutEvent? _loadout;
+    private readonly LevelingTracker? _leveling;
+    public LevelingHistory Leveling { get; }
 
     public LogEngine(SpellDurationStore? durations = null, SpawnStore? spawns = null, MoteStore? motes = null,
-        MobResistanceStore? resistances = null, string? logIdentity = null, NpcCompendium? npcs = null)
+        MobResistanceStore? resistances = null, string? logIdentity = null, NpcCompendium? npcs = null,
+        LevelingHistory? leveling = null)
     {
+        Leveling = leveling ?? new();
+        if (leveling is not null && logIdentity is not null)
+        {
+            _leveling = new(Leveling, logIdentity);
+        }
         _motes = new MoteTracker(motes ?? new MoteStore());
         _timers = new SpellTimerTracker(durations ?? new SpellDurationStore());
         _spellMetadata = resistances;
@@ -159,6 +167,7 @@ public sealed class LogEngine
         _motes.OnFirstLine(line.Timestamp);
 
         var ev = _parser.Parse(line);
+        _leveling?.OnLine(line.Timestamp, ev, _parser.CharacterName);
         string? spell = ev switch
         {
             CastBeginEvent cast => cast.Spell,

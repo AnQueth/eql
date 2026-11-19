@@ -195,6 +195,11 @@ public partial class MainWindow : Window
             ResetTrackingDataStatus.Text = string.Join(" ", state.TrackingFailures.Select(failure =>
                 $"{failure.Store} could not load: {failure.Error.Message}. Existing data is protected."));
         }
+        if (state.TrackingFailures.FirstOrDefault(failure => failure.Store == "leveling") is { } levelingFailure)
+        {
+            _levelingStorageError = $"Leveling history could not load: {levelingFailure.Error.Message}. " +
+                "The saved file is protected; new observations are temporary until repair and restart.";
+        }
         _logSessions.SpellObserved += _wikiRepository.ObserveSpell;
         InitializeExaltations(state);
         InitializeTradeskills(state);
@@ -357,6 +362,10 @@ public partial class MainWindow : Window
             if (def.Key == "moteplan")
             {
                 ConfigureMotePlanOverlay(panel);
+            }
+            if (def.Key == "leveling")
+            {
+                ConfigureLevelingOverlay(panel);
             }
             if (def.Key == "exaltations")
             {
@@ -835,7 +844,7 @@ public partial class MainWindow : Window
 
     private static OverlayPlacement DefaultPlacement(OverlayDefinition def, int index, Rect work)
     {
-        if (def.Key is "npcs" or "wiki" or "inventory" or "merge" or "itemupgrades" or "moteplan" or "exaltations" or "forage" or "tradeskills")
+        if (def.Key is "npcs" or "wiki" or "inventory" or "merge" or "itemupgrades" or "moteplan" or "exaltations" or "forage" or "tradeskills" or "leveling")
         {
             return new OverlayPlacement
             {
@@ -1165,6 +1174,7 @@ public partial class MainWindow : Window
                 "inventory" => new("Inventory & loot quests", _characterName, []),
                 "merge" => new("Ready to merge", _characterName, []),
                 "moteplan" => new("Mote upgrade planner", _characterName, []),
+                "leveling" => LevelingContent(),
                 "exaltations" => ExaltationsContent(),
                 _ => def.Render(snap, frame.Queries, view with { ItemFilter = _itemFilters.GetValueOrDefault(def.Key, "") }),
             };
@@ -1485,6 +1495,10 @@ public partial class MainWindow : Window
                 {
                     _npcStorageError = null;
                 }
+                if (outcome.Feature == PersistedFeature.Leveling)
+                {
+                    _levelingStorageError = null;
+                }
                 continue;
             }
             UsageTelemetry.TrackError(error, outcome.Feature == PersistedFeature.Wiki ? UsageErrorSource.Wiki : UsageErrorSource.StartupData);
@@ -1503,6 +1517,10 @@ public partial class MainWindow : Window
                     break;
                 case PersistedFeature.Mobs:
                     MobInfoStatusText.Text = message;
+                    break;
+                case PersistedFeature.Leveling:
+                    _levelingStorageError = message;
+                    generalErrors.Add(message);
                     break;
                 default:
                     generalErrors.Add(message);
@@ -1634,6 +1652,7 @@ public partial class MainWindow : Window
         _npcFilterWork?.Dispose();
         _exaltationFilterWork?.Dispose();
         _planNamesWork?.Dispose();
+        _levelingWork?.Dispose();
         CancelInventoryFilters();
         _updateCheckTimer.Stop();
         // Start disposal first so it abandons wiki work before the callers' tokens cancel it layer by layer.

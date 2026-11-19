@@ -23,7 +23,7 @@ public sealed class TrackingDataResetTests : IDisposable
         string[] tracking =
         [
             "spell-durations.json", "spawn-timers.json", "motes.json", "mob-resistances.json",
-            "quest-inventory.json", "npc-compendium.json",
+            "quest-inventory.json", "npc-compendium.json", "leveling-history.json",
         ];
         string[] preserved = ["settings.json", "quest-lookups.jsonl", "sky-quests.json", "game-log.txt"];
         foreach (string name in tracking.Concat(preserved))

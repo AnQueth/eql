@@ -173,7 +173,7 @@ public sealed class ItemFilterTests
         var content = presenter.Render(snapshot, EngineQuerySnapshot.Capture(engine), view);
 
         var items = content.Rows.Where(row => row.LootItem is not null).ToArray();
-        Assert.Equal(MoteValues.Tiers.Count + 2, items.Length);
+        Assert.Equal(MoteValues.Tiers.Count * 2 + 2, items.Length);
         Assert.Contains(items, row => row.LootItem == "Mote of Minor Potential");
         Assert.Contains(content.Rows, row => row.Left == "Recent");
         Assert.Equal(baseline.Subtitle, content.Subtitle);

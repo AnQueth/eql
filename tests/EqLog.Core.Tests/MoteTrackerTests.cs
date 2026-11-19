@@ -78,6 +78,51 @@ public class MoteTrackerTests
         Assert.Equal(tier, MoteTiers.TierOf(item));
     }
 
+    [Theory]
+    [InlineData("Mote of Major Potential", "Major")]
+    [InlineData("Fragment of Major Potential", "Fragment of Major Potential")]
+    [InlineData("Fragment of Greater Potential", "Fragment of Greater Potential")]
+    [InlineData("Fragment of Potential", "Fragment of Potential")]
+    [InlineData("Swirling Mist", null)]
+    public void TrackedTierOfKeepsFragmentsSeparateFromMotes(string item, string? tier)
+    {
+        Assert.Equal(tier, MoteTiers.TrackedTierOf(item));
+    }
+
+    [Fact]
+    public void EveryKnownMoteTierHasAFragmentCounterpart()
+    {
+        foreach (string tier in MoteValues.Tiers)
+        {
+            string fragment = MoteTiers.FragmentItemName(tier);
+
+            Assert.Equal(fragment, MoteTiers.TrackedTierOf(fragment));
+            Assert.Equal(fragment, MoteTiers.ItemName(fragment));
+        }
+    }
+
+    [Fact]
+    public void CountsFragmentLootSeparatelyFromSameTierMotes()
+    {
+        var engine = new LogEngine(motes: new MoteStore()) { CharacterName = "Quethrosar" };
+        engine.ProcessLines([
+            L(0, "You have entered Plane of Hate."),
+            L(10, "You have slain Master Yael!"),
+            L(11, "--You have looted a Mote of Major Potential from Master Yael's corpse.--"),
+            L(12, "--You have looted a Fragment of Major Potential from Master Yael's corpse.--"),
+            L(20, "--You have looted 4 Fragment of Major Potential from Reward Chest.--"),
+        ]);
+
+        var motes = engine.Snapshot(T0.AddMinutes(1)).Motes;
+        Assert.Equal(1, Assert.Single(motes.Session, count => count.Tier == "Major").Count);
+        Assert.Equal(5, Assert.Single(motes.Session, count => count.Tier == "Fragment of Major Potential").Count);
+        Assert.Equal(6, motes.SessionTotal);
+        Assert.Equal(1, Assert.Single(motes.ZoneRates, rate => rate.Mob == "Master Yael")
+            .Tiers.Single(count => count.Tier == "Major").Count);
+        Assert.Equal(1, Assert.Single(motes.ZoneRates, rate => rate.Mob == "Master Yael")
+            .Tiers.Single(count => count.Tier == "Fragment of Major Potential").Count);
+    }
+
     [Fact]
     public void UnknownTiersAreCountedAndSortedByCount()
     {
