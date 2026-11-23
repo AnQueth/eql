@@ -31,7 +31,7 @@ public sealed class InventoryAdaptersTests : IDisposable
         string export = InventoryExportSource.PathForLog(log);
         string content = "Location\tName\tID\tCount\tSlots\nHeld\tSword +3\t1\t2\t0\nBank1\tSword +10\t1\t1\t0\nKeyRing\tName\tID\t\nEquipment\tSword +9\t1\n";
         await File.WriteAllTextAsync(export, content);
-        var source = new InventoryExportSource();
+        using var source = new InventoryExportSource();
         var stamp = Assert.IsType<InventoryFileStamp>(await source.InspectAsync(log, default));
         var rows = Assert.IsAssignableFrom<IReadOnlyList<InventoryExportItem>>(await source.ReadAsync(stamp, default));
         Assert.Equal(3, rows.Count);
@@ -46,14 +46,16 @@ public sealed class InventoryAdaptersTests : IDisposable
     {
         string log = Path.Combine(_directory, "Logs", "eqlog_Que_server.txt");
         string export = InventoryExportSource.PathForLog(log);
-        var source = new InventoryExportSource();
+        using var source = new InventoryExportSource();
         Assert.Null(await source.InspectAsync(log, default));
-        await File.WriteAllTextAsync(export, "Location\tName\tID\tCount\tSlots\nHeld\tSword\t1\t1\t0\n");
-        var stamp = Assert.IsType<InventoryFileStamp>(await source.InspectAsync(log, default));
+        const string valid = "Location\tName\tID\tCount\tSlots\nHeld\tSword\t1\t1\t0\n";
+        await File.WriteAllTextAsync(export, valid);
+        var stamp = await WaitForStampAsync(source, log, valid.Length);
         await File.AppendAllTextAsync(export, "Held\tOther\t2\t1\t0\n");
         Assert.Null(await source.ReadAsync(stamp, default));
-        await File.WriteAllTextAsync(export, "Location\tName\tID\tCount\tSlots\nHeld\tbroken");
-        stamp = Assert.IsType<InventoryFileStamp>(await source.InspectAsync(log, default));
+        const string malformed = "Location\tName\tID\tCount\tSlots\nHeld\tbroken";
+        await File.WriteAllTextAsync(export, malformed);
+        stamp = await WaitForStampAsync(source, log, malformed.Length);
         await Assert.ThrowsAsync<FormatException>(() => source.ReadAsync(stamp, default));
         using (var writer = new FileStream(export, FileMode.Open, FileAccess.Write, FileShare.Read))
         {
@@ -61,6 +63,59 @@ public sealed class InventoryAdaptersTests : IDisposable
         }
         File.Delete(export);
         Assert.Null(await source.ReadAsync(stamp, default));
+    }
+
+    [Fact]
+    public async Task ExportMetadataIsCachedUntilAChangeNotification()
+    {
+        string log = Path.Combine(_directory, "Logs", "eqlog_Que_server.txt");
+        string export = InventoryExportSource.PathForLog(log);
+        await File.WriteAllTextAsync(export, "first");
+        using var source = new InventoryExportSource();
+        var first = await source.InspectAsync(log, default);
+        Assert.Same(first, await source.InspectAsync(log, default));
+        await File.AppendAllTextAsync(export, " second");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        InventoryFileStamp? updated;
+        do
+        {
+            await Task.Delay(20, timeout.Token);
+            updated = await source.InspectAsync(log, timeout.Token);
+        }
+        while (updated == first);
+        Assert.Equal(12, updated!.Size);
+        Assert.Same(updated, await source.InspectAsync(log, default));
+    }
+
+    [Fact]
+    public async Task UnchangedInventorySnapshotsDoNotRewriteTheDocument()
+    {
+        string path = Path.Combine(_directory, "inventory.json");
+        var repository = new QuestInventoryRepository(path);
+        var state = new QuestInventory();
+        state.NoteLoot("Que", "log", 1, "Sword", 1, false, At);
+        await repository.SaveAsync(state.Clone());
+        File.SetLastWriteTimeUtc(path, At);
+        state.NoteLoot("Que", "log", 1, "Sword", 1, false, At);
+        await repository.SaveAsync(state.Clone());
+        Assert.Equal(At, File.GetLastWriteTimeUtc(path));
+        state.NoteLoot("Que", "log", 2, "Sword", 1, false, At);
+        await repository.SaveAsync(state.Clone());
+        Assert.Equal(2, Assert.Single((await repository.LoadAsync()).Items).Historical);
+    }
+
+    [Fact]
+    public async Task FailedInventoryWriteDoesNotSuppressAnIdenticalRetry()
+    {
+        string blocked = Path.Combine(_directory, "blocked");
+        await File.WriteAllTextAsync(blocked, "not a directory");
+        var repository = new QuestInventoryRepository(Path.Combine(blocked, "inventory.json"));
+        var state = new QuestInventory();
+        state.NoteLoot("Que", "log", 1, "Sword", 1, false, At);
+        await Assert.ThrowsAnyAsync<IOException>(() => repository.SaveAsync(state.Clone()));
+        File.Delete(blocked);
+        await repository.SaveAsync(state.Clone());
+        Assert.Equal(1, Assert.Single((await repository.LoadAsync()).Items).Historical);
     }
 
     [Fact]
@@ -150,7 +205,7 @@ public sealed class InventoryAdaptersTests : IDisposable
         await File.WriteAllTextAsync(path, document);
         var repository = new QuestInventoryRepository(path);
         var error = await Assert.ThrowsAnyAsync<JsonException>(() => repository.LoadAsync());
-        var service = new InventoryService(new InventoryExportSource(), repository, new(), error);
+        using var service = new InventoryService(new InventoryExportSource(), repository, new(), error);
         service.TrackItem("Que", "Sword");
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.SaveAsync());
         Assert.Equal(document, await File.ReadAllTextAsync(path));
@@ -164,7 +219,7 @@ public sealed class InventoryAdaptersTests : IDisposable
         await File.WriteAllTextAsync(export, "Location\tName\tID\tCount\tSlots\nHeld\tSword +3\t1\t2\t0\n");
         string path = Path.Combine(_directory, "app-data", "quest-inventory.json");
         var repository = new QuestInventoryRepository(path);
-        var service = new InventoryService(new InventoryExportSource(), repository, await repository.LoadAsync());
+        using var service = new InventoryService(new InventoryExportSource(), repository, await repository.LoadAsync());
         service.SelectSession(log, "Que");
         Assert.Equal(InventoryImportStatus.Stabilizing, (await service.PollAsync()).Status);
         Assert.Equal(InventoryImportStatus.Imported, (await service.PollAsync()).Status);
@@ -176,6 +231,20 @@ public sealed class InventoryAdaptersTests : IDisposable
     public void Dispose()
     {
         Directory.Delete(_directory, recursive: true);
+    }
+
+    private static async Task<InventoryFileStamp> WaitForStampAsync(InventoryExportSource source, string log, long size)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (true)
+        {
+            var stamp = await source.InspectAsync(log, timeout.Token);
+            if (stamp?.Size == size)
+            {
+                return stamp;
+            }
+            await Task.Delay(20, timeout.Token);
+        }
     }
 
     private sealed class FixedTime(DateTime now) : TimeProvider

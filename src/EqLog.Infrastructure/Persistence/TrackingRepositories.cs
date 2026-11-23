@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Runtime.CompilerServices;
 using EqLog.Application.Tracking;
 using EqLog.Core;
 using EqLog.Core.Tracking;
@@ -166,21 +167,16 @@ public sealed class MobResistanceRepository : IMobResistanceRepository
 {
     private static readonly JsonSerializerOptions ResistanceJson = new();
     private readonly SemaphoreSlim _saveGate = new(1, 1);
+    private readonly ConditionalWeakTable<MobResistanceStore, JsonDeltaJournal> _journals = new();
 
     public async Task<MobResistanceStore> LoadAsync(
         string path,
         CancellationToken cancellationToken = default)
     {
         var store = new MobResistanceStore();
-        var data = new MobResistanceStore.Data();
-        if (File.Exists(path))
-        {
-            data = await AtomicFile.ReadJsonAsync<MobResistanceStore.Data>(
-                path,
-                ct: cancellationToken).ConfigureAwait(false)
-                ?? throw new JsonException("Mob resistance data is empty.");
-            Validate(data);
-        }
+        var (journal, data) = await JsonDeltaJournal.OpenAsync(
+            path, new MobResistanceStore.Data(), ResistanceJson, Validate, cancellationToken).ConfigureAwait(false);
+        _journals.Add(store, journal);
 
         await MoveLegacySpellCacheAsync(path, cancellationToken).ConfigureAwait(false);
         var cached = await JsonLines.LoadLatestAsync<SpellResistanceInfo>(
@@ -206,6 +202,7 @@ public sealed class MobResistanceRepository : IMobResistanceRepository
                 return;
             }
 
+            var journal = await GetJournalAsync(path, store, cancellationToken).ConfigureAwait(false);
             if (snapshot.PendingSpells.Count > 0)
             {
                 await JsonLines.AppendAsync(
@@ -216,10 +213,7 @@ public sealed class MobResistanceRepository : IMobResistanceRepository
                 store.CompleteSpellCacheAppend(snapshot.PendingSpells.Count);
             }
 
-            await AtomicFile.WriteJsonAsync(
-                path,
-                snapshot.Data,
-                ct: cancellationToken).ConfigureAwait(false);
+            await journal.SaveAsync(snapshot.Data, cancellationToken).ConfigureAwait(false);
             store.CompletePersistence(snapshot.Version);
         }
         finally
@@ -243,12 +237,11 @@ public sealed class MobResistanceRepository : IMobResistanceRepository
                 return;
             }
 
+            var journal = await GetJournalAsync(path, store, cancellationToken).ConfigureAwait(false);
             File.Delete(SpellCachePath(path));
             File.Delete(LegacySpellCachePath(path));
-            await AtomicFile.WriteJsonAsync(
-                path,
-                snapshot.Data,
-                ct: cancellationToken).ConfigureAwait(false);
+            await journal.SaveAsync(snapshot.Data, cancellationToken).ConfigureAwait(false);
+            await journal.CheckpointAsync(cancellationToken).ConfigureAwait(false);
             store.CompletePersistence(snapshot.Version);
         }
         finally
@@ -261,6 +254,22 @@ public sealed class MobResistanceRepository : IMobResistanceRepository
     {
         string folder = Path.GetDirectoryName(Path.GetFullPath(path))!;
         return Path.Combine(folder, "spell-info.jsonl");
+    }
+
+    private async Task<JsonDeltaJournal> GetJournalAsync(string path, MobResistanceStore store, CancellationToken token)
+    {
+        if (_journals.TryGetValue(store, out var journal))
+        {
+            if (!journal.IsForPath(path))
+            {
+                throw new InvalidOperationException("The mob resistance store is already stored at another path.");
+            }
+            return journal;
+        }
+        (journal, _) = await JsonDeltaJournal.OpenAsync(
+            path, new MobResistanceStore.Data(), ResistanceJson, Validate, token).ConfigureAwait(false);
+        _journals.Add(store, journal);
+        return journal;
     }
 
     private static string LegacySpellCachePath(string path)

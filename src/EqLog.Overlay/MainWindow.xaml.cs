@@ -307,7 +307,15 @@ public partial class MainWindow : Window
 
             if (def.Key == "dps")
             {
-                ConfigureDpsToolbar(panel);
+                var fightList = new DpsFightList(panel, _settings.DpsExpandedView);
+                _dpsFightList = fightList;
+                panel.SetBody(fightList);
+                ConfigureDpsToolbar(panel, _settings.DpsExpandedView, expanded =>
+                {
+                    _settings.DpsExpandedView = expanded;
+                    fightList.SetFullDetails(expanded);
+                    SaveSettingsInBackground();
+                });
             }
 
             if (def.Key == "spawns")
@@ -591,36 +599,57 @@ public partial class MainWindow : Window
         var p = _settings.Overlays[key];
         var w = _overlays[key];
         bool visible = p.Visible && (key != "mobinfo" || MobInfoActive);
-        bool dockedAnywhere = _dock.IsPanelInAnyWorkspace(key);
-        bool dockedHere = _dock.IsPanelInActiveWorkspace(key);
-        p.Docked = dockedAnywhere;
+        bool alertPreview = key == "alerts" && DateTime.Now < _alertTestVisibleUntil;
+        ApplyOverlayPlacement(_dock, w, p, visible, FloatingAllowed, alertPreview);
+        w.SetHoverOnlyChrome(_settings.HoverOnlyOverlayChrome && _gameVisible);
+    }
+
+    internal static void ApplyOverlayPlacement(DockWindow dock, OverlayWindow window, OverlayPlacement placement,
+        bool visible, bool floatingAllowed, bool alertPreview)
+    {
+        string key = window.Panel.Key;
+        bool dockedAnywhere = dock.IsPanelInAnyWorkspace(key);
+        bool dockedHere = dock.IsPanelInActiveWorkspace(key);
+        placement.Docked = dockedAnywhere;
         if (dockedAnywhere)
         {
-            w.Hide();
-            w.DetachPanel();
+            window.Hide();
+            window.DetachPanel();
             if (dockedHere && visible)
             {
-                _dock.AddPanel(w.Panel, p);
+                if (dock.IsTemporaryPanel(key))
+                {
+                    dock.RemovePanel(key);
+                }
+
+                dock.AddPanel(window.Panel, placement);
             }
             else
             {
-                _dock.RemovePanel(key);
+                dock.RemovePanel(key);
             }
 
             return;
         }
 
-        _dock.RemovePanel(key);
-        w.AttachPanel();
-        w.SetHoverOnlyChrome(_settings.HoverOnlyOverlayChrome && _gameVisible);
-        if (visible && (FloatingAllowed || (key == "alerts" && DateTime.Now < _alertTestVisibleUntil)))
+        if (visible && !floatingAllowed && !alertPreview)
         {
-            w.Show();
-            w.SetLocked(p.Locked == true);
+            window.Hide();
+            window.DetachPanel();
+            dock.AddTemporaryPanel(window.Panel, placement);
+            return;
+        }
+
+        dock.RemovePanel(key);
+        window.AttachPanel();
+        if (visible)
+        {
+            window.Show();
+            window.SetLocked(placement.Locked == true);
         }
         else
         {
-            w.Hide();
+            window.Hide();
         }
     }
 
@@ -681,7 +710,8 @@ public partial class MainWindow : Window
     private bool IsShowing(string key)
     {
         var p = _settings.Overlays[key];
-        return p.Visible && (key != "mobinfo" || MobInfoActive) && (p.Docked || _overlays[key].IsVisible);
+        return p.Visible && (key != "mobinfo" || MobInfoActive) &&
+            (p.Docked || _dock.HasPanel(key) || _overlays[key].IsVisible);
     }
 
     private void SetDocked(string key, bool docked)
@@ -948,7 +978,7 @@ public partial class MainWindow : Window
         {
             UsageTelemetry.TrackPanelState(key, visible, _settings.Overlays[key].Docked, changed: true);
         }
-        if (visible && _settings.Overlays[key].Docked)
+        if (visible && (_settings.Overlays[key].Docked || _dock.HasPanel(key)))
         {
             ShowDock();
         }
@@ -1089,11 +1119,15 @@ public partial class MainWindow : Window
         }
         PumpMobInfo();
         var p = _logSessions.Progress;
-        HistoryProgress.Value = p.TotalBytes > 0 ? (double)p.BytesRead / p.TotalBytes : 0;
-        HistoryProgress.Visibility = p.CaughtUp ? Visibility.Hidden : Visibility.Visible;
-        if (!p.CaughtUp && _currentFile is not null)
+        double progress = p.TotalBytes > 0 ? (double)p.BytesRead / p.TotalBytes : 0;
+        if (HistoryProgress.Value != progress)
         {
-            StatusText.Text = $"Loading history {HistoryProgress.Value:P0} - {p.LinesRead:N0} lines";
+            HistoryProgress.Value = progress;
+        }
+        var progressVisibility = p.CaughtUp ? Visibility.Hidden : Visibility.Visible;
+        if (HistoryProgress.Visibility != progressVisibility)
+        {
+            HistoryProgress.Visibility = progressVisibility;
         }
 
         long generation = _session.Revision;
@@ -1129,11 +1163,6 @@ public partial class MainWindow : Window
         {
             _lastWikiRender = real;
         }
-        if (IsShowing("dps"))
-        {
-            RefreshDpsChoices(snap);
-        }
-
         var view = new OverlayView(
             _chatChannels,
             UpdateAlerts(real),
@@ -1142,7 +1171,6 @@ public partial class MainWindow : Window
             renderWiki ? _wikiRepository.GetActivity() : null,
             renderWiki ? GetQuestWikiActivity() : null,
             frame.Chat,
-            _dpsFight,
             _characterName,
             MoteInventory: IsShowing("motes") ? _questInventory.Motes(_characterName) : null,
             ShowKnownSpells: _settings.SpellTimersShowKnownSpells,
@@ -1189,7 +1217,7 @@ public partial class MainWindow : Window
             _overlays[def.Key].Panel.Update(content.Title, content.Subtitle, rows, content.TitleLink);
             if (def.Key == "dps")
             {
-                UpdateDpsDetails(snap, _overlays[def.Key].Panel);
+                _dpsFightList?.Update(snap);
             }
 
             if (!p.CaughtUp && renderBudget.ElapsedMilliseconds >= 8)
@@ -1205,7 +1233,11 @@ public partial class MainWindow : Window
 
         if (_logSessions.Completion is { IsFaulted: true } t)
         {
-            StatusText.Text = $"Log reader error: {t.Exception?.GetBaseException().Message}";
+            string error = $"Log reader error: {t.Exception?.GetBaseException().Message}";
+            if (StatusText.Text != error)
+            {
+                StatusText.Text = error;
+            }
             return;
         }
 
@@ -1220,7 +1252,11 @@ public partial class MainWindow : Window
         string replayNote = replay ? "  (log is not being written; showing it as of the last line)" : "";
         string loadout = snap.CurrentLoadout is { } profile
             ? $" [{profile.Level} {profile.Classes}]" : " [classes unknown - use /who]";
-        StatusText.Text = $"{phase}: {snap.CharacterName}{loadout}{zone} - {snap.LinesProcessed:N0} lines, {when}{replayNote}";
+        string status = $"{phase}: {snap.CharacterName}{loadout}{zone} - {snap.LinesProcessed:N0} lines, {when}{replayNote}";
+        if (StatusText.Text != status)
+        {
+            StatusText.Text = status;
+        }
     }
 
     private void Housekeeping(HousekeepingTick tick)
@@ -1676,13 +1712,14 @@ public partial class MainWindow : Window
 
         try
         {
-            await _logSessions.StopAsync();
+            await _logSessions.DisposeAsync();
         }
         catch (Exception ex)
         {
             StatusText.Text = $"Log reader stopped during shutdown: {ex.Message}";
         }
         await SaveAllAsync();
+        _inventoryService.Dispose();
         foreach (var w in _overlays.Values)
         {
             w.Close();

@@ -14,7 +14,7 @@ public class LogTailerTests
             var received = new List<string>();
             var gotAppended = new TaskCompletionSource();
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            var tailer = new LogTailer(path) { PollInterval = TimeSpan.FromMilliseconds(20) };
+            var tailer = new LogTailer(path) { PollInterval = TimeSpan.FromHours(1) };
             var run = tailer.RunAsync(true, lines =>
             {
                 lock (received)
@@ -51,6 +51,143 @@ public class LogTailerTests
         finally
         {
             File.Delete(path);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FollowsTruncatedAndReplacedLogsWithoutWaitingForRecovery(bool replace)
+    {
+        string folder = Path.Combine(Path.GetTempPath(), $"eql-tail-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(folder);
+        string path = Path.Combine(folder, "eqlog_Test_server.txt");
+        await File.WriteAllTextAsync(path, "old line with a partial suffix\npartial");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var caughtUp = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var updated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var received = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var run = new LogTailer(path) { PollInterval = TimeSpan.FromHours(1) }.RunAsync(true, lines =>
+        {
+            foreach (string line in lines)
+            {
+                received.Enqueue(line);
+                if (line == "new")
+                {
+                    updated.TrySetResult();
+                }
+            }
+        }, progress =>
+        {
+            if (progress.CaughtUp)
+            {
+                caughtUp.TrySetResult();
+            }
+        }, cts.Token);
+        try
+        {
+            await caughtUp.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            if (replace)
+            {
+                string replacement = Path.Combine(folder, "replacement.txt");
+                await File.WriteAllTextAsync(replacement, "new\n");
+                File.Move(path, Path.Combine(folder, "old.txt"));
+                File.Move(replacement, path);
+            }
+            else
+            {
+                await File.WriteAllTextAsync(path, "new\n");
+            }
+            await updated.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            await run.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
+            Directory.Delete(folder, recursive: true);
+        }
+        Assert.Equal(["old line with a partial suffix", "new"], received);
+    }
+
+    [Fact]
+    public async Task ChangeMonitorWaitsWhileIdleAndCoalescesNotifications()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), $"eql-watch-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(folder);
+        try
+        {
+            using var monitor = new FileChangeMonitor(folder, "*.txt", TimeSpan.FromHours(1));
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            long version = monitor.Version;
+            var waiting = monitor.WaitAsync(cancellation.Token);
+            await Task.Delay(250);
+            Assert.False(waiting.IsCompleted);
+            Assert.Equal(version, monitor.Version);
+            await File.WriteAllTextAsync(Path.Combine(folder, "changed.txt"), "changed");
+            await waiting.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(monitor.Version > version);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DiscoveryCachesIdleResultsAndRefreshesAfterFileChanges()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), $"eql-discovery-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(folder);
+        try
+        {
+            string firstPath = Path.Combine(folder, "eqlog_First_server.txt");
+            string secondPath = Path.Combine(folder, "eqlog_Second_server.txt");
+            await File.WriteAllTextAsync(firstPath, "first");
+            File.SetLastWriteTimeUtc(firstPath, DateTime.UtcNow.AddDays(-1));
+            using var source = new GameLogSource();
+            var first = await source.FindNewestAsync(folder, default);
+            Assert.Equal(firstPath, first!.Path);
+            Assert.Same(first, await source.FindNewestAsync(folder, default));
+            await File.WriteAllTextAsync(secondPath, "second");
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            EqLog.Application.Sessions.LogFileInfo? newest;
+            do
+            {
+                await Task.Delay(20, timeout.Token);
+                newest = await source.FindNewestAsync(folder, timeout.Token);
+            }
+            while (newest?.Path != secondPath);
+            Assert.Same(newest, await source.FindNewestAsync(folder, default));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RecoveryProbeStartsMonitoringAnInitiallyMissingFolder()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), $"eql-recovery-{Guid.NewGuid():N}");
+        try
+        {
+            using var monitor = new FileChangeMonitor(folder, "*.txt", TimeSpan.FromMilliseconds(50));
+            long first = monitor.Version;
+            Directory.CreateDirectory(folder);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await monitor.WaitAsync(timeout.Token);
+            Assert.True(monitor.Version > first);
+            long recovered = monitor.Version;
+            await File.WriteAllTextAsync(Path.Combine(folder, "created.txt"), "new");
+            await monitor.WaitAsync(timeout.Token);
+            Assert.True(monitor.Version > recovered);
+        }
+        finally
+        {
+            if (Directory.Exists(folder))
+            {
+                Directory.Delete(folder, recursive: true);
+            }
         }
     }
 

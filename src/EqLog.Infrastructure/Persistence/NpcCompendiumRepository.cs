@@ -26,7 +26,6 @@ public sealed class NpcCompendiumRepository : INpcCompendiumRepository
     {
         folder = Path.GetFullPath(folder);
         var compendium = new NpcCompendium();
-        _states.Add(compendium, new RepositoryState(folder));
 
         string indexPath = Path.Combine(folder, NpcCompendium.IndexFileName);
         string? sourcePath = File.Exists(indexPath)
@@ -36,14 +35,18 @@ public sealed class NpcCompendiumRepository : INpcCompendiumRepository
                 : null;
         bool migrate = sourcePath is not null && !string.Equals(sourcePath, indexPath, StringComparison.OrdinalIgnoreCase);
         var data = new NpcCompendium.Data();
-        if (sourcePath is not null)
+        if (migrate)
         {
             data = await AtomicFile.ReadJsonAsync<NpcCompendium.Data>(
-                sourcePath,
+                sourcePath!,
                 ct: cancellationToken).ConfigureAwait(false)
                 ?? throw new JsonException("NPC compendium data is empty.");
             Validate(data);
         }
+        var (journal, loaded) = await JsonDeltaJournal.OpenAsync(
+            indexPath, data, IndexJson, Validate, cancellationToken).ConfigureAwait(false);
+        data = loaded;
+        _states.Add(compendium, new RepositoryState(folder) { Journal = journal });
 
         compendium.ImportData(data);
         var recoveredIds = new Dictionary<string, IReadOnlyCollection<string>>();
@@ -95,21 +98,24 @@ public sealed class NpcCompendiumRepository : INpcCompendiumRepository
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            string indexPath = Path.Combine(folder, NpcCompendium.IndexFileName);
+            bool initialIndex = !File.Exists(indexPath) && !File.Exists(JsonDeltaJournal.JournalPath(indexPath));
+            if (state.Journal is null)
+            {
+                var (journal, _) = await JsonDeltaJournal.OpenAsync(
+                    indexPath, new NpcCompendium.Data(), IndexJson, Validate, cancellationToken).ConfigureAwait(false);
+                state.Journal = journal;
+            }
             var batch = compendium.CapturePersistenceBatch();
             if (batch is null)
             {
                 return;
             }
 
-            string indexPath = Path.Combine(folder, NpcCompendium.IndexFileName);
             if (batch.SourcesIndex is not null)
             {
                 // History records refer to source numbers; persist the mapping before appending any line.
-                await AtomicFile.WriteJsonAsync(
-                    indexPath,
-                    batch.SourcesIndex,
-                    IndexJson,
-                    cancellationToken).ConfigureAwait(false);
+                await state.Journal.SaveAsync(batch.SourcesIndex, cancellationToken).ConfigureAwait(false);
             }
 
             foreach (var append in batch.HistoryAppends)
@@ -122,11 +128,11 @@ public sealed class NpcCompendiumRepository : INpcCompendiumRepository
                 compendium.CompleteHistoryAppend(append.Key, append.EncounterIds);
             }
 
-            await AtomicFile.WriteJsonAsync(
-                indexPath,
-                compendium.ExportIndex(),
-                IndexJson,
-                cancellationToken).ConfigureAwait(false);
+            await state.Journal.SaveAsync(compendium.ExportIndex(), cancellationToken).ConfigureAwait(false);
+            if (initialIndex)
+            {
+                await state.Journal.CheckpointAsync(cancellationToken).ConfigureAwait(false);
+            }
             compendium.CompletePersistence(batch.Version);
         }
         finally
@@ -277,5 +283,11 @@ public sealed class NpcCompendiumRepository : INpcCompendiumRepository
         }
     }
 
-    private sealed record RepositoryState(string Folder);
+    private sealed record RepositoryState(string Folder)
+    {
+        public JsonDeltaJournal? Journal
+        {
+            get; set;
+        }
+    }
 }

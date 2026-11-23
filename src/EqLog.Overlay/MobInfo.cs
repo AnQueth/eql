@@ -315,7 +315,7 @@ public partial class MainWindow
             ApplyMode("mobinfo");
             if (newConsider && _settings.Overlays["mobinfo"].Visible)
             {
-                if (_settings.Overlays["mobinfo"].Docked)
+                if (_settings.Overlays["mobinfo"].Docked || _dock.HasPanel("mobinfo"))
                 {
                     _dock.RevealPanel("mobinfo");
                 }

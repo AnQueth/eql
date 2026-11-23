@@ -97,6 +97,71 @@ public class MobResistanceTests
     }
 
     [Fact]
+    public async Task Save_LargeResistanceStore_AppendsSmallChangeAndReloads()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(folder, "mob-resistances.json");
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var repository = new MobResistanceRepository();
+            var store = new MobResistanceStore();
+            store.SetSpell(new("Rend", ResistanceType.Fire, "Fire", T0, SingleTargetDirectDamage: true));
+            for (int i = 1; i <= 500; i++)
+            {
+                store.Record("log", i, "Sky", $"Mob {i}", "Rend", true);
+            }
+            await repository.SaveAsync(path, store);
+            byte[] baseline = await File.ReadAllBytesAsync(path);
+            store.Record("log", 501, "Sky", "Mob 500", "Rend", true);
+
+            await repository.SaveAsync(path, store);
+
+            Assert.Equal(baseline, await File.ReadAllBytesAsync(path));
+            Assert.True(new FileInfo(path + ".journal").Length < baseline.Length / 10);
+            var loaded = await repository.LoadAsync(path);
+            Assert.Equal(2, loaded.Get("Sky", "Mob 500").Observations.Single(o => o.Type == ResistanceType.Fire).Resisted);
+            loaded.Record("log", 501, "Sky", "Mob 500", "Rend", true);
+            Assert.Equal(2, loaded.Get("Sky", "Mob 500").Observations.Single(o => o.Type == ResistanceType.Fire).Resisted);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Save_LockedJournal_RetainsChangesForRetry()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(folder, "mob-resistances.json");
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var repository = new MobResistanceRepository();
+            var store = new MobResistanceStore();
+            store.SetSpell(new("Rend", ResistanceType.Fire, "Fire", T0, SingleTargetDirectDamage: true));
+            store.Record("log", 1, "Sky", "Mob", "Rend", true);
+            await repository.SaveAsync(path, store);
+            store.Record("log", 2, "Sky", "Mob", "Rend", true);
+            await repository.SaveAsync(path, store);
+            store.Record("log", 3, "Sky", "Mob", "Rend", true);
+
+            using (new FileStream(path + ".journal", FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                await Assert.ThrowsAsync<IOException>(() => repository.SaveAsync(path, store));
+            }
+            await repository.SaveAsync(path, store);
+            var loaded = await repository.LoadAsync(path);
+            Assert.Equal(3, loaded.Get("Sky", "Mob").Observations.Single(o => o.Type == ResistanceType.Fire).Resisted);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Store_SpellCache_RenamesEarlierSpellsFileToSpellInfo()
     {
         string folder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
@@ -141,8 +206,10 @@ public class MobResistanceTests
 
             Assert.Equal(Path.Combine(folder, "spell-info.jsonl"), spells);
             Assert.Equal(2, File.ReadAllLines(spells).Length);
-            Assert.Contains("\"Spells\":{}", File.ReadAllText(path));
-            Assert.DoesNotContain("DamageSamples", File.ReadAllText(path));
+            var (_, persisted) = await JsonDeltaJournal.OpenAsync(
+                path, new MobResistanceStore.Data(), new JsonSerializerOptions(), _ => { }, default);
+            Assert.Empty(persisted.Spells);
+            Assert.Null(persisted.Mobs.Values.SelectMany(spellMap => spellMap.Values).First().DamageSamples);
 
             var reloaded = await TrackingTestPersistence.LoadResistancesAsync(path);
             Assert.Equal(ResistanceType.Magic, reloaded.GetSpell("Rend X")?.Type);

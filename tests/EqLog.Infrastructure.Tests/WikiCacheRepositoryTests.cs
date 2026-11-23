@@ -97,6 +97,114 @@ public sealed class WikiCacheRepositoryTests : IDisposable
         await repository.ResetAsync(new());
         await repository.FlushAsync();
         Assert.False(File.Exists(Path.Combine(_folder, "tradeskills.json")));
+        Assert.False(File.Exists(Path.Combine(_folder, "tradeskills.jsonl")));
+    }
+
+    [Fact]
+    public async Task ItemEffectCache_AppendsChangesToLegacyBaselineAndRecovers()
+    {
+        Directory.CreateDirectory(_folder);
+        string path = Path.Combine(_folder, "item-effects.json");
+        var now = DateTime.UtcNow;
+        var entries = Enumerable.Range(0, 200)
+            .Select(i => new ItemEffectInfo($"Item {i}", new string('x', 100), now, true, [], ""))
+            .ToArray();
+        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(entries));
+        byte[] baseline = await File.ReadAllBytesAsync(path);
+        var repository = new WikiCacheRepository(_folder);
+        await repository.LoadItemEffectsAsync();
+        var changed = entries[5] with
+        {
+            CheckedUtc = now.AddDays(1),
+            SearchTerms = "changed"
+        };
+        await repository.SaveItemEffectsAsync(changed);
+        await repository.SaveItemEffectsAsync(entries[5]);
+        await repository.FlushAsync();
+
+        Assert.Equal(baseline, await File.ReadAllBytesAsync(path));
+        Assert.True(new FileInfo(Path.Combine(_folder, "item-effects.jsonl")).Length < baseline.Length / 10);
+        var loaded = await new WikiCacheRepository(_folder).LoadItemEffectsAsync();
+        Assert.Equal("changed", loaded.Single(item => item.Item == "Item 5").SearchTerms);
+        Assert.Equal(200, loaded.Count);
+        await repository.ResetAsync(new());
+        await repository.FlushAsync();
+        Assert.False(File.Exists(Path.Combine(_folder, "item-effects.jsonl")));
+    }
+
+    [Fact]
+    public async Task TradeskillCache_AppendsChangesToLegacyBaselineAndRecovers()
+    {
+        Directory.CreateDirectory(_folder);
+        string path = Path.Combine(_folder, "tradeskills.json");
+        var now = DateTime.UtcNow;
+        var entries = Enumerable.Range(0, 200)
+            .Select(i => new TradeskillWikiPage(TradeskillPageKind.Merchants, $"Item {i}", now, [], []))
+            .ToArray();
+        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(entries));
+        byte[] baseline = await File.ReadAllBytesAsync(path);
+        var repository = new WikiCacheRepository(_folder);
+        await repository.LoadTradeskillsAsync();
+        await repository.SaveTradeskillAsync(entries[5] with
+        {
+            CheckedUtc = now.AddDays(1),
+            CatalogVersion = 2
+        });
+        await repository.SaveTradeskillAsync(entries[5]);
+
+        Assert.Equal(baseline, await File.ReadAllBytesAsync(path));
+        Assert.True(new FileInfo(Path.Combine(_folder, "tradeskills.jsonl")).Length < baseline.Length / 10);
+        var loaded = await new WikiCacheRepository(_folder).LoadTradeskillsAsync();
+        Assert.Equal(2, loaded.Single(page => page.Title == "Item 5").CatalogVersion);
+        Assert.Equal(200, loaded.Count);
+    }
+
+    [Fact]
+    public async Task ItemEffectCache_InterruptedCompaction_ReplaysLatestAndCompacts()
+    {
+        var repository = new WikiCacheRepository(_folder);
+        var now = DateTime.UtcNow;
+        var original = new ItemEffectInfo("Item", "url", now, true, [], new string('x', 1024 * 1024));
+        var latest = original with
+        {
+            CheckedUtc = now.AddDays(1),
+            SearchTerms = "latest"
+        };
+        await repository.SaveItemEffectsAsync(original);
+        await repository.SaveItemEffectsAsync(latest);
+        string path = Path.Combine(_folder, "item-effects.json");
+        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(new[] { latest }));
+
+        var loaded = await new WikiCacheRepository(_folder).LoadItemEffectsAsync();
+
+        Assert.Equal("latest", Assert.Single(loaded).SearchTerms);
+        Assert.False(File.Exists(Path.Combine(_folder, "item-effects.jsonl")));
+        var reloaded = await new WikiCacheRepository(_folder).LoadItemEffectsAsync();
+        Assert.Equal("latest", Assert.Single(reloaded).SearchTerms);
+    }
+
+    [Theory]
+    [InlineData("item-effects.jsonl")]
+    [InlineData("tradeskills.jsonl")]
+    public async Task CorruptCacheJournal_IsProtectedFromWrites(string name)
+    {
+        Directory.CreateDirectory(_folder);
+        string path = Path.Combine(_folder, name);
+        await File.WriteAllTextAsync(path, "invalid\n");
+        var repository = new WikiCacheRepository(_folder);
+        if (name == "item-effects.jsonl")
+        {
+            await Assert.ThrowsAsync<JsonException>(() => repository.LoadItemEffectsAsync());
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                repository.SaveItemEffectsAsync(new("Item", "url", DateTime.UtcNow, true, [], "")));
+        }
+        else
+        {
+            await Assert.ThrowsAsync<JsonException>(() => repository.LoadTradeskillsAsync());
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                repository.SaveTradeskillAsync(new(TradeskillPageKind.Merchants, "Item", DateTime.UtcNow, [], [])));
+        }
+        Assert.Equal("invalid\n", await File.ReadAllTextAsync(path));
     }
 
     [Fact]

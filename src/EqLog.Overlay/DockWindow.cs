@@ -24,6 +24,7 @@ public sealed class DockWindow : Window
     private readonly ScrollViewer _tilesArea;
     private readonly Dictionary<string, Grid> _byKey = [];
     private readonly Dictionary<string, DockPanelSettings> _placements = [];
+    private readonly HashSet<string> _temporaryPanels = [];
     private readonly HashSet<OverlayPanel> _workspaceMoveHandlers = [];
     private readonly HashSet<(string WorkspaceId, string PanelKey)> _appendOnAdd = [];
     private readonly TextBlock _empty;
@@ -50,7 +51,7 @@ public sealed class DockWindow : Window
     {
         Settings = settings;
         Title = "EverQuest Log Overlay";
-        Icon = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/AppIcon.ico"));
+        Icon = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/EqLogOverlay;component/AppIcon.ico"));
         SetResourceReference(BackgroundProperty, "NightBackground");
         SetResourceReference(ForegroundProperty, "NightText");
         FontFamily = new FontFamily("Segoe UI");
@@ -557,6 +558,11 @@ public sealed class DockWindow : Window
         return _byKey.ContainsKey(key);
     }
 
+    internal bool IsTemporaryPanel(string key)
+    {
+        return _temporaryPanels.Contains(key);
+    }
+
     public bool IsPanelInActiveWorkspace(string key)
     {
         return Settings.ActiveWorkspace.Panels.ContainsKey(key);
@@ -626,21 +632,40 @@ public sealed class DockWindow : Window
 
     public void AddPanel(OverlayPanel panel, OverlayPlacement placement)
     {
+        AddPanel(panel, placement, temporary: false);
+    }
+
+    internal void AddTemporaryPanel(OverlayPanel panel, OverlayPlacement placement)
+    {
+        AddPanel(panel, placement, temporary: true);
+    }
+
+    private void AddPanel(OverlayPanel panel, OverlayPlacement placement, bool temporary)
+    {
         if (_byKey.ContainsKey(panel.Key))
         {
             return;
         }
 
         var workspace = Settings.ActiveWorkspace;
-        bool appendRequested = _appendOnAdd.Remove((workspace.Id, panel.Key));
+        bool appendRequested = !temporary && _appendOnAdd.Remove((workspace.Id, panel.Key));
         bool append = appendRequested && Settings.AutoArrange;
-        if (!workspace.Panels.TryGetValue(panel.Key, out var dockPlacement))
+        DockPanelSettings dockPlacement;
+        if (temporary)
+        {
+            dockPlacement = DockPanelSettings.From(placement);
+        }
+        else if (workspace.Panels.TryGetValue(panel.Key, out var savedPlacement))
+        {
+            dockPlacement = savedPlacement;
+        }
+        else
         {
             dockPlacement = DockPanelSettings.From(placement);
             workspace.Panels[panel.Key] = dockPlacement;
         }
 
-        panel.SetDocked(true);
+        panel.SetDocked(true, temporary);
         if (_workspaceMoveHandlers.Add(panel))
         {
             panel.WorkspaceMoveRequested += (_, workspaceId) =>
@@ -658,9 +683,11 @@ public sealed class DockWindow : Window
             Tag = panel.Key,
             AllowDrop = true,
         };
-        var position = RedockPosition(dockPlacement, appendRequested, Settings.AutoArrange,
-            _byKey.Values.Select(other => new Rect(Canvas.GetLeft(other), Canvas.GetTop(other), other.Width, other.Height)))
-            ?? FindEmptyPosition(tile.Width, tile.Height);
+        var position = temporary
+            ? FindEmptyPosition(tile.Width, tile.Height)
+            : RedockPosition(dockPlacement, appendRequested, Settings.AutoArrange,
+                _byKey.Values.Select(other => new Rect(Canvas.GetLeft(other), Canvas.GetTop(other), other.Width, other.Height)))
+                ?? FindEmptyPosition(tile.Width, tile.Height);
         Canvas.SetLeft(tile, position.X);
         Canvas.SetTop(tile, position.Y);
         dockPlacement.DockLeft = position.X;
@@ -756,6 +783,10 @@ public sealed class DockWindow : Window
 
         _byKey[panel.Key] = tile;
         _placements[panel.Key] = dockPlacement;
+        if (temporary)
+        {
+            _temporaryPanels.Add(panel.Key);
+        }
         _tiles.Children.Add(tile);
         if (append)
         {
@@ -763,7 +794,15 @@ public sealed class DockWindow : Window
         }
         BringToFront(tile);
         UpdateEmpty();
-        CompactLayout();
+        if (temporary)
+        {
+            UpdateCanvasSize();
+        }
+        else
+        {
+            CompactLayout();
+            RepositionTemporaryPanels();
+        }
     }
 
     internal static Point? RedockPosition(DockPanelSettings placement, bool appendRequested, bool autoArrange,
@@ -805,6 +844,7 @@ public sealed class DockWindow : Window
     {
         if (_byKey.Remove(key, out var tile))
         {
+            bool temporary = _temporaryPanels.Remove(key);
             _placements.Remove(key);
             tile.Children.Clear();
             _tiles.Children.Remove(tile);
@@ -813,7 +853,14 @@ public sealed class DockWindow : Window
                 _anchorKey = null;
             }
             UpdateEmpty();
-            CompactLayout();
+            if (temporary)
+            {
+                UpdateCanvasSize();
+            }
+            else
+            {
+                CompactLayout();
+            }
         }
     }
 
@@ -827,6 +874,7 @@ public sealed class DockWindow : Window
 
         _byKey.Clear();
         _placements.Clear();
+        _temporaryPanels.Clear();
         _tiles.Children.Clear();
         _anchorKey = null;
         UpdateEmpty();
@@ -874,9 +922,10 @@ public sealed class DockWindow : Window
             return;
         }
 
-        var bounds = _byKey.Values.ToDictionary(t => t,
+        var bounds = _byKey.Values.Where(t => !_temporaryPanels.Contains((string)t.Tag)).ToDictionary(t => t,
             t => new Rect(Canvas.GetLeft(t), Canvas.GetTop(t), t.Width, t.Height));
         ApplyLayout(bounds, _anchorKey, persist: true);
+        RepositionTemporaryPanels();
     }
 
     /// <summary>Saves every tile's current canvas position into its placement without moving anything.</summary>
@@ -894,9 +943,9 @@ public sealed class DockWindow : Window
     private Rect? ApplyLayout(Dictionary<Grid, Rect> bounds, string? anchorKey, bool persist)
     {
         (string, Rect)? anchor = null;
-        if (anchorKey is not null && _byKey.TryGetValue(anchorKey, out var pinned))
+        if (anchorKey is not null && _byKey.TryGetValue(anchorKey, out var pinned) && bounds.TryGetValue(pinned, out var pinnedRect))
         {
-            var rect = bounds[pinned];
+            var rect = pinnedRect;
             rect.X = Math.Max(CanvasMargin, rect.X);
             rect.Y = Math.Max(CanvasMargin, rect.Y);
             bounds[pinned] = rect;
@@ -911,7 +960,7 @@ public sealed class DockWindow : Window
             .ToList();
         var placed = Pack(order, anchor);
 
-        foreach (var tile in _byKey.Values)
+        foreach (var tile in bounds.Keys)
         {
             var rect = placed[(string)tile.Tag];
             if (Canvas.GetLeft(tile) != rect.Left || Canvas.GetTop(tile) != rect.Top)
@@ -986,9 +1035,34 @@ public sealed class DockWindow : Window
         }
         return result;
     }
-    private Point FindEmptyPosition(double width, double height)
+    private void RepositionTemporaryPanels()
     {
-        var bounds = _byKey.Values.Select(t =>
+        var permanentBounds = _byKey
+            .Where(pair => !_temporaryPanels.Contains(pair.Key))
+            .Select(pair => new Rect(Canvas.GetLeft(pair.Value), Canvas.GetTop(pair.Value), pair.Value.Width, pair.Value.Height))
+            .ToArray();
+        foreach (string key in _temporaryPanels)
+        {
+            var tile = _byKey[key];
+            var bounds = new Rect(Canvas.GetLeft(tile), Canvas.GetTop(tile), tile.Width, tile.Height);
+            if (!permanentBounds.Any(bounds.IntersectsWith))
+            {
+                continue;
+            }
+
+            var position = FindEmptyPosition(tile.Width, tile.Height, tile);
+            Canvas.SetLeft(tile, position.X);
+            Canvas.SetTop(tile, position.Y);
+            _placements[key].DockLeft = position.X;
+            _placements[key].DockTop = position.Y;
+        }
+
+        UpdateCanvasSize();
+    }
+
+    private Point FindEmptyPosition(double width, double height, Grid? ignoredTile = null)
+    {
+        var bounds = _byKey.Values.Where(t => t != ignoredTile).Select(t =>
             new Rect(Canvas.GetLeft(t), Canvas.GetTop(t), t.Width + 8, t.Height + 8)).ToArray();
         double available = AvailableWidth();
         var xs = bounds.Select(r => r.Right).Append(4).Distinct().Order().ToArray();

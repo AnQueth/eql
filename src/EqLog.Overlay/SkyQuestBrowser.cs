@@ -82,7 +82,7 @@ public partial class MainWindow
     private void ConfigureSkyToolbar(OverlayPanel panel)
     {
         var bar = new StackPanel();
-        var searchRow = new DockPanel { Margin = new Thickness(0, 5, 0, 4) };
+        var searchRow = new DockPanel { Margin = new Thickness(0, 3, 0, 2) };
         var refresh = new Button { Content = "Refresh", Margin = new Thickness(6, 0, 0, 0), ToolTip = "Reload quests and drop sources from EQLWiki" };
         refresh.Click += async (_, _) => await LoadSkyQuestsAsync(true);
         var wiki = new Button { Content = "Wiki", Margin = new Thickness(6, 0, 0, 0), ToolTip = "Open the Plane of Sky page on EQLWiki" };
@@ -124,7 +124,7 @@ public partial class MainWindow
         {
             Padding = new Thickness(0),
             BorderThickness = new Thickness(0),
-            Margin = new Thickness(0, 4, 0, 4),
+            Margin = new Thickness(0, 2, 0, 2),
         };
         views.Items.Add(new TabItem { Header = "By class", Tag = SkyViewByClass });
         views.Items.Add(new TabItem { Header = "By dropper", Tag = SkyViewByDropper });

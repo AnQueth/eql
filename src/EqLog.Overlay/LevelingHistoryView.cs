@@ -36,7 +36,7 @@ internal sealed class LevelingDateRangePicker : WrapPanel
         foreach (var control in new FrameworkElement[] { Preset, new TextBlock { Text = "From" }, From,
             new TextBlock { Text = "To" }, To })
         {
-            control.Margin = new Thickness(0, 2, 6, 2);
+            control.Margin = new Thickness(0, 1, 6, 1);
             control.VerticalAlignment = VerticalAlignment.Center;
             Children.Add(control);
         }
@@ -152,7 +152,7 @@ internal sealed class LevelingHistoryGrid : DockPanel
         EnableColumnVirtualization = true,
         HeadersVisibility = DataGridHeadersVisibility.Column,
         GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
-        RowHeight = 48,
+        RowHeight = double.NaN,
         MinColumnWidth = 50,
         AlternationCount = 2,
         RowDetailsVisibilityMode = DataGridRowDetailsVisibilityMode.VisibleWhenSelected,
@@ -184,7 +184,7 @@ internal sealed class LevelingHistoryGrid : DockPanel
         var details = new FrameworkElementFactory(typeof(TextBlock));
         details.SetBinding(TextBlock.TextProperty, new Binding(nameof(LevelingGridRow.Details)));
         details.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap);
-        details.SetValue(MarginProperty, new Thickness(12, 8, 12, 12));
+        details.SetValue(MarginProperty, new Thickness(8, 4, 8, 6));
         Table.RowDetailsTemplate = new DataTemplate { VisualTree = details };
         ToolTip = "Newest level start first, then level descending. Select a row for XP sources and timestamp notes. " +
             "Kills are your logged killing blows. Minutes include logged downtime but exclude gaps over 30 minutes.";
@@ -192,8 +192,15 @@ internal sealed class LevelingHistoryGrid : DockPanel
 
     internal void Update(IReadOnlyList<LevelingGridRow> rows, string status)
     {
-        _status.Text = status;
-        _status.Visibility = string.IsNullOrEmpty(status) ? Visibility.Collapsed : Visibility.Visible;
+        if (_status.Text != status)
+        {
+            _status.Text = status;
+        }
+        var visibility = string.IsNullOrEmpty(status) ? Visibility.Collapsed : Visibility.Visible;
+        if (_status.Visibility != visibility)
+        {
+            _status.Visibility = visibility;
+        }
         if (_rows.SequenceEqual(rows))
         {
             return;

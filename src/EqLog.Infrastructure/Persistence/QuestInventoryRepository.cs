@@ -9,6 +9,7 @@ public sealed class QuestInventoryRepository : IQuestInventoryRepository
 {
     private readonly string _path;
     private readonly TimeProvider _time;
+    private byte[]? _lastSavedHash;
 
     /// <summary>Uses an explicit app-owned path; never discovers or modifies game files.</summary>
     public QuestInventoryRepository(string path, TimeProvider? timeProvider = null)
@@ -32,9 +33,15 @@ public sealed class QuestInventoryRepository : IQuestInventoryRepository
     }
 
     /// <inheritdoc />
-    public Task SaveAsync(QuestInventory snapshot, CancellationToken cancellationToken = default)
+    public async Task SaveAsync(QuestInventory snapshot, CancellationToken cancellationToken = default)
     {
-        return AtomicFile.WriteJsonAsync(_path, snapshot, ct: cancellationToken);
+        byte[] hash = AtomicFile.HashJson(snapshot);
+        if (_lastSavedHash is not null && hash.AsSpan().SequenceEqual(_lastSavedHash))
+        {
+            return;
+        }
+        await AtomicFile.WriteJsonAsync(_path, snapshot, ct: cancellationToken).ConfigureAwait(false);
+        _lastSavedHash = hash;
     }
 
     private static void Normalize(QuestInventory state, DateTime now)

@@ -1,6 +1,8 @@
 using EqLog.Application.Sessions;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using Xunit;
 
@@ -10,6 +12,12 @@ public sealed class LevelingOverlayTests
 {
     internal static void VerifyGridAndDatePickerInteraction()
     {
+        var resources = System.Windows.Application.Current.Resources;
+        var dateStyles = new ResourceDictionary
+        {
+            Source = new Uri("/EqLogOverlay;component/Styles/DatePicker.xaml", UriKind.Relative),
+        };
+        resources.MergedDictionaries.Add(dateStyles);
         var dates = new LevelingDateRangePicker();
         var grid = new LevelingHistoryGrid();
         var panel = new OverlayPanel("leveling", "Leveling Analyzer", false);
@@ -75,11 +83,12 @@ public sealed class LevelingOverlayTests
             Assert.True(dates.TryGetRange(now.AddDays(1), out var tomorrow, out var rolloverError), rolloverError);
             Assert.Equal(now.Date.AddDays(1), tomorrow.Start);
             Assert.Equal(tomorrow.Start, dates.From.SelectedDate);
-            dates.From.IsDropDownOpen = true;
+            var openButton = Assert.IsType<Button>(dates.From.Template.FindName("PART_Button", dates.From));
+            openButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             host.UpdateLayout();
             Assert.True(dates.From.IsDropDownOpen);
             Assert.True(OverlayPanel.IsInteractive(dates.From));
-            dates.From.IsDropDownOpen = false;
+            VerifyCalendar(dates.From);
 
             var rows = Enumerable.Range(0, 500).Select(index =>
             {
@@ -97,6 +106,18 @@ public sealed class LevelingOverlayTests
             Assert.True(grid.Table.EnableRowVirtualization);
             Assert.True(VirtualizingPanel.GetIsVirtualizing(grid.Table));
             Assert.True(grid.Table.Columns.Sum(column => column.ActualWidth) <= grid.Table.ActualWidth + 0.1);
+            panel.FontSize = 13;
+            host.UpdateLayout();
+            var compactRow = Assert.IsType<DataGridRow>(grid.Table.ItemContainerGenerator.ContainerFromIndex(0));
+            Assert.InRange(compactRow.ActualHeight, 1, 44);
+            panel.FontSize = 18;
+            host.UpdateLayout();
+            var dateText = Assert.Single(Visuals(compactRow).OfType<TextBlock>(), text => text.Text == rows[0].StartText);
+            var measuredDate = new TextBlock { Text = dateText.Text, FontSize = dateText.FontSize, FontFamily = dateText.FontFamily };
+            measuredDate.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            Assert.True(compactRow.ActualHeight + 1 >= measuredDate.DesiredSize.Height);
+            panel.FontSize = 13;
+            host.UpdateLayout();
             grid.Table.SelectedItem = rows[2];
             host.UpdateLayout();
             var selected = Assert.IsType<DataGridRow>(grid.Table.ItemContainerGenerator.ContainerFromIndex(2));
@@ -121,7 +142,70 @@ public sealed class LevelingOverlayTests
         finally
         {
             host.Close();
+            resources.MergedDictionaries.Remove(dateStyles);
         }
+    }
+
+    private static void VerifyCalendar(DatePicker picker)
+    {
+        var popup = Assert.IsType<Popup>(picker.Template.FindName("PART_Popup", picker));
+        var calendar = Assert.IsType<Calendar>(popup.Child);
+        calendar.ApplyTemplate();
+        calendar.Measure(new Size(300, 300));
+        calendar.Arrange(new Rect(0, 0, 300, 300));
+        calendar.UpdateLayout();
+        var item = Assert.IsType<CalendarItem>(calendar.Template.FindName("PART_CalendarItem", calendar));
+        item.ApplyTemplate();
+        item.UpdateLayout();
+        var frame = Assert.IsType<Border>(item.Template.FindName("PART_Root", item));
+        Assert.Equal(System.Windows.Application.Current.Resources["NightSurface"], frame.Background);
+        System.Windows.Application.Current.Resources["NightSurface"] = Brushes.Black;
+        Assert.Equal(Brushes.Black, frame.Background);
+        System.Windows.Application.Current.Resources["NightSurface"] = Brushes.Gray;
+
+        DateTime before = calendar.DisplayDate;
+        var previous = Assert.IsType<Button>(item.Template.FindName("PART_PreviousButton", item));
+        previous.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        Assert.Equal(before.AddMonths(-1).Month, calendar.DisplayDate.Month);
+        var header = Assert.IsType<Button>(item.Template.FindName("PART_HeaderButton", item));
+        header.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        Assert.Equal(CalendarMode.Year, calendar.DisplayMode);
+        var currentMonth = Assert.Single(Visuals(item).OfType<CalendarButton>(), button => button.HasSelectedDays);
+        currentMonth.ApplyTemplate();
+        var selectedMonth = Assert.IsType<Border>(currentMonth.Template.FindName("Frame", currentMonth));
+        Assert.Equal(System.Windows.Application.Current.Resources["Selection"], selectedMonth.Background);
+        var month = Assert.Single(Visuals(item).OfType<CalendarButton>(),
+            button => button.DataContext is DateTime value && value.Month == before.Month);
+        month.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        Assert.Equal(CalendarMode.Month, calendar.DisplayMode);
+        var chosen = new DateTime(before.Year, before.Month, 15);
+        var selected = Assert.Single(Visuals(item).OfType<CalendarDayButton>(),
+            button => button.DataContext is DateTime value && value.Date == chosen);
+        selected.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
+        {
+            RoutedEvent = UIElement.MouseLeftButtonDownEvent,
+        });
+        selected.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
+        {
+            RoutedEvent = UIElement.MouseLeftButtonUpEvent,
+        });
+        Assert.Equal(chosen, picker.SelectedDate);
+        Assert.False(picker.IsDropDownOpen);
+        var textBox = Assert.IsType<DatePickerTextBox>(picker.Template.FindName("PART_TextBox", picker));
+        textBox.ApplyTemplate();
+        var watermark = Assert.IsType<ContentControl>(textBox.Template.FindName("PART_Watermark", textBox));
+        Assert.Equal(Visibility.Collapsed, watermark.Visibility);
+        picker.SelectedDate = null;
+        Assert.Equal(Visibility.Visible, watermark.Visibility);
+        var typed = new DateTime(2026, 11, 12);
+        textBox.Text = typed.ToString("d", System.Globalization.CultureInfo.CurrentCulture);
+        var source = Assert.IsAssignableFrom<PresentationSource>(PresentationSource.FromVisual(textBox));
+        textBox.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Enter)
+        {
+            RoutedEvent = Keyboard.KeyDownEvent,
+        });
+        Assert.Equal(typed, picker.SelectedDate);
+        Assert.Equal(Visibility.Collapsed, watermark.Visibility);
     }
 
     private static IEnumerable<DependencyObject> Visuals(DependencyObject parent)

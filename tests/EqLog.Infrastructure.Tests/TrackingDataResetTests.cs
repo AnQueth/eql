@@ -22,8 +22,9 @@ public sealed class TrackingDataResetTests : IDisposable
         Directory.CreateDirectory(Path.Combine(_folder, "npc-compendium", "npcs"));
         string[] tracking =
         [
-            "spell-durations.json", "spawn-timers.json", "motes.json", "mob-resistances.json",
-            "quest-inventory.json", "npc-compendium.json", "leveling-history.json",
+            "spell-durations.json", "spawn-timers.json", "motes.json", "mob-resistances.json", "mob-resistances.json.journal",
+            "mob-resistances.json.checkpoint",
+            "quest-inventory.json", "npc-compendium.json", "leveling-history.json", "leveling-history.jsonl",
         ];
         string[] preserved = ["settings.json", "quest-lookups.jsonl", "sky-quests.json", "game-log.txt"];
         foreach (string name in tracking.Concat(preserved))

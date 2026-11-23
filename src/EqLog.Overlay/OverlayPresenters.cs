@@ -20,17 +20,8 @@ public sealed record ActiveAlert(string Text, Brush Color, DateTime Expires, Ale
 /// <summary>Per-render options the presenters need from the app.</summary>
 public sealed record OverlayView(ISet<ChatChannel> ChatChannels, IReadOnlyList<ActiveAlert> Alerts, int LootGrouping = 0,
     InventoryReadModel? Inventory = null, WikiActivitySnapshot? WikiActivity = null, QuestWikiActivity? QuestWiki = null,
-    IReadOnlyList<ChatEvent>? RecentChat = null, DpsFightKey? DpsFight = null, string? CharacterName = null,
+    IReadOnlyList<ChatEvent>? RecentChat = null, string? CharacterName = null,
     string ItemFilter = "", MoteInventoryReadModel? MoteInventory = null, bool ShowKnownSpells = true, int ForageGrouping = 0);
-
-/// <summary>Identifies one fight chosen in the DPS overlay picker.</summary>
-public sealed record DpsFightKey(string Target, DateTime Start)
-{
-    public bool Matches(FightSnapshot fight)
-    {
-        return fight.Start == Start && string.Equals(fight.Target, Target, StringComparison.OrdinalIgnoreCase);
-    }
-}
 
 /// <summary>Quest enrichment work waiting outside the shared HTTP scheduler.</summary>
 public sealed record QuestWikiActivity(string Summary, string Status, string? ActiveItem, IReadOnlyList<string> Queued, bool HasError);
@@ -46,6 +37,9 @@ public static class OverlayPresenters
     private static readonly Brush CharmBar = Frozen(Color.FromArgb(160, 150, 60, 200));
     private static readonly Brush WarnBar = Frozen(Color.FromArgb(180, 220, 120, 20));
     private static readonly Brush WornBar = Frozen(Color.FromArgb(170, 200, 40, 40));
+    private static readonly IReadOnlyDictionary<string, Brush> DefaultThemeBrushes =
+        ThemePalette.OptionalColorDefaults.ToDictionary(pair => pair.Key,
+            pair => Frozen((Color)ColorConverter.ConvertFromString(pair.Value)), StringComparer.Ordinal);
     private static Brush Dim
     {
         get
@@ -94,7 +88,7 @@ public static class OverlayPresenters
             return brush;
         }
 
-        return Frozen((Color)ColorConverter.ConvertFromString(ThemePalette.OptionalColorDefaults[key]));
+        return DefaultThemeBrushes[key];
     }
 
     private static readonly Dictionary<ChatChannel, Brush> ChatColors = new()
@@ -417,65 +411,31 @@ public static class OverlayPresenters
         return name == Names.You ? "You" : name;
     }
 
-    /// <summary>The fight the DPS overlay shows: the picked one while it is still among the recent fights, else the current fight.</summary>
-    public static FightSnapshot? SelectedFight(EngineSnapshot s, DpsFightKey? key)
+    private static OverlayContent Dps(EngineSnapshot s, EngineQuerySnapshot _, OverlayView __)
     {
-        if (key is not null)
-        {
-            if (s.CurrentFight is { } current && key.Matches(current))
-            {
-                return current;
-            }
-
-            var picked = s.RecentFights.FirstOrDefault(key.Matches);
-            if (picked is not null)
-            {
-                return picked;
-            }
-        }
-
-        return s.CurrentFight;
-    }
-
-    private static OverlayContent Dps(EngineSnapshot s, EngineQuerySnapshot _, OverlayView view)
-    {
-        var rows = new List<OverlayRow>();
-        var f = SelectedFight(s, view.DpsFight);
-        if (f is null)
-        {
-            rows.Add(new("No fight yet", Foreground: Dim));
-        }
-        else
-        {
-            rows.Add(new(f.Target, "All abilities", Foreground: Header, Bold: true, Breakdown: FightBreakdown(f)));
-            foreach (var a in f.Attackers.Take(10))
-            {
-                bool you = a.Name == Names.You;
-                rows.Add(new(
-                    Who(a.Name),
-                    $"{Short(a.Dps)} dps  {Short(a.Total)}  {a.Percent:0}%",
-                    a.Percent / 100,
-                    you ? YouBar : OtherBar,
-                    Bold: you, Breakdown: new(Who(a.Name), $"{f.Target} · {Clock(f.DurationSeconds)} fight · snapshot at click", "DPS", a.Abilities,
-                        a.Timeline, f.DurationSeconds, f.Start, a.AbilityTimelines,
-                        f.DamageEvents.Where(e => string.Equals(e.Attacker, a.Name, StringComparison.OrdinalIgnoreCase)).ToArray(),
-                        f.IncomingDamageEvents)));
-            }
-        }
-
-        rows.Add(new($"Session dmg {Short(s.SessionDamageByYou)}", s.SessionMaxHitByYou > 0 ? $"max {Short(s.SessionMaxHitByYou)}" : "", Foreground: Dim));
-        var recent = s.RecentFights.Where(r => f is null || !(r.Start == f.Start && r.Target == f.Target)).Take(3).ToList();
-        foreach (var r in recent)
-        {
-            rows.Add(new($"{r.Target}", $"{Short(CombatQueries.PersonalDps(r))} dps  {Clock(r.DurationSeconds)}", Foreground: Dim,
-                Breakdown: FightBreakdown(r)));
-        }
-
+        var f = s.CurrentFight;
         string title = f is null ? "DPS" : $"{f.Target}";
         string? sub = f is null
             ? null
             : $"{Short(f.Total)} in {Clock(f.DurationSeconds)}  {Short(f.Dps)} dps  {(f.Killed ? "killed" : f.IsActive ? "active" : "ended")}";
-        return new(title, sub, rows, f is null ? null : WikiLinks.SearchUrl(f.Target));
+        return new(title, sub, [], f is null ? null : WikiLinks.SearchUrl(f.Target));
+    }
+
+    internal static IReadOnlyList<OverlayRow> DpsAttackerRows(FightSnapshot fight)
+    {
+        return fight.Attackers.Take(10).Select(attacker =>
+        {
+            bool you = attacker.Name == Names.You;
+            return new OverlayRow(
+                Who(attacker.Name),
+                $"{Short(attacker.Dps)} dps  {Short(attacker.Total)}  {attacker.Percent:0}%",
+                attacker.Percent / 100,
+                you ? YouBar : OtherBar,
+                Bold: you, Breakdown: new(Who(attacker.Name), $"{fight.Target} · {Clock(fight.DurationSeconds)} fight · snapshot at click",
+                    "DPS", attacker.Abilities, attacker.Timeline, fight.DurationSeconds, fight.Start, attacker.AbilityTimelines,
+                    fight.DamageEvents.Where(e => string.Equals(e.Attacker, attacker.Name, StringComparison.OrdinalIgnoreCase)).ToArray(),
+                    fight.IncomingDamageEvents));
+        }).ToArray();
     }
 
     public static AbilityBreakdown FightBreakdown(FightSnapshot fight)
@@ -659,25 +619,9 @@ public static class OverlayPresenters
         rows.Add(new("Deaths", x.Deaths == 0 ? "0" : $"{x.Deaths}  (last: {x.LastKilledBy})", Foreground: x.Deaths > 0 ? Warn : null,
             Link: x.Deaths > 0 && !string.IsNullOrWhiteSpace(x.LastKilledBy) ? WikiLinks.SearchUrl(x.LastKilledBy) : null,
             ToolTip: x.Deaths > 0 ? $"Open {x.LastKilledBy} on EQLWiki" : null));
-        rows.Add(new("XP gains", $"{x.ExperienceGains}  ({x.PartyExperienceGains} party)"));
-        if (x.ExperiencePercent > 0)
-        {
-            rows.Add(new("XP", $"{x.ExperiencePercent:0.##}%  ({SessionQueries.ExperiencePercentPerHour(x, now):0.#}%/hr)"));
-        }
-
-        if (x.Level is int lvl)
-        {
-            rows.Add(new("Level", x.LevelsGained > 0 ? $"{lvl}  (+{x.LevelsGained})" : $"{lvl}"));
-        }
-
         if (x.AaCapped)
         {
             rows.Add(new("AA POINTS CAPPED - spend AAs!", Foreground: Bad, Bold: true, Wrap: true));
-        }
-
-        foreach (var k in x.RecentKills.Take(5))
-        {
-            rows.Add(new(k.Victim, k.Time.ToString("HH:mm:ss"), Foreground: Dim, Link: WikiLinks.SearchUrl(k.Victim)));
         }
 
         return new(x.Zone ?? "Session", s.CharacterName.Length > 0 ? s.CharacterName : null, rows);

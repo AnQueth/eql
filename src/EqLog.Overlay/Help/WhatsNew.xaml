@@ -1,7 +1,74 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.44" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.45" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.45
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released November 23, 2026 at 11:49 AM CT.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Browse fights without leaving the list
+        </Paragraph>
+        <Paragraph>
+            In DPS, scroll through the last 20 fights and click a fight to expand or collapse
+            its attackers. Multiple fights can stay open. Click an attacker for a separate
+            ability breakdown, or check Full details to show the ability table and graphs
+            under each expanded fight. The checkbox is saved, and inline details update live.
+        </Paragraph>
+        <Paragraph>
+            Small overlays use a compact tab row: Timeline, Types, Events, and Taken show
+            damage over time, damage types, logged events, and incoming damage. Hover a tab
+            for its full name. Unlock a floating overlay before using its controls.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Find floating panels in the dock
+        </Paragraph>
+        <Paragraph>
+            When Only show floating overlays while EverQuest is active is enabled under
+            Settings &gt; General, enabled floating panels temporarily appear in the current
+            dock workspace while the game is not active or is unavailable. They return to
+            their saved floating positions when the game is active again. Use Dock on a
+            temporary panel to keep it in that workspace.
+        </Paragraph>
+        <Paragraph>
+            Turn that setting off to keep floating panels on the desktop instead. The dock
+            does not take focus automatically when the game becomes inactive.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Less disk activity, with existing data preserved
+        </Paragraph>
+        <Paragraph>
+            The app watches for log and inventory changes instead of repeatedly reading
+            idle files. It avoids saving unchanged settings and inventory, and appends
+            changes to several larger tracking and wiki files instead of rewriting their
+            entire contents. Periodic recovery checks and saves still run.
+        </Paragraph>
+        <Paragraph>
+            Your existing data loads automatically after updating; there is no need to
+            delete it. Older versions cannot read the new journaled changes and should not
+            use the same data folder. For a backup, close the app and copy the entire
+            %AppData%\EqLogOverlay folder, including its journals and checkpoint files.
+            Large journals are merged at startup.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            More compact overlays
+        </Paragraph>
+        <Paragraph>
+            Overlay controls, tables, and cards use less space. The Leveling Analyzer's
+            From and To calendars now match the selected theme. The Session panel keeps
+            its timers, kill and death totals, and AA-cap warning, but no longer shows XP
+            rows or the misleading recent-kill list. Use Leveling Analyzer for recorded XP history.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.44
     </Paragraph>

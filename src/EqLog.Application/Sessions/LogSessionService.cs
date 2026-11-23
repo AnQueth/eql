@@ -301,8 +301,27 @@ public sealed class LogSessionService : IAsyncDisposable
     {
         lock (_gate)
         {
-            _disposeTask ??= StopAsync();
+            _disposeTask ??= DisposeCoreAsync();
             return new(_disposeTask);
+        }
+    }
+
+    private async Task DisposeCoreAsync()
+    {
+        try
+        {
+            await StopAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            if (_source is IDisposable source)
+            {
+                source.Dispose();
+            }
+            if (!ReferenceEquals(_source, _discovery) && _discovery is IDisposable discovery)
+            {
+                discovery.Dispose();
+            }
         }
     }
 }

@@ -8,7 +8,7 @@ namespace EqLog.Application.Inventory;
 /// Owns inventory mutations, stable import policy and ordered saves. No callbacks execute under its state lock.
 /// Application lifetime; callers cancel/await outstanding operations before abandoning the instance.
 /// </summary>
-public sealed class InventoryService
+public sealed class InventoryService : IDisposable
 {
     private readonly object _gate = new();
     private readonly SemaphoreSlim _saveGate = new(1, 1);
@@ -279,5 +279,13 @@ public sealed class InventoryService
     {
         _stateVersion++;
         _revision++;
+    }
+
+    public void Dispose()
+    {
+        if (_source is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
     }
 }

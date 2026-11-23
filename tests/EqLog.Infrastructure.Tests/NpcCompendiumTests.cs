@@ -256,6 +256,29 @@ public sealed class NpcCompendiumTests : IDisposable
     }
 
     [Fact]
+    public async Task Save_LargeIndex_AppendsChangesAndReloads()
+    {
+        var store = new NpcCompendium();
+        var engine = Engine(store);
+        Lines(engine, (0, "You have entered Sky Hard."));
+        for (int i = 1; i <= 300; i++)
+        {
+            Lines(engine, (i, $"A wraith {i} scowls at you, ready to attack -- it appears to be quite formidable. (Lvl: 48)"));
+        }
+        await store.SaveAsync(_path);
+        string index = Path.Combine(_path, NpcCompendium.IndexFileName);
+        byte[] baseline = await File.ReadAllBytesAsync(index);
+        Lines(engine, (301, "A wraith 300 scowls at you, ready to attack -- it appears to be quite formidable. (Lvl: 48)"));
+
+        await store.SaveAsync(_path);
+
+        Assert.Equal(baseline, await File.ReadAllBytesAsync(index));
+        Assert.True(new FileInfo(index + ".journal").Length < baseline.Length / 10);
+        var loaded = await TrackingTestPersistence.LoadNpcCompendiumAsync(_path);
+        Assert.Equal(2, Assert.Single(loaded.Search("A wraith 300")).Considers);
+    }
+
+    [Fact]
     public async Task Load_TruncatedHistoryLineAndDuplicateReplay_AreTolerated()
     {
         var store = new NpcCompendium();

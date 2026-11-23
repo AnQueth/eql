@@ -109,6 +109,10 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
         }
         set
         {
+            if (_importStatus == value)
+            {
+                return;
+            }
             _importStatus = value;
             Notify(nameof(ImportStatus));
         }

@@ -28,7 +28,8 @@ public sealed class OverlayChromeTests
                 {
                     ShutdownMode = ShutdownMode.OnExplicitShutdown,
                 };
-                foreach (string key in new[] { "NightBackground", "NightBorder", "Pumpkin", "NightRaised" })
+                foreach (string key in new[] { "NightBackground", "NightBorder", "Pumpkin", "NightRaised",
+                    "NightSurface", "NightText", "NightMuted", "Hover", "Selection" })
                 {
                     application.Resources[key] = Brushes.Gray;
                 }
@@ -38,6 +39,9 @@ public sealed class OverlayChromeTests
                 LevelingOverlayTests.VerifyGridAndDatePickerInteraction();
                 VerifyMobInfoTitleAlwaysVisible();
                 VerifyBreakdownButtonsUsePressClickMode();
+                VerifyDpsRecentFightsScrolling();
+                VerifyTemporaryDockFallback();
+                VerifyCompactCards();
 
                 var panel = new OverlayPanel("timers", "Spell Timers", false);
                 var frame = Assert.IsType<Border>(panel.Content);
@@ -305,8 +309,15 @@ public sealed class OverlayChromeTests
     private static void VerifyBreakdownButtonsUsePressClickMode()
     {
         var panel = new OverlayPanel("dps", "DPS", false);
-        var breakdown = new AbilityBreakdown("Bob", "", "DPS", []);
-        panel.Update("a goblin", null, [new OverlayRow("Bob", Breakdown: breakdown)]);
+        var at = new DateTime(2026, 10, 21, 18, 0, 0);
+        var hit = new DamageEvent(at, "Bob", "a goblin", 10, DamageKind.Melee, null, null);
+        var breakdown = new AbilityBreakdown("Bob", "", "DPS",
+            [new AbilityStats("Melee", 10, 10, 100, 1, 0, 10, 0)],
+            [new DamageTimelinePoint(0, 10)], 1, at,
+            [new AbilityTimeline("Melee", [new DamageTimelinePoint(0, 10)])], [hit], [hit]);
+        panel.Update("a goblin", "active", [new OverlayRow("Bob", Breakdown: breakdown)]);
+        var subtitle = FindLogicalChild<TextBlock>(panel, text => text.Text == "active")!;
+        Assert.Equal(Visibility.Visible, subtitle.Visibility);
 
         var button = FindLogicalChild<Button>(panel, candidate => Equals(candidate.ToolTip, "Click for ability breakdown"))!;
         Assert.Equal(ClickMode.Press, button.ClickMode);
@@ -317,10 +328,256 @@ public sealed class OverlayChromeTests
 
         Assert.Equal(1, opened);
 
+        var unchanged = breakdown with
+        {
+            Abilities = breakdown.Abilities.ToArray(),
+            Timeline = breakdown.Timeline!.ToArray(),
+            AbilityTimelines = [new AbilityTimeline("Melee", [new DamageTimelinePoint(0, 10)])],
+            DamageEvents = breakdown.DamageEvents!.ToArray(),
+            IncomingDamageEvents = breakdown.IncomingDamageEvents!.ToArray(),
+        };
+        panel.Update("a goblin", "active", [new OverlayRow("Bob", Breakdown: unchanged)]);
+        Assert.Same(button, FindLogicalChild<Button>(panel, candidate => Equals(candidate.ToolTip, "Click for ability breakdown")));
+        Assert.Equal(Visibility.Visible, subtitle.Visibility);
+
+        var changed = unchanged with { DamageEvents = [hit, hit with { Amount = 20 }] };
+        panel.Update("a goblin", "active", [new OverlayRow("Bob", Breakdown: changed)]);
+        var updatedButton = FindLogicalChild<Button>(panel, candidate => Equals(candidate.ToolTip, "Click for ability breakdown"))!;
+        Assert.NotSame(button, updatedButton);
+        AbilityBreakdown? clicked = null;
+        panel.BreakdownRequested += result => clicked = result;
+        updatedButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert.Equal(2, clicked!.DamageEvents!.Count);
+
         panel.Update("a goblin", null, [new OverlayRow("Bob", "20 dps", Breakdown: breakdown with { Title = "Updated" })]);
+        Assert.Equal(Visibility.Hidden, subtitle.Visibility);
         var refreshedButton = FindLogicalChild<Button>(panel, candidate => Equals(candidate.ToolTip, "Click for ability breakdown"))!;
-        Assert.NotSame(button, refreshedButton);
+        Assert.NotSame(updatedButton, refreshedButton);
         Assert.Equal(ClickMode.Press, refreshedButton.ClickMode);
+    }
+
+    private static void VerifyDpsRecentFightsScrolling()
+    {
+        var start = new DateTime(2026, 10, 21, 18, 0, 0);
+        var engine = new LogEngine { CharacterName = "Que" };
+        var lines = Enumerable.Range(0, 25)
+            .Select(i => $"[{start.AddSeconds(i):ddd MMM dd HH:mm:ss yyyy}] You slash Guardian {(char)('A' + i)} for 100 points of damage.")
+            .ToArray();
+        engine.ProcessLines(lines);
+        var snapshot = engine.Snapshot(start.AddSeconds(30));
+        Assert.Equal(20, snapshot.RecentFights.Count);
+        Assert.Equal("Guardian Y", snapshot.RecentFights[0].Target);
+        Assert.Equal("Guardian F", snapshot.RecentFights[^1].Target);
+
+        var definition = Assert.Single(OverlayPresenters.All, item => item.Key == "dps");
+        var view = new OverlayView(new HashSet<ChatChannel>(), []);
+        var queries = EngineQuerySnapshot.Capture(engine);
+        var content = definition.Render(snapshot, queries, view);
+        Assert.Empty(content.Rows);
+
+        var panel = new OverlayPanel("dps", "DPS", false);
+        var list = new DpsFightList(panel, false);
+        panel.SetBody(list);
+        bool? expanded = null;
+        var checkbox = MainWindow.ConfigureDpsToolbar(panel, false, value =>
+        {
+            expanded = value;
+            list.SetFullDetails(value);
+        });
+        var toolbar = Assert.IsType<ContentControl>(checkbox.Parent);
+        Assert.Same(checkbox, toolbar.Content);
+        Assert.Equal("Full details", checkbox.Content);
+        Assert.Null(expanded);
+        panel.Update(content.Title, content.Subtitle, content.Rows);
+        list.Update(snapshot with { CurrentFight = null, RecentFights = [] });
+        var rows = Assert.IsType<StackPanel>(list.Content);
+        Assert.Equal("No fight yet", Assert.IsType<TextBlock>(Assert.Single(rows.Children)).Text);
+        list.Update(snapshot);
+        Assert.Equal(20, rows.Children.Count);
+        var first = Assert.IsType<StackPanel>(rows.Children[0]);
+        var oldest = Assert.IsType<StackPanel>(rows.Children[^1]);
+        var firstButton = Assert.IsType<Button>(first.Children[0]);
+        var oldestButton = Assert.IsType<Button>(oldest.Children[0]);
+        Assert.NotNull(FindLogicalChild<TextBlock>(firstButton, text => text.Text == "Guardian Y"));
+        Assert.NotNull(FindLogicalChild<TextBlock>(oldestButton, text => text.Text == "Guardian F"));
+
+        oldestButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        var details = Assert.IsType<ContentControl>(oldest.Children[1]);
+        Assert.Equal(Visibility.Visible, details.Visibility);
+        var compact = Assert.IsType<StackPanel>(details.Content);
+        var attacker = Assert.Single(compact.Children.OfType<Button>());
+        Assert.NotNull(FindLogicalChild<TextBlock>(attacker, text => text.Text == "You"));
+        AbilityBreakdown? clicked = null;
+        panel.BreakdownRequested += breakdown => clicked = breakdown;
+        attacker.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert.Equal("You", clicked?.Title);
+        list.Update(snapshot);
+        Assert.Same(compact, details.Content);
+
+        checkbox.IsChecked = true;
+        Assert.True(expanded);
+        var tabs = Assert.IsType<TabControl>(details.Content);
+        Assert.Equal(20, rows.Children.Count);
+        Assert.Same(oldest, rows.Children[^1]);
+        tabs.SelectedIndex = 1;
+        list.Update(snapshot);
+        Assert.Same(tabs, details.Content);
+        Assert.Equal(1, tabs.SelectedIndex);
+        firstButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        var firstDetails = Assert.IsType<ContentControl>(first.Children[1]);
+        var firstTabs = Assert.IsType<TabControl>(firstDetails.Content);
+        var abilityTable = Assert.IsType<DataGrid>(((TabItem)firstTabs.Items[0]).Content);
+        Assert.Equal(100, Assert.Single(abilityTable.Items.Cast<AbilityStats>()).Total);
+        panel.Measure(new Size(definition.Width, definition.Height));
+        panel.Arrange(new Rect(0, 0, definition.Width, definition.Height));
+        panel.UpdateLayout();
+        Assert.True(firstTabs.ActualHeight > 0);
+        Assert.True(list.ScrollableHeight > 0);
+        string additionalHit = $"[{start.AddSeconds(25):ddd MMM dd HH:mm:ss yyyy}] You slash Guardian Y for 200 points of damage.";
+        engine.ProcessLines([additionalHit]);
+        var updatedSnapshot = engine.Snapshot(start.AddSeconds(30));
+        list.Update(updatedSnapshot);
+        Assert.Same(first, rows.Children[0]);
+        Assert.Same(firstTabs, firstDetails.Content);
+        Assert.Equal(300, Assert.Single(abilityTable.Items.Cast<AbilityStats>()).Total);
+        firstTabs.SelectedIndex = 1;
+        string nextFight = $"[{start.AddSeconds(26):ddd MMM dd HH:mm:ss yyyy}] You slash Guardian Z for 50 points of damage.";
+        engine.ProcessLines([nextFight]);
+        updatedSnapshot = engine.Snapshot(start.AddSeconds(30));
+        list.Update(updatedSnapshot);
+        Assert.Equal(20, rows.Children.Count);
+        Assert.Same(first, rows.Children[1]);
+        Assert.Same(firstTabs, firstDetails.Content);
+        Assert.Equal(1, firstTabs.SelectedIndex);
+
+        checkbox.IsChecked = false;
+        Assert.False(expanded);
+        Assert.IsType<StackPanel>(firstDetails.Content);
+        firstButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert.Equal(Visibility.Collapsed, firstDetails.Visibility);
+
+        foreach (bool docked in new[] { false, true })
+        {
+            panel.SetDocked(docked);
+            panel.Measure(new Size(definition.Width, definition.Height));
+            panel.Arrange(new Rect(0, 0, definition.Width, definition.Height));
+            panel.UpdateLayout();
+            Assert.Equal(ScrollBarVisibility.Auto, list.VerticalScrollBarVisibility);
+            Assert.True(list.ScrollableHeight > 0);
+            list.ScrollToEnd();
+            panel.UpdateLayout();
+            Assert.True(list.VerticalOffset > 0);
+            Assert.Equal(list.ScrollableHeight, list.VerticalOffset, 1);
+            double offset = list.VerticalOffset;
+            list.Update(updatedSnapshot);
+            panel.UpdateLayout();
+            Assert.Equal(offset, list.VerticalOffset, 1);
+        }
+
+        list.Update(snapshot with { RecentFights = [snapshot.RecentFights[0], snapshot.RecentFights[0]] });
+        Assert.Equal(2, rows.Children.Count);
+        Assert.NotSame(rows.Children[0], rows.Children[1]);
+    }
+
+    private static void VerifyTemporaryDockFallback()
+    {
+        foreach (bool autoArrange in new[] { false, true })
+        {
+            var settings = new DockWindowSettings { AutoArrange = autoArrange };
+            var firstWorkspace = settings.CreateWorkspace("First");
+            firstWorkspace.Panels["session"] = new DockPanelSettings
+            {
+                DockLeft = 4,
+                DockTop = 4,
+                DockWidth = 250,
+                DockHeight = 180,
+            };
+            var dock = new DockWindow(settings);
+            var existing = new OverlayPanel("session", "Session", false);
+            var placement = new OverlayPlacement
+            {
+                Visible = true,
+                Width = 300,
+                Height = 220,
+                DockLeft = 42,
+                DockTop = 73,
+            };
+            var panel = new OverlayPanel("dps", "DPS", false);
+            var window = new OverlayWindow(panel);
+            try
+            {
+                dock.AddPanel(existing, new OverlayPlacement { Width = 250, Height = 180 });
+                double? savedLeft = firstWorkspace.Panels["session"].DockLeft;
+                double? savedTop = firstWorkspace.Panels["session"].DockTop;
+
+                MainWindow.ApplyOverlayPlacement(dock, window, placement, true, false, false);
+                Assert.True(dock.HasPanel("dps"));
+                Assert.True(dock.IsTemporaryPanel("dps"));
+                Assert.False(window.IsVisible);
+                Assert.Null(window.Content);
+                Assert.False(placement.Docked);
+                Assert.False(settings.IsPanelInAnyWorkspace("dps"));
+                Assert.Equal(42, placement.DockLeft);
+                Assert.Equal(73, placement.DockTop);
+                Assert.Equal(savedLeft, firstWorkspace.Panels["session"].DockLeft);
+                Assert.Equal(savedTop, firstWorkspace.Panels["session"].DockTop);
+                var button = FindLogicalChild<Button>(panel, candidate => Equals(candidate.ToolTip, "Keep this panel in the current workspace"));
+                Assert.NotNull(button);
+
+                MainWindow.ApplyOverlayPlacement(dock, window, placement, true, false, false);
+                Assert.True(dock.IsTemporaryPanel("dps"));
+                var temporaryTile = Assert.IsType<Grid>(panel.Parent);
+                firstWorkspace.Panels["loot"] = new DockPanelSettings
+                {
+                    DockLeft = Canvas.GetLeft(temporaryTile),
+                    DockTop = Canvas.GetTop(temporaryTile),
+                    DockWidth = 300,
+                    DockHeight = 220,
+                };
+                var loot = new OverlayPanel("loot", "Loot", false);
+                dock.AddPanel(loot, new OverlayPlacement { Width = 300, Height = 220 });
+                var lootTile = Assert.IsType<Grid>(loot.Parent);
+                var temporaryBounds = new Rect(Canvas.GetLeft(temporaryTile), Canvas.GetTop(temporaryTile), temporaryTile.Width, temporaryTile.Height);
+                var lootBounds = new Rect(Canvas.GetLeft(lootTile), Canvas.GetTop(lootTile), lootTile.Width, lootTile.Height);
+                Assert.False(temporaryBounds.IntersectsWith(lootBounds));
+
+                MainWindow.ApplyOverlayPlacement(dock, window, placement, true, true, false);
+                Assert.False(dock.HasPanel("dps"));
+                Assert.True(window.IsVisible);
+                Assert.Same(panel, window.Content);
+                Assert.Equal(savedLeft, firstWorkspace.Panels["session"].DockLeft);
+                Assert.Equal(savedTop, firstWorkspace.Panels["session"].DockTop);
+
+                MainWindow.ApplyOverlayPlacement(dock, window, placement, false, false, false);
+                Assert.False(dock.HasPanel("dps"));
+                Assert.False(window.IsVisible);
+                MainWindow.ApplyOverlayPlacement(dock, window, placement, true, false, true);
+                Assert.True(window.IsVisible);
+                Assert.False(dock.HasPanel("dps"));
+
+                MainWindow.ApplyOverlayPlacement(dock, window, placement, true, false, false);
+                var secondWorkspace = settings.CreateWorkspace("Second");
+                dock.ClearPanelsForWorkspaceChange();
+                MainWindow.ApplyOverlayPlacement(dock, window, placement, true, false, false);
+                Assert.True(dock.IsTemporaryPanel("dps"));
+                Assert.Empty(secondWorkspace.Panels);
+                Assert.False(settings.IsPanelInAnyWorkspace("dps"));
+
+                dock.SetPanelInActiveWorkspace("dps", true, placement);
+                MainWindow.ApplyOverlayPlacement(dock, window, placement, true, false, false);
+                Assert.False(dock.IsTemporaryPanel("dps"));
+                Assert.True(placement.Docked);
+                Assert.True(secondWorkspace.Panels.ContainsKey("dps"));
+                MainWindow.ApplyOverlayPlacement(dock, window, placement, true, true, false);
+                Assert.True(dock.HasPanel("dps"));
+                Assert.False(window.IsVisible);
+            }
+            finally
+            {
+                window.Close();
+                dock.Close();
+            }
+        }
     }
 
     private static T? FindLogicalChild<T>(DependencyObject parent, Func<T, bool> predicate)
@@ -598,6 +855,36 @@ public sealed class OverlayChromeTests
         AssertTextFits(Assert.IsType<TextBlock>(rows[1].Children[3]));
         valueColumn = Assert.IsType<Grid>(rows[2].Children[2]);
         AssertTextFits(Assert.Single(valueColumn.Children.OfType<TextBlock>()));
+    }
+
+    private static void VerifyCompactCards()
+    {
+        var panel = new OverlayPanel("timers", "Timers", false) { FontSize = 13 };
+        panel.Update("Timers", null, [new OverlayRow("First", Details: "A detail")]);
+        foreach (bool docked in new[] { false, true })
+        {
+            panel.SetDocked(docked);
+            panel.Measure(new Size(300, 200));
+            panel.Arrange(new Rect(0, 0, 300, 200));
+            panel.UpdateLayout();
+            var stack = Assert.IsType<StackPanel>(PanelScroll(panel).Content);
+            var card = Assert.IsType<Grid>(Assert.Single(stack.Children));
+            Assert.InRange(card.ActualHeight, 1, 45);
+        }
+
+        panel.FontSize = 18;
+        panel.Measure(new Size(300, 200));
+        panel.Arrange(new Rect(0, 0, 300, 200));
+        panel.UpdateLayout();
+        var rows = Assert.IsType<StackPanel>(PanelScroll(panel).Content);
+        var largeCard = Assert.IsType<Grid>(Assert.Single(rows.Children));
+        var content = Assert.IsType<StackPanel>(Assert.Single(Assert.Single(largeCard.Children.OfType<DockPanel>()).Children));
+        foreach (var text in content.Children.OfType<TextBlock>())
+        {
+            var unbounded = new TextBlock { Text = text.Text, FontSize = text.FontSize, FontFamily = text.FontFamily };
+            unbounded.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            Assert.True(text.ActualHeight + 1 >= unbounded.DesiredSize.Height);
+        }
     }
 
     private static DockPanel[] LayoutMoteRows(OverlayPanel panel, double width)

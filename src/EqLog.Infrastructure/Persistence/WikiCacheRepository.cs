@@ -16,12 +16,12 @@ public sealed class WikiCacheRepository(string folder, bool mobWritesAllowed = t
     private readonly SemaphoreSlim _skyGate = new(1, 1);
     private readonly SemaphoreSlim _tradeskillGate = new(1, 1);
     private readonly Dictionary<string, TradeskillWikiPage> _tradeskills = new(StringComparer.OrdinalIgnoreCase);
-    private byte[]? _savedTradeskillsHash;
+    private readonly Dictionary<string, byte[]> _savedTradeskillsHashes = new(StringComparer.OrdinalIgnoreCase);
     private Exception? _tradeskillError;
     private readonly Dictionary<string, QuestLookupResult> _quests = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, QuestLookupResult> _savedQuests = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ItemEffectInfo> _effects = new(StringComparer.OrdinalIgnoreCase);
-    private byte[]? _savedEffectsHash;
+    private readonly Dictionary<string, byte[]> _savedEffectsHashes = new(StringComparer.OrdinalIgnoreCase);
     private SkyQuestCatalog? _sky;
     private SkyQuestCatalog? _savedSky;
     private Exception? _questError;
@@ -38,8 +38,10 @@ public sealed class WikiCacheRepository(string folder, bool mobWritesAllowed = t
     private string QuestPath { get; } = Path.Combine(folder, "quest-lookups.jsonl");
     private string LegacyQuestPath { get; } = Path.Combine(folder, "quest-lookups.json");
     private string EffectPath { get; } = Path.Combine(folder, "item-effects.json");
+    private string EffectJournalPath { get; } = Path.Combine(folder, "item-effects.jsonl");
     private string SkyPath { get; } = Path.Combine(folder, "sky-quests.json");
     private string TradeskillPath { get; } = Path.Combine(folder, "tradeskills.json");
+    private string TradeskillJournalPath { get; } = Path.Combine(folder, "tradeskills.jsonl");
     private string MobPath { get; } = Path.Combine(folder, "mob-resistances.json");
     public void ProtectMobWrites(bool writesAllowed)
     {
@@ -76,12 +78,12 @@ public sealed class WikiCacheRepository(string folder, bool mobWritesAllowed = t
         await _effectGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (!File.Exists(EffectPath))
-            {
-                return [];
-            }
-            var loaded = await AtomicFile.ReadJsonAsync<List<ItemEffectInfo>>(EffectPath, ct: cancellationToken).ConfigureAwait(false)
-                ?? throw new JsonException("Empty item-effect cache.");
+            var loaded = File.Exists(EffectPath)
+                ? await AtomicFile.ReadJsonAsync<List<ItemEffectInfo>>(EffectPath, ct: cancellationToken).ConfigureAwait(false)
+                    ?? throw new JsonException("Empty item-effect cache.")
+                : [];
+            var appended = await PersistenceJournal.ReadAsync<ItemEffectInfo>(EffectJournalPath, cancellationToken).ConfigureAwait(false);
+            loaded.AddRange(appended);
             if (loaded.Any(result => result is null || string.IsNullOrWhiteSpace(result.Item) ||
                 result.Effects is null || result.Effects.Any(effect => effect is null)))
             {
@@ -91,8 +93,12 @@ public sealed class WikiCacheRepository(string folder, bool mobWritesAllowed = t
             {
                 _effects[result.Item] = result;
             }
-            _savedEffectsHash = AtomicFile.HashJson(_effects.Values.ToArray());
-            return loaded;
+            foreach (var (key, result) in _effects)
+            {
+                _savedEffectsHashes[key] = AtomicFile.HashJson(result);
+            }
+            await CompactCacheAsync(EffectPath, EffectJournalPath, _effects.Values.ToArray(), cancellationToken).ConfigureAwait(false);
+            return _effects.Values.ToArray();
         }
         catch (Exception ex) when (IsStorageFailure(ex))
         {
@@ -148,12 +154,11 @@ public sealed class WikiCacheRepository(string folder, bool mobWritesAllowed = t
         await _tradeskillGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (!File.Exists(TradeskillPath))
-            {
-                return [];
-            }
-            var pages = await AtomicFile.ReadJsonAsync<TradeskillWikiPage[]>(TradeskillPath, ct: cancellationToken).ConfigureAwait(false)
-                ?? throw new JsonException("Empty tradeskill cache.");
+            var pages = File.Exists(TradeskillPath)
+                ? await AtomicFile.ReadJsonAsync<List<TradeskillWikiPage>>(TradeskillPath, ct: cancellationToken).ConfigureAwait(false)
+                    ?? throw new JsonException("Empty tradeskill cache.")
+                : [];
+            pages.AddRange(await PersistenceJournal.ReadAsync<TradeskillWikiPage>(TradeskillJournalPath, cancellationToken).ConfigureAwait(false));
             if (pages.Any(page => page is null || !Enum.IsDefined(page.Kind) || string.IsNullOrWhiteSpace(page.Title) ||
                 page.Recipes is null || page.Merchants is null ||
                 page.Kind == TradeskillPageKind.Skill && page.Recipes.Count == 0 ||
@@ -172,8 +177,12 @@ public sealed class WikiCacheRepository(string folder, bool mobWritesAllowed = t
             {
                 _tradeskills[TradeskillQueries.CacheKey(page.Kind, page.Title)] = page;
             }
-            _savedTradeskillsHash = AtomicFile.HashJson(_tradeskills.Values.ToArray());
-            return pages;
+            foreach (var (key, page) in _tradeskills)
+            {
+                _savedTradeskillsHashes[key] = AtomicFile.HashJson(page);
+            }
+            await CompactCacheAsync(TradeskillPath, TradeskillJournalPath, _tradeskills.Values.ToArray(), cancellationToken).ConfigureAwait(false);
+            return _tradeskills.Values.ToArray();
         }
         catch (Exception ex) when (IsStorageFailure(ex))
         {
@@ -328,35 +337,40 @@ public sealed class WikiCacheRepository(string folder, bool mobWritesAllowed = t
     private async Task WriteTradeskillsAsync(CancellationToken token)
     {
         Protect(_tradeskillError, "Tradeskill");
-        if (_tradeskills.Count == 0)
+        foreach (var (key, page) in _tradeskills)
         {
-            return;
+            byte[] hash = AtomicFile.HashJson(page);
+            if (_savedTradeskillsHashes.TryGetValue(key, out var saved) && hash.AsSpan().SequenceEqual(saved))
+            {
+                continue;
+            }
+            await PersistenceJournal.AppendAsync(TradeskillJournalPath, page, token).ConfigureAwait(false);
+            _savedTradeskillsHashes[key] = hash;
         }
-        var pages = _tradeskills.Values.ToArray();
-        byte[] hash = AtomicFile.HashJson(pages);
-        if (_savedTradeskillsHash is not null && hash.AsSpan().SequenceEqual(_savedTradeskillsHash))
-        {
-            return;
-        }
-        await AtomicFile.WriteJsonAsync(TradeskillPath, pages, ct: token).ConfigureAwait(false);
-        _savedTradeskillsHash = hash;
     }
 
     private async Task WriteEffectsAsync(CancellationToken token)
     {
         Protect(_effectError, "Item-effect");
-        if (_effects.Count == 0)
+        foreach (var (key, result) in _effects)
         {
-            return;
+            byte[] hash = AtomicFile.HashJson(result);
+            if (_savedEffectsHashes.TryGetValue(key, out var saved) && hash.AsSpan().SequenceEqual(saved))
+            {
+                continue;
+            }
+            await PersistenceJournal.AppendAsync(EffectJournalPath, result, token).ConfigureAwait(false);
+            _savedEffectsHashes[key] = hash;
         }
-        var snapshot = _effects.Values.ToArray();
-        byte[] hash = AtomicFile.HashJson(snapshot);
-        if (_savedEffectsHash is not null && hash.AsSpan().SequenceEqual(_savedEffectsHash))
+    }
+
+    private static async Task CompactCacheAsync<T>(string path, string journal, T[] records, CancellationToken token)
+    {
+        if (File.Exists(journal) && new FileInfo(journal).Length >= 1024 * 1024)
         {
-            return;
+            await AtomicFile.WriteJsonAsync(path, records, ct: token).ConfigureAwait(false);
+            File.Delete(journal);
         }
-        await AtomicFile.WriteJsonAsync(EffectPath, snapshot, ct: token).ConfigureAwait(false);
-        _savedEffectsHash = hash;
     }
     private async Task WriteSkyAsync(CancellationToken token)
     {
@@ -390,14 +404,14 @@ public sealed class WikiCacheRepository(string folder, bool mobWritesAllowed = t
                         _quests.Clear();
                         _savedQuests.Clear();
                         _effects.Clear();
-                        _savedEffectsHash = null;
+                        _savedEffectsHashes.Clear();
                         _sky = null;
                         _savedSky = null;
                         _questError = null;
                         _effectError = null;
                         _skyError = null;
                         _tradeskills.Clear();
-                        _savedTradeskillsHash = null;
+                        _savedTradeskillsHashes.Clear();
                         _tradeskillError = null;
                     }
                     finally

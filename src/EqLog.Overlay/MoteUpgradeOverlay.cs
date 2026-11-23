@@ -155,27 +155,27 @@ public partial class MainWindow
             ToolTip = "The rank of the copies you plan to farm.",
         };
 
-        var nameRow = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
+        var nameRow = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
         DockPanel.SetDock(_planKind, Dock.Left);
         nameRow.Children.Add(_planKind);
         nameRow.Children.Add(_planName);
-        var optionsRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
+        var optionsRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 2) };
         optionsRow.Children.Add(PlanLabel("Current"));
         optionsRow.Children.Add(_planRank);
         optionsRow.Children.Add(PlanLabel("Points"));
         optionsRow.Children.Add(_planPoints);
         optionsRow.Children.Add(PlanGroup("Stop at", _planTargetRank));
-        var resourcesRow = new WrapPanel { Margin = new Thickness(0, 4, 0, 4) };
+        var resourcesRow = new WrapPanel { Margin = new Thickness(0, 2, 0, 2) };
         resourcesRow.Children.Add(_planUseMotes);
         resourcesRow.Children.Add(_planPreferFragments);
         resourcesRow.Children.Add(_planUseCopies);
-        var feedRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
+        var feedRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 2) };
         feedRow.Children.Add(_planFeed);
         feedRow.Children.Add(_planFeedUsable);
         _planFeedRow = feedRow;
 
         // Each label stays with its input so the row never wraps between them.
-        var fodderRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
+        var fodderRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 2) };
         fodderRow.Children.Add(PlanGroup("Copy level to farm", _planFodderRank));
         fodderRow.Children.Add(PlanGroup("Extra copies already planned", _planFodder));
         _planFodderRow = fodderRow;
@@ -204,7 +204,7 @@ public partial class MainWindow
         _planTabs = CreatePlanTabs(tabBody, RefreshMotePlan);
         _planFarmTab = (TabItem)_planTabs.Items[1];
         _planWhatIfTab = (TabItem)_planTabs.Items[2];
-        var body = new DockPanel { Margin = new Thickness(2, 4, 2, 2) };
+        var body = new DockPanel { Margin = new Thickness(2, 2, 2, 2) };
         body.Children.Add(top);
         body.Children.Add(_planTabs);
 

@@ -14,7 +14,66 @@ namespace EqLog.Overlay;
 public sealed record AbilityBreakdown(string Title, string Context, string RateLabel, IReadOnlyList<AbilityStats> Abilities,
     IReadOnlyList<DamageTimelinePoint>? Timeline = null, double TimelineSeconds = 0, DateTime? TimelineStart = null,
     IReadOnlyList<AbilityTimeline>? AbilityTimelines = null, IReadOnlyList<DamageEvent>? DamageEvents = null,
-    IReadOnlyList<DamageEvent>? IncomingDamageEvents = null);
+    IReadOnlyList<DamageEvent>? IncomingDamageEvents = null)
+{
+    public bool Equals(AbilityBreakdown? other)
+    {
+        if (other is null)
+        {
+            return false;
+        }
+        if (ReferenceEquals(this, other))
+        {
+            return true;
+        }
+
+        return Title == other.Title && Context == other.Context && RateLabel == other.RateLabel &&
+            TimelineSeconds == other.TimelineSeconds && TimelineStart == other.TimelineStart &&
+            Abilities.SequenceEqual(other.Abilities) &&
+            SameItems(Timeline, other.Timeline) &&
+            SameTimelines(AbilityTimelines, other.AbilityTimelines) &&
+            SameItems(DamageEvents, other.DamageEvents) &&
+            SameItems(IncomingDamageEvents, other.IncomingDamageEvents);
+    }
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(Title, Context, RateLabel, TimelineSeconds, TimelineStart);
+    }
+
+    internal AbilityBreakdown Snapshot()
+    {
+        return this with
+        {
+            Abilities = Abilities.ToArray(),
+            Timeline = Timeline?.ToArray(),
+            AbilityTimelines = AbilityTimelines?.Select(lane =>
+                new AbilityTimeline(lane.Name, lane.Points.ToArray())).ToArray(),
+            DamageEvents = DamageEvents?.ToArray(),
+            IncomingDamageEvents = IncomingDamageEvents?.ToArray(),
+        };
+    }
+
+    private static bool SameItems<T>(IReadOnlyList<T>? left, IReadOnlyList<T>? right)
+    {
+        if (left is null || right is null)
+        {
+            return left is null && right is null;
+        }
+        return left.SequenceEqual(right);
+    }
+
+    private static bool SameTimelines(IReadOnlyList<AbilityTimeline>? left, IReadOnlyList<AbilityTimeline>? right)
+    {
+        if (left is null || right is null)
+        {
+            return left is null && right is null;
+        }
+        return left.Count == right.Count &&
+            left.Zip(right).All(pair => pair.First.Name == pair.Second.Name &&
+                SameItems(pair.First.Points, pair.Second.Points));
+    }
+}
 
 public sealed record SpawnTrackChange(string Zone, string Mob, bool Tracked);
 
@@ -176,6 +235,7 @@ public sealed class OverlayPanel : ContentControl
     private bool _backgroundHovered;
     private bool _locked;
     private bool _docked;
+    private bool _temporarilyDocked;
     private bool _chromeHidden;
 
     public OverlayPanel(string key, string caption, bool autoScrollToEnd)
@@ -183,6 +243,7 @@ public sealed class OverlayPanel : ContentControl
         Key = key;
         Caption = caption;
         AutoScrollToEnd = autoScrollToEnd;
+        ApplyCompactStyles();
         MouseEnter += (_, _) => SetBackgroundHovered(true);
         MouseLeave += (_, _) => SetBackgroundHovered(false);
         _title.SetResourceReference(TextBlock.ForegroundProperty, "Pumpkin");
@@ -292,10 +353,10 @@ public sealed class OverlayPanel : ContentControl
 
         _scroll = new ScrollViewer
         {
-            VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
+            VerticalScrollBarVisibility = key == "dps" ? ScrollBarVisibility.Auto : ScrollBarVisibility.Hidden,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             Content = _rows,
-            Margin = new Thickness(0, 3, 0, 0),
+            Margin = new Thickness(0, 2, 0, 0),
         };
         if (key == "alerts")
         {
@@ -354,7 +415,7 @@ public sealed class OverlayPanel : ContentControl
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
                 Padding = new Thickness(0),
-                Margin = new Thickness(0, 3, 0, 0),
+                Margin = new Thickness(0, 2, 0, 0),
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
             };
             ScrollViewer.SetVerticalScrollBarVisibility(_virtualList, ScrollBarVisibility.Auto);
@@ -411,7 +472,7 @@ public sealed class OverlayPanel : ContentControl
         _frame = new Border
         {
             CornerRadius = new CornerRadius(12),
-            Padding = new Thickness(6, 4, 6, 4),
+            Padding = new Thickness(4, 3, 4, 3),
             BorderThickness = new Thickness(1),
             Child = frameContent,
         };
@@ -426,6 +487,34 @@ public sealed class OverlayPanel : ContentControl
     public string Key
     {
         get;
+    }
+
+    private void ApplyCompactStyles()
+    {
+        SetCompactStyle(typeof(Button),
+            (Control.PaddingProperty, new Thickness(8, 3, 8, 3)),
+            (MarginProperty, new Thickness(0, 0, 4, 3)));
+        SetCompactStyle(typeof(TextBox), (Control.PaddingProperty, new Thickness(6, 3, 6, 3)));
+        SetCompactStyle(typeof(ComboBox), (MinHeightProperty, 26.0));
+        SetCompactStyle(typeof(CheckBox), (MarginProperty, new Thickness(0, 2, 8, 2)));
+        SetCompactStyle(typeof(DatePicker), (MinHeightProperty, 28.0));
+        SetCompactStyle(typeof(DatePickerTextBox), (Control.PaddingProperty, new Thickness(8, 3, 0, 3)));
+        SetCompactStyle(typeof(TabItem), (Control.PaddingProperty, new Thickness(8, 4, 8, 4)));
+        SetCompactStyle(typeof(DataGrid),
+            (DataGrid.RowHeightProperty, double.NaN),
+            (DataGrid.MinRowHeightProperty, 24.0));
+        SetCompactStyle(typeof(DataGridCell), (Control.PaddingProperty, new Thickness(6, 2, 6, 2)));
+        SetCompactStyle(typeof(DataGridColumnHeader), (Control.PaddingProperty, new Thickness(6, 4, 6, 4)));
+    }
+
+    private void SetCompactStyle(Type targetType, params (DependencyProperty Property, object Value)[] setters)
+    {
+        var style = new Style(targetType, TryFindResource(targetType) as Style);
+        foreach (var (property, value) in setters)
+        {
+            style.Setters.Add(new Setter(property, value));
+        }
+        Resources[targetType] = style;
     }
 
     public string Caption
@@ -581,9 +670,10 @@ public sealed class OverlayPanel : ContentControl
     }
 
     /// <summary>Docked tiles remain interactive and use theme-colored, beveled fantasy frames.</summary>
-    public void SetDocked(bool docked)
+    public void SetDocked(bool docked, bool temporary = false)
     {
         _docked = docked;
+        _temporarilyDocked = docked && temporary;
         Apply();
     }
 
@@ -603,10 +693,10 @@ public sealed class OverlayPanel : ContentControl
         // Floating overlays are click-through when locked, so the button only shows while unlocked.
         _dockButton.Visibility = _docked || !_locked ? Visibility.Visible : Visibility.Collapsed;
         _backgroundControls.Visibility = !_docked && !_locked ? Visibility.Visible : Visibility.Collapsed;
-        _dockButton.Content = _docked ? "\u2197 Pop out" : "\u2199 Dock";
-        _dockButton.ToolTip = _docked
-            ? "Pop this panel out into its own floating overlay"
-            : "Move this overlay into the docked window";
+        _dockButton.Content = _docked && !_temporarilyDocked ? "\u2197 Pop out" : "\u2199 Dock";
+        _dockButton.ToolTip = _temporarilyDocked
+            ? "Keep this panel in the current workspace"
+            : _docked ? "Pop this panel out into its own floating overlay" : "Move this overlay into the docked window";
         _frame.SetResourceReference(Border.BorderBrushProperty, _docked ? "NightBorder" : "Pumpkin");
         if (!_docked && _locked)
         {
@@ -625,18 +715,18 @@ public sealed class OverlayPanel : ContentControl
     private void ApplyDockFrame()
     {
         _ornaments.Visibility = _docked ? Visibility.Visible : Visibility.Collapsed;
-        _frame.Padding = _docked ? new Thickness(2) : new Thickness(6, 4, 6, 4);
+        _frame.Padding = _docked ? new Thickness(2) : new Thickness(4, 3, 4, 3);
         _frame.CornerRadius = new CornerRadius(12);
         UpdateFrameClip();
         _frame.BorderThickness = new Thickness(_docked ? 2 : 1);
         _bevel.BorderThickness = _docked ? new Thickness(1, 1, 2, 2) : new Thickness(0);
         _bevel.CornerRadius = new CornerRadius(5);
         _inset.Margin = _docked ? new Thickness(3) : new Thickness(0);
-        _inset.Padding = _docked ? new Thickness(5, 3, 5, 5) : new Thickness(0);
+        _inset.Padding = _docked ? new Thickness(3, 2, 3, 3) : new Thickness(0);
         _inset.BorderThickness = _docked ? new Thickness(1) : new Thickness(0);
         _inset.CornerRadius = new CornerRadius(3);
-        _titleFrame.Padding = _docked ? new Thickness(5, 5, 5, 7) : new Thickness(0);
-        _titleFrame.Margin = _docked ? new Thickness(-5, -3, -5, 5) : new Thickness(0);
+        _titleFrame.Padding = _docked ? new Thickness(3, 3, 3, 4) : new Thickness(0);
+        _titleFrame.Margin = _docked ? new Thickness(-3, -2, -3, 2) : new Thickness(0);
         _titleFrame.BorderThickness = _docked ? new Thickness(0, 0, 0, 2) : new Thickness(0);
         _titleFrame.CornerRadius = new CornerRadius(3, 3, 0, 0);
         if (!_docked)
@@ -710,7 +800,10 @@ public sealed class OverlayPanel : ContentControl
 
     public void Update(string title, string? subtitle, IReadOnlyList<OverlayRow> rows, string? titleLink = null)
     {
-        _title.Text = title;
+        if (_title.Text != title)
+        {
+            _title.Text = title;
+        }
         if (_titleLink != titleLink)
         {
             _titleLink = titleLink;
@@ -719,13 +812,17 @@ public sealed class OverlayPanel : ContentControl
             _title.Cursor = linked ? System.Windows.Input.Cursors.Hand : null;
             _title.ToolTip = linked ? "Open on EQLWiki" : null;
         }
-        _subtitle.Text = subtitle ?? "";
+        string subtitleText = subtitle ?? "";
+        if (_subtitle.Text != subtitleText)
+        {
+            _subtitle.Text = subtitleText;
+        }
         // Once a subtitle has appeared, keep its line reserved so rows below never jump under the mouse.
-        if (!string.IsNullOrEmpty(subtitle))
+        if (!string.IsNullOrEmpty(subtitle) && _subtitle.Visibility != Visibility.Visible)
         {
             _subtitle.Visibility = Visibility.Visible;
         }
-        else if (_subtitle.Visibility == Visibility.Visible)
+        else if (string.IsNullOrEmpty(subtitle) && _subtitle.Visibility == Visibility.Visible)
         {
             _subtitle.Visibility = Visibility.Hidden;
         }
@@ -813,7 +910,7 @@ public sealed class OverlayPanel : ContentControl
         }
     }
 
-    private FrameworkElement BuildRow(OverlayRow row)
+    internal FrameworkElement BuildRow(OverlayRow row)
     {
         var grid = new Grid { Margin = new Thickness(0, 0, 0, 1) };
         if (row.ToolTip is not null)
@@ -822,7 +919,7 @@ public sealed class OverlayPanel : ContentControl
         }
         if (row.QuestHeading)
         {
-            grid.Margin = new Thickness(0, 12, 0, 5);
+            grid.Margin = new Thickness(0, 8, 0, 3);
         }
         if (row.Scale != 1)
         {
@@ -1018,7 +1115,7 @@ public sealed class OverlayPanel : ContentControl
                     Text = row.Right,
                     TextWrapping = TextWrapping.Wrap,
                     FontWeight = FontWeights.SemiBold,
-                    Margin = new Thickness(0, 5, 0, 0),
+                    Margin = new Thickness(0, 3, 0, 0),
                 };
                 result.SetResourceReference(TextBlock.ForegroundProperty, "Pumpkin");
                 if (row.Foreground is not null)
@@ -1043,13 +1140,13 @@ public sealed class OverlayPanel : ContentControl
                     Text = row.Details,
                     TextWrapping = TextWrapping.Wrap,
                     FontSize = Math.Max(10, FontSize - 1),
-                    Margin = new Thickness(0, itemContent.Children.Count == 0 ? 0 : 4, 0, 0),
+                    Margin = new Thickness(0, itemContent.Children.Count == 0 ? 0 : 2, 0, 0),
                 };
                 description.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
                 itemContent.Children.Add(description);
             }
             text.Children.Add(itemContent);
-            text.Margin = new Thickness(10, 8, 10, 8);
+            text.Margin = new Thickness(7, 4, 7, 4);
             var glass = new Border
             {
                 CornerRadius = new CornerRadius(6),
@@ -1061,7 +1158,7 @@ public sealed class OverlayPanel : ContentControl
             grid.Children.Insert(0, glass);
             if (row.Stacked)
             {
-                grid.Margin = new Thickness(0, 0, 0, 8);
+                grid.Margin = new Thickness(0, 0, 0, 4);
             }
         }
         else
@@ -1078,6 +1175,7 @@ public sealed class OverlayPanel : ContentControl
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
                 Padding = new Thickness(0),
+                Margin = new Thickness(0),
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 Cursor = System.Windows.Input.Cursors.Hand,
                 ClickMode = row.Breakdown is null ? ClickMode.Release : ClickMode.Press,
@@ -1088,7 +1186,7 @@ public sealed class OverlayPanel : ContentControl
             };
             if (row.Details is not null || row.Table is not null)
             {
-                button.Margin = new Thickness(12, 0, 0, 5);
+                button.Margin = new Thickness(8, 0, 0, 3);
             }
 
             button.Click += (_, _) =>
@@ -1145,7 +1243,7 @@ public sealed class OverlayPanel : ContentControl
     public static FrameworkElement BuildTable(OverlayTable table, double fontSize, Action<string>? openLink = null)
     {
         int columns = Math.Max(table.Header?.Count ?? 0, table.Rows.Count == 0 ? 0 : table.Rows.Max(r => r.Count));
-        var grid = new Grid { Margin = new Thickness(0, 6, 0, 0) };
+        var grid = new Grid { Margin = new Thickness(0, 3, 0, 0) };
         grid.SetValue(TextElement.FontSizeProperty, Math.Max(10, fontSize - 1));
         if (columns == 0)
         {
@@ -1264,7 +1362,7 @@ public sealed class OverlayPanel : ContentControl
             TextWrapping = wrap ? TextWrapping.Wrap : TextWrapping.NoWrap,
             TextAlignment = numeric ? TextAlignment.Right : TextAlignment.Left,
             VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(column == 0 ? 2 : 6, 1, column == columns - 1 ? 2 : 6, 1),
+            Margin = new Thickness(column == 0 ? 2 : 4, 1, column == columns - 1 ? 2 : 4, 1),
         };
         Grid.SetColumn(cell, column);
         return cell;

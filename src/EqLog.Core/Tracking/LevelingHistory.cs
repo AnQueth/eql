@@ -19,6 +19,8 @@ public sealed class LevelingHistory
     private readonly object _gate = new();
     private readonly Dictionary<(string Source, string Character, LevelingContext Context, DateTime Minute), LevelingMinute> _minutes = [];
     private Dictionary<string, Watermark> _watermarks = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<(string Source, string Character, LevelingContext Context, DateTime Minute), long> _changedMinutes = [];
+    private readonly Dictionary<string, long> _changedWatermarks = new(StringComparer.OrdinalIgnoreCase);
     private long _version;
     private long _savedVersion;
 
@@ -49,7 +51,10 @@ public sealed class LevelingHistory
                     _minutes.TryGetValue((source, character, current, FloorMinute(time)), out var existing) &&
                     existing.LevelStarted is null)
                 {
-                    Put(existing with { LevelStarted = time });
+                    Put(existing with
+                    {
+                        LevelStarted = time
+                    });
                     _version++;
                 }
                 return;
@@ -78,7 +83,10 @@ public sealed class LevelingHistory
                 var row = Get(source, character, current, FloorMinute(time), time);
                 if (observation is LevelEvent)
                 {
-                    row = row with { LevelStarted = row.LevelStarted ?? time };
+                    row = row with
+                    {
+                        LevelStarted = row.LevelStarted ?? time
+                    };
                 }
                 if (observation is ExperienceEvent xp)
                 {
@@ -108,6 +116,7 @@ public sealed class LevelingHistory
                 });
             }
             _watermarks[key] = new(time, index);
+            _changedWatermarks[key] = _version + 1;
             _version++;
         }
     }
@@ -120,7 +129,9 @@ public sealed class LevelingHistory
 
     private void Put(LevelingMinute row)
     {
-        _minutes[(row.Source, row.Character, row.Context, row.Minute)] = row;
+        var key = (row.Source, row.Character, row.Context, row.Minute);
+        _minutes[key] = row;
+        _changedMinutes[key] = _version + 1;
     }
 
     public static DateTime FloorMinute(DateTime time)
@@ -155,6 +166,29 @@ public sealed class LevelingHistory
         lock (_gate)
         {
             _savedVersion = Math.Max(_savedVersion, version);
+            foreach (var key in _changedMinutes.Where(pair => pair.Value <= version).Select(pair => pair.Key).ToArray())
+            {
+                _changedMinutes.Remove(key);
+            }
+            foreach (string key in _changedWatermarks.Where(pair => pair.Value <= version).Select(pair => pair.Key).ToArray())
+            {
+                _changedWatermarks.Remove(key);
+            }
+        }
+    }
+
+    /// <summary>Captures only changed minutes and watermarks as an atomic, idempotent persistence batch.</summary>
+    public (long Version, Data Data)? CaptureChanges()
+    {
+        lock (_gate)
+        {
+            if (_version == _savedVersion)
+            {
+                return null;
+            }
+            return (_version, new(
+                _changedMinutes.Keys.Select(key => _minutes[key]).ToList(),
+                _changedWatermarks.Keys.ToDictionary(key => key, key => _watermarks[key], StringComparer.OrdinalIgnoreCase)));
         }
     }
 
@@ -168,6 +202,8 @@ public sealed class LevelingHistory
                 Put(row);
             }
             _watermarks = new(data.Watermarks, StringComparer.OrdinalIgnoreCase);
+            _changedMinutes.Clear();
+            _changedWatermarks.Clear();
             _version++;
             _savedVersion = _version;
         }

@@ -1,7 +1,9 @@
 using System.ComponentModel;
 using System.Runtime.ExceptionServices;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using EqLog.Core.Tracking;
 using EqLog.Core.Parsing;
 using Xunit;
@@ -18,6 +20,68 @@ public sealed class AbilityDetailsViewTests
     private static AbilityBreakdown Breakdown(params AbilityStats[] rows)
     {
         return new AbilityBreakdown("Fight", "", "DPS", rows, Timeline: [], TimelineSeconds: 10, TimelineStart: DateTime.Now);
+    }
+
+    [Theory]
+    [InlineData(300)]
+    [InlineData(180)]
+    public void CompactDetails_KeepTabsAndChartUsableAtNarrowWidths(double width)
+    {
+        RunOnSta(() =>
+        {
+            var start = new DateTime(2026, 11, 23, 12, 0, 0);
+            var breakdown = Breakdown(Row("Melee", 100)) with
+            {
+                TimelineStart = start,
+                Timeline = [new DamageTimelinePoint(1, 100)],
+                AbilityTimelines = [new AbilityTimeline("A long damage type name", [new DamageTimelinePoint(1, 100)])],
+                DamageEvents = [new DamageEvent(start.AddSeconds(1), Names.You, "a goblin", 100, DamageKind.Melee, null, null)],
+                IncomingDamageEvents = [],
+            };
+            var view = new AbilityDetailsView(breakdown, compact: true);
+            var tabs = Assert.IsType<TabControl>(view.Root);
+            tabs.Resources.MergedDictionaries.Add(new ResourceDictionary
+            {
+                Source = new Uri("/EqLogOverlay;component/Styles/InlineDetails.xaml", UriKind.Relative),
+            });
+            tabs.Height = 180;
+            tabs.SelectedIndex = 1;
+            var size = new Size(width, 180);
+            tabs.Measure(size);
+            tabs.Arrange(new Rect(size));
+            tabs.UpdateLayout();
+
+            var header = Assert.IsType<UniformGrid>(tabs.Template.FindName("HeaderRow", tabs));
+            Assert.Equal(5, header.Children.Count);
+            Assert.Equal(1, header.Rows);
+            Assert.All(header.Children.OfType<TabItem>(), tab =>
+            {
+                Assert.True(tab.ActualWidth <= width / 5 + 0.1,
+                    $"{AutomationProperties.GetName(tab)} width {tab.ActualWidth} exceeds its {width / 5} cell.");
+                Assert.Equal(0, tab.TranslatePoint(new Point(), header).Y, 1);
+                Assert.False(string.IsNullOrEmpty(AutomationProperties.GetName(tab)));
+                Assert.Equal(AutomationProperties.GetName(tab), tab.ToolTip);
+            });
+
+            var timeline = Assert.IsType<DockPanel>(((TabItem)tabs.Items[1]).Content);
+            var chart = Assert.IsType<Border>(timeline.Children[^1]);
+            Assert.True(chart.ActualHeight >= 50);
+            Assert.True(chart.TranslatePoint(new Point(0, chart.ActualHeight), tabs).Y <= tabs.ActualHeight);
+
+            Assert.True(view.TryUpdate(breakdown with { Timeline = [new DamageTimelinePoint(2, 200)] }));
+            Assert.Equal(1, tabs.SelectedIndex);
+            Assert.Equal(5, tabs.Items.Count);
+
+            tabs.SelectedIndex = 2;
+            tabs.Measure(size);
+            tabs.Arrange(new Rect(size));
+            tabs.UpdateLayout();
+            var lanes = Assert.IsType<DockPanel>(((TabItem)tabs.Items[2]).Content);
+            var tracks = Assert.IsType<Grid>(((ScrollViewer)lanes.Children[1]).Content);
+            Assert.True(tracks.ColumnDefinitions[1].ActualWidth >= 40);
+            var axis = Assert.Single(tracks.Children.OfType<Grid>(), grid => grid.Children.OfType<TextBlock>().Any());
+            Assert.Equal(["0:00", "0:10"], axis.Children.OfType<TextBlock>().Select(label => label.Text));
+        });
     }
 
     [Fact]
@@ -55,6 +119,13 @@ public sealed class AbilityDetailsViewTests
             };
             Assert.True(view.TryUpdate(breakdown));
             Assert.Contains("10 incoming damage", summary.Text);
+            breakdown = breakdown with
+            {
+                IncomingDamageEvents = breakdown.IncomingDamageEvents!.Append(
+                    new DamageEvent(start.AddSeconds(4), "a goblin", Names.You, 40, DamageKind.Melee, null, null)).ToArray(),
+            };
+            Assert.True(view.TryUpdate(breakdown));
+            Assert.Contains("50 incoming damage", summary.Text);
         });
     }
 

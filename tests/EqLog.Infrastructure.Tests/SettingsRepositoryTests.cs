@@ -8,6 +8,25 @@ public sealed class SettingsRepositoryTests : IDisposable
     private readonly string _folder = Path.Combine(Path.GetTempPath(), "eql-settings-" + Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task LoadedAndRepeatedUnchangedSettingsAreNotRewritten()
+    {
+        Directory.CreateDirectory(_folder);
+        string path = Path.Combine(_folder, "settings.json");
+        await File.WriteAllTextAsync(path, """{"FontSize":19,"FutureSetting":true}""");
+        var repository = new SettingsRepository(path);
+        var settings = await repository.LoadAsync();
+        var written = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(path, written);
+        await repository.SaveAsync(settings.Snapshot());
+        await repository.SaveAsync(settings.Snapshot());
+        Assert.Equal(written, File.GetLastWriteTimeUtc(path));
+        settings.FontSize++;
+        await repository.SaveAsync(settings.Snapshot());
+        Assert.Equal(20, (await repository.LoadAsync()).FontSize);
+        Assert.True(settings.ExtensionData!["FutureSetting"].GetBoolean());
+    }
+
+    [Fact]
     public async Task MissingDocumentAndRoundTripUseExistingFormat()
     {
         var repository = new SettingsRepository(Path.Combine(_folder, "settings.json"));

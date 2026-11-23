@@ -11,6 +11,30 @@ namespace EqLog.Overlay.Tests;
 public sealed class InventoryViewModelTests
 {
     [Fact]
+    public void ImportStatus_NotifiesOnlyWhenChanged()
+    {
+        InventoryFilterTestDispatcher.Run(() =>
+        {
+            var model = new InventoryViewModel();
+            int notifications = 0;
+            model.PropertyChanged += (_, args) =>
+            {
+                if (args.PropertyName == nameof(InventoryViewModel.ImportStatus))
+                {
+                    notifications++;
+                }
+            };
+
+            model.ImportStatus = model.ImportStatus;
+            model.ImportStatus = "Import complete";
+            model.ImportStatus = "Import complete";
+
+            Assert.Equal(1, notifications);
+            return Task.CompletedTask;
+        });
+    }
+
+    [Fact]
     public void DetachedBindingsPreserveSelectionAcrossRanksAndFiltersAndRefreshAllCopies()
     {
         InventoryFilterTestDispatcher.Run(async () =>

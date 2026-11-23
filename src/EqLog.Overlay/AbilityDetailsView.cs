@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using EqLog.Core.Parsing;
 using EqLog.Core.Tracking;
@@ -26,15 +27,24 @@ public sealed class AbilityDetailsView
     private ContentControl? _incomingContent;
     private AbilityDetailsView? _incomingView;
     private AbilityBreakdown? _latestBreakdown;
+    private AbilityBreakdown _displayedBreakdown;
     private readonly string _rateLabel;
+    private readonly bool _compact;
     private DamageTimelinePoint[] _timelinePoints = [];
     private AbilityTimeline[] _abilityTimelines = [];
     private double _chartSeconds;
     private DateTime? _chartStart;
 
     public AbilityDetailsView(AbilityBreakdown breakdown)
+        : this(breakdown, compact: false)
     {
+    }
+
+    internal AbilityDetailsView(AbilityBreakdown breakdown, bool compact)
+    {
+        _compact = compact;
         _rateLabel = breakdown.RateLabel;
+        _displayedBreakdown = breakdown.Snapshot();
         SyncRows(breakdown.Abilities);
         _table = AbilityBreakdownWindow.BuildAbilityTable(breakdown, _rows);
         _eventsTable = AbilityBreakdownWindow.BuildDamageEventsTable(_eventRows);
@@ -45,11 +55,15 @@ public sealed class AbilityDetailsView
         }
 
         _tabs = new TabControl();
-        _tabs.Items.Add(new TabItem { Header = "Abilities", Content = _table });
-        _timelineTab = new TabItem
+        if (_compact)
         {
-            Header = "Damage timeline",
-        };
+            _tabs.SetResourceReference(FrameworkElement.StyleProperty, "InlineDpsDetailsTabs");
+        }
+
+        var abilitiesTab = CreateTab("Abilities", "Abilities");
+        abilitiesTab.Content = _table;
+        _tabs.Items.Add(abilitiesTab);
+        _timelineTab = CreateTab("Damage timeline", "Timeline");
         _tabs.Items.Add(_timelineTab);
         UpdateCharts(breakdown);
         Root = _tabs;
@@ -57,12 +71,37 @@ public sealed class AbilityDetailsView
 
     public FrameworkElement Root { get; }
 
+    private TabItem CreateTab(string title, string compactTitle)
+    {
+        var tab = new TabItem();
+        if (_compact)
+        {
+            tab.Header = new TextBlock { Text = compactTitle, TextTrimming = TextTrimming.CharacterEllipsis };
+            tab.ToolTip = title;
+            tab.Padding = new Thickness(3);
+            tab.Margin = new Thickness(0);
+            tab.FontSize = 12;
+            AutomationProperties.SetName(tab, title);
+        }
+        else
+        {
+            tab.Header = title;
+        }
+
+        return tab;
+    }
+
     /// <summary>Applies a newer breakdown. Returns false when the layout differs and the view must be rebuilt.</summary>
     public bool TryUpdate(AbilityBreakdown breakdown)
     {
         if (breakdown.RateLabel != _rateLabel || (breakdown.Timeline is null) != (_tabs is null))
         {
             return false;
+        }
+
+        if (_displayedBreakdown == breakdown)
+        {
+            return true;
         }
 
         var selectedName = (_table.SelectedItem as AbilityStats)?.Name;
@@ -73,6 +112,7 @@ public sealed class AbilityDetailsView
         }
 
         UpdateCharts(breakdown);
+        _displayedBreakdown = breakdown.Snapshot();
 
         return true;
     }
@@ -89,7 +129,7 @@ public sealed class AbilityDetailsView
         var spanChanged = _chartSeconds != breakdown.TimelineSeconds || _chartStart != breakdown.TimelineStart;
         if (_timelineTab.Content is null || spanChanged || !_timelinePoints.SequenceEqual(points))
         {
-            _timelineTab.Content = AbilityBreakdownWindow.BuildTimelineContent(breakdown);
+            _timelineTab.Content = AbilityBreakdownWindow.BuildTimelineContent(breakdown, _compact);
             _timelinePoints = points.ToArray();
         }
 
@@ -127,8 +167,13 @@ public sealed class AbilityDetailsView
 
         if (_incomingTab is null)
         {
-            var panel = new DockPanel { Margin = new Thickness(8) };
-            _incomingSummary = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 8) };
+            var panel = new DockPanel { Margin = new Thickness(_compact ? 4 : 8) };
+            _incomingSummary = new TextBlock
+            {
+                TextWrapping = _compact ? TextWrapping.NoWrap : TextWrapping.Wrap,
+                TextTrimming = _compact ? TextTrimming.CharacterEllipsis : TextTrimming.None,
+                Margin = _compact ? new Thickness(0, 0, 0, 4) : new Thickness(0, 8, 0, 8),
+            };
             DockPanel.SetDock(_incomingSummary, Dock.Top);
             panel.Children.Add(_incomingSummary);
             _incomingContent = new ContentControl
@@ -137,7 +182,8 @@ public sealed class AbilityDetailsView
                 VerticalContentAlignment = VerticalAlignment.Stretch,
             };
             panel.Children.Add(_incomingContent);
-            _incomingTab = new TabItem { Header = "Incoming damage", Content = panel };
+            _incomingTab = CreateTab("Incoming damage", "Taken");
+            _incomingTab.Content = panel;
             _tabs.Items.Add(_incomingTab);
         }
 
@@ -155,6 +201,7 @@ public sealed class AbilityDetailsView
         if (_latestBreakdown.TimelineStart is not { } start)
         {
             _incomingSummary.Text = "Incoming damage cannot be displayed because the fight start time is unavailable.";
+            _incomingSummary.ToolTip = _compact ? _incomingSummary.Text : null;
             _incomingContent.Content = null;
             _incomingView = null;
             return;
@@ -165,6 +212,7 @@ public sealed class AbilityDetailsView
             ? $"No incoming damage logged for {Names.You} from this enemy. Only observed hits with a named attacker can be matched to the fight."
             : $"{Names.You}: {details.Events.Sum(e => e.Amount):N0} incoming damage, " +
               $"{details.Abilities.Sum(a => a.PerSecond):N1} DTPS over {OverlayPresenters.Clock(details.Seconds)}.";
+        _incomingSummary.ToolTip = _compact ? _incomingSummary.Text : null;
         if (details.Events.Count == 0)
         {
             _incomingContent.Content = null;
@@ -176,7 +224,7 @@ public sealed class AbilityDetailsView
             details.Abilities, details.Timeline, details.Seconds, details.Start, details.Timelines, details.Events);
         if (_incomingView is null || !_incomingView.TryUpdate(breakdown))
         {
-            _incomingView = new AbilityDetailsView(breakdown);
+            _incomingView = new AbilityDetailsView(breakdown, _compact);
             _incomingContent.Content = _incomingView.Root;
         }
     }
@@ -195,7 +243,8 @@ public sealed class AbilityDetailsView
         {
             if (_eventsTab is null)
             {
-                _eventsTab = new TabItem { Header = "Damage data", Content = _eventsTable };
+                _eventsTab = CreateTab("Damage data", "Events");
+                _eventsTab.Content = _eventsTable;
                 _tabs.Items.Add(_eventsTab);
             }
         }
@@ -255,11 +304,11 @@ public sealed class AbilityDetailsView
         {
             if (_lanesTab is null)
             {
-                _lanesTab = new TabItem { Header = "Damage types" };
+                _lanesTab = CreateTab("Damage types", "Types");
                 _tabs.Items.Add(_lanesTab);
             }
 
-            _lanesTab.Content = AbilityBreakdownWindow.BuildLanesContent(breakdown, _lanesTab.Content as DockPanel);
+            _lanesTab.Content = AbilityBreakdownWindow.BuildLanesContent(breakdown, _lanesTab.Content as DockPanel, _compact);
         }
         else if (_lanesTab is not null)
         {

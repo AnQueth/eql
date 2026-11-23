@@ -40,7 +40,7 @@ public partial class MainWindow
 
     private void ConfigureTradeskillToolbar(OverlayPanel panel)
     {
-        var toolbar = new StackPanel { Margin = new Thickness(0, 5, 0, 4) };
+        var toolbar = new StackPanel { Margin = new Thickness(0, 3, 0, 2) };
         var refresh = new Button { Content = "Refresh", Margin = new Thickness(6, 0, 0, 0) };
         refresh.ToolTip = "Refresh this tradeskill, the selected recipe, and its ingredient merchants";
         refresh.Click += async (_, _) => await LoadTradeskillCatalogAsync(true);
@@ -111,7 +111,7 @@ public partial class MainWindow
         {
             DisplayMemberPath = nameof(TradeskillChoice.Label),
             Visibility = Visibility.Collapsed,
-            Margin = new Thickness(0, 4, 0, 0),
+            Margin = new Thickness(0, 2, 0, 0),
             ToolTip = "Alternate combines listed on the crafted item's wiki page",
         };
         _tradeskillCombines.SelectionChanged += async (_, _) =>
@@ -127,7 +127,7 @@ public partial class MainWindow
         {
             Content = "Current-zone merchants only",
             IsChecked = _settings.TradeskillCurrentZoneOnly,
-            Margin = new Thickness(0, 5, 0, 0),
+            Margin = new Thickness(0, 3, 0, 0),
             ToolTip = "Uses the zone from your log. Every ingredient stays visible.",
         };
         zone.Click += (_, _) => _settings.TradeskillCurrentZoneOnly = zone.IsChecked == true;
@@ -137,7 +137,7 @@ public partial class MainWindow
 
     internal static Grid BuildTradeskillFilterRow(ComboBox skills, TextBox search, ComboBox sort, Button wiki, Button refresh)
     {
-        var row = new Grid { Margin = new Thickness(0, 0, 0, 4) };
+        var row = new Grid { Margin = new Thickness(0, 0, 0, 2) };
         FrameworkElement[] controls = [skills, search, sort, wiki, refresh];
         for (int i = 0; i < controls.Length; i++)
         {

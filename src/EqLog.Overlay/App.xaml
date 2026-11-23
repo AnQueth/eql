@@ -5,6 +5,11 @@
              Startup="OnStartup"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
+      <ResourceDictionary>
+        <ResourceDictionary.MergedDictionaries>
+            <ResourceDictionary Source="Styles/DatePicker.xaml" />
+            <ResourceDictionary Source="Styles/InlineDetails.xaml" />
+        </ResourceDictionary.MergedDictionaries>
         <Style TargetType="Control">
             <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="Foreground" Value="{DynamicResource NightText}" />
@@ -49,15 +54,6 @@
             <Setter Property="SelectionBrush" Value="{DynamicResource Selection}" />
             <Setter Property="Padding" Value="8,6" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
-        </Style>
-        <Style TargetType="DatePicker" BasedOn="{StaticResource {x:Type Control}}">
-            <Setter Property="Background" Value="{DynamicResource NightBackground}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource NightBorder}" />
-            <Setter Property="Padding" Value="3" />
-            <Setter Property="MinHeight" Value="32" />
-        </Style>
-        <Style TargetType="DatePickerTextBox" BasedOn="{StaticResource {x:Type TextBox}}">
-            <Setter Property="Padding" Value="3" />
         </Style>
         <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type Control}}">
             <Setter Property="Background" Value="{DynamicResource NightRaised}" />
@@ -197,10 +193,11 @@
             </Setter>
         </Style>
         <Style TargetType="TabItem" BasedOn="{StaticResource {x:Type Control}}">
+            <Setter Property="Padding" Value="10,9" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
-                        <Border x:Name="Tab" Background="{DynamicResource NightBackground}" Padding="10,9" Margin="0,0,3,4" CornerRadius="5,5,0,0"
+                        <Border x:Name="Tab" Background="{DynamicResource NightBackground}" Padding="{TemplateBinding Padding}" Margin="0,0,3,4" CornerRadius="5,5,0,0"
                                 BorderBrush="Transparent" BorderThickness="0,0,0,2">
                             <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" />
                         </Border>
@@ -493,5 +490,6 @@
                 </Setter.Value>
             </Setter>
         </Style>
+      </ResourceDictionary>
     </Application.Resources>
 </Application>

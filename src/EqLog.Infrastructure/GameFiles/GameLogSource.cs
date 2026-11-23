@@ -3,8 +3,14 @@ using EqLog.Application.Sessions;
 namespace EqLog.Infrastructure.GameFiles;
 
 /// <summary>Read-only log transport and discovery; filesystem probes never run on a WPF dispatcher.</summary>
-public sealed class GameLogSource : ILogSource, ILogDiscovery
+public sealed class GameLogSource : ILogSource, ILogDiscovery, IDisposable
 {
+    private readonly object _gate = new();
+    private FileChangeMonitor? _changes;
+    private string? _directory;
+    private long _scannedVersion = -1;
+    private LogFileInfo? _newest;
+
     public Task RunAsync(string path, bool fromStart, Action<IReadOnlyList<string>> lines,
         Action<TailProgress> progress, CancellationToken cancellationToken)
     {
@@ -18,7 +24,31 @@ public sealed class GameLogSource : ILogSource, ILogDiscovery
 
     public Task<LogFileInfo?> FindNewestAsync(string directory, CancellationToken cancellationToken)
     {
-        return Task.Run(() => LogFileLocator.FindNewest(directory), cancellationToken);
+        return Task.Run(() =>
+        {
+            lock (_gate)
+            {
+                directory = Path.GetFullPath(directory);
+                if (_directory != directory)
+                {
+                    _changes?.Dispose();
+                    _changes = new FileChangeMonitor(directory, LogFileLocator.SearchPattern);
+                    _directory = directory;
+                    _scannedVersion = -1;
+                }
+                long version = _changes!.Version;
+                if (_scannedVersion != version)
+                {
+                    var newest = LogFileLocator.FindNewest(directory);
+                    if (_newest != newest)
+                    {
+                        _newest = newest;
+                    }
+                    _scannedVersion = version;
+                }
+                return _newest;
+            }
+        }, cancellationToken);
     }
 
     public Task<string> ResolveDirectoryAsync(string directory, CancellationToken cancellationToken)
@@ -54,5 +84,15 @@ public sealed class GameLogSource : ILogSource, ILogDiscovery
                 ? savedDirectory : null;
             return new LogStartupSelection(path, waiting);
         }, cancellationToken);
+    }
+
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            _changes?.Dispose();
+            _changes = null;
+            _directory = null;
+        }
     }
 }

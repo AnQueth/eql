@@ -64,6 +64,79 @@ public sealed class LevelingHistoryRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task IncrementalSavesAppendOnlyChangedMinutesAndRecoverAfterRestart()
+    {
+        string path = Path.Combine(_folder, "leveling-history.json");
+        var repository = new LevelingHistoryRepository();
+        var history = new LevelingHistory();
+        var tracker = new LevelingTracker(history, "log");
+        tracker.OnLine(At, new ZoneEvent(At, "Halas"), "Que");
+        for (int minute = 1; minute <= 500; minute++)
+        {
+            tracker.OnLine(At.AddMinutes(minute), new ExperienceEvent(At.AddMinutes(minute), ExperienceKind.Solo, 1), "Que");
+        }
+        await repository.SaveAsync(path, history);
+        string journal = LevelingHistoryRepository.JournalPath(path);
+        long before = new FileInfo(journal).Length;
+        tracker.OnLine(At.AddMinutes(501), new ExperienceEvent(At.AddMinutes(501), ExperienceKind.Solo, 2), "Que");
+        await repository.SaveAsync(path, history);
+        long appended = new FileInfo(journal).Length - before;
+        Assert.True(appended < 2048, $"Expected less than 2 KiB appended, got {appended} bytes.");
+        Assert.True(appended * 20 < before, $"Expected a small delta: {appended} versus {before} bytes.");
+        var restored = await repository.LoadAsync(path);
+        var rows = restored.Snapshot("Que", At, At.AddDays(1));
+        Assert.Equal(501, rows.Sum(row => row.Gains));
+        Assert.Equal(502, rows.Sum(row => row.Experience));
+    }
+
+    [Fact]
+    public async Task InterruptedFinalRecordIsRemovedBeforeTheNextAppend()
+    {
+        string path = Path.Combine(_folder, "leveling-history.json");
+        var repository = new LevelingHistoryRepository();
+        var history = new LevelingHistory();
+        Replay(history, extended: false);
+        await repository.SaveAsync(path, history);
+        string journal = LevelingHistoryRepository.JournalPath(path);
+        await File.AppendAllTextAsync(journal, "{\"Minutes\":[");
+        var restored = await repository.LoadAsync(path);
+        Replay(restored, extended: true);
+        await repository.SaveAsync(path, restored);
+        var reloaded = await repository.LoadAsync(path);
+        Assert.Equal(2, reloaded.Snapshot("Que", At, At.AddHours(1)).Sum(row => row.Gains));
+    }
+
+    [Fact]
+    public async Task CompleteMalformedJournalRecordFailsInsteadOfLosingHistory()
+    {
+        Directory.CreateDirectory(_folder);
+        string path = Path.Combine(_folder, "leveling-history.json");
+        await File.WriteAllTextAsync(LevelingHistoryRepository.JournalPath(path), "{broken}\n");
+        await Assert.ThrowsAsync<JsonException>(() => new LevelingHistoryRepository().LoadAsync(path));
+    }
+
+    [Fact]
+    public async Task LargeJournalIsCheckpointedWithoutChangingHistory()
+    {
+        string path = Path.Combine(_folder, "leveling-history.json");
+        var repository = new LevelingHistoryRepository();
+        var history = new LevelingHistory();
+        var tracker = new LevelingTracker(history, "log");
+        tracker.OnLine(At, new ZoneEvent(At, "Halas"), "Que");
+        for (int minute = 1; minute <= 4000; minute++)
+        {
+            tracker.OnLine(At.AddMinutes(minute), new ExperienceEvent(At.AddMinutes(minute), ExperienceKind.Solo, 1), "Que");
+        }
+        await repository.SaveAsync(path, history);
+        string journal = LevelingHistoryRepository.JournalPath(path);
+        Assert.True(new FileInfo(journal).Length >= 1024 * 1024);
+        var restored = await repository.LoadAsync(path);
+        Assert.True(File.Exists(path));
+        Assert.False(File.Exists(journal));
+        Assert.Equal(4000, restored.Snapshot("Que", At, At.AddDays(4)).Sum(row => row.Gains));
+    }
+
+    [Fact]
     public async Task FailedWriteLeavesHistoryDirtyForSuccessfulRetry()
     {
         Directory.CreateDirectory(_folder);

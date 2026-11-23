@@ -241,7 +241,7 @@ public partial class MainWindow
 
     private void ConfigureQuestToolbar(OverlayPanel panel)
     {
-        var toolbar = new System.Windows.Controls.StackPanel { Margin = new Thickness(0, 5, 0, 5) };
+        var toolbar = new System.Windows.Controls.StackPanel { Margin = new Thickness(0, 3, 0, 3) };
         var controls = new Grid();
         controls.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         controls.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -269,7 +269,7 @@ public partial class MainWindow
             Height = 8,
             Minimum = 0,
             Maximum = 1,
-            Margin = new Thickness(0, 10, 0, 5),
+            Margin = new Thickness(0, 5, 0, 3),
             ToolTip = "Completed checks, including failed attempts. Failed items can be retried from the Inventory & loot quests overlay.",
         };
         toolbar.Children.Add(_questProgressBar);
@@ -278,7 +278,7 @@ public partial class MainWindow
         _questCurrentText = new TextBlock
         {
             TextTrimming = TextTrimming.CharacterEllipsis,
-            Margin = new Thickness(0, 3, 0, 6),
+            Margin = new Thickness(0, 2, 0, 3),
         };
         _questCurrentText.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
         toolbar.Children.Add(_questCurrentText);
@@ -305,8 +305,15 @@ public partial class MainWindow
         }
 
         var activity = GetQuestWorkProgress();
-        _questProgressBar.Maximum = Math.Max(1, activity.Total);
-        _questProgressBar.Value = activity.Completed;
+        double maximum = Math.Max(1, activity.Total);
+        if (_questProgressBar.Maximum != maximum)
+        {
+            _questProgressBar.Maximum = maximum;
+        }
+        if (_questProgressBar.Value != activity.Completed)
+        {
+            _questProgressBar.Value = activity.Completed;
+        }
         // Always show the same table shape so the quest list below never shifts as work starts.
         var table = OverlayTable.Columns(
         [
@@ -326,8 +333,11 @@ public partial class MainWindow
         string current = activity.Total == 0 && string.IsNullOrEmpty(_questProgress)
             ? activity.Summary
             : _questProgress;
-        _questCurrentText.Text = current;
-        _questCurrentText.ToolTip = string.IsNullOrEmpty(current) ? null : current;
+        if (_questCurrentText.Text != current)
+        {
+            _questCurrentText.Text = current;
+            _questCurrentText.ToolTip = string.IsNullOrEmpty(current) ? null : current;
+        }
     }
 
     private QuestWorkProgress GetQuestWorkProgress()

@@ -11,19 +11,51 @@ public sealed class LevelingHistoryRepository : ILevelingHistoryRepository
 
     public async Task<LevelingHistory> LoadAsync(string path, CancellationToken cancellationToken = default)
     {
-        LevelingHistory.Data? data;
+        LevelingHistory.Data? data = null;
         try
         {
             data = await AtomicFile.ReadJsonAsync<LevelingHistory.Data>(path, ct: cancellationToken).ConfigureAwait(false);
         }
         catch (FileNotFoundException)
         {
-            return new();
         }
         catch (DirectoryNotFoundException)
         {
-            return new();
         }
+        if (data is null && File.Exists(path))
+        {
+            throw new JsonException("Leveling history contains invalid or empty data.");
+        }
+        data ??= new([], new(StringComparer.OrdinalIgnoreCase));
+        Validate(data);
+        string journal = JournalPath(path);
+        var changes = await PersistenceJournal.ReadAsync<LevelingHistory.Data>(journal, cancellationToken).ConfigureAwait(false);
+        var minutes = data.Minutes.ToDictionary(row => (row.Source, row.Character, row.Context, row.Minute));
+        foreach (var batch in changes)
+        {
+            Validate(batch);
+            foreach (var row in batch.Minutes)
+            {
+                minutes[(row.Source, row.Character, row.Context, row.Minute)] = row;
+            }
+            foreach (var (key, watermark) in batch.Watermarks)
+            {
+                data.Watermarks[key] = watermark;
+            }
+        }
+        data = new([.. minutes.Values], data.Watermarks);
+        var history = new LevelingHistory();
+        history.Import(data);
+        if (File.Exists(journal) && new FileInfo(journal).Length >= 1024 * 1024)
+        {
+            await AtomicFile.WriteJsonAsync(path, data, ct: cancellationToken).ConfigureAwait(false);
+            File.Delete(journal);
+        }
+        return history;
+    }
+
+    private static void Validate(LevelingHistory.Data? data)
+    {
         if (data?.Minutes is null || data.Watermarks is null ||
             data.Watermarks.Any(pair => pair.Value is null || pair.Value.Index < 1) ||
             data.Minutes.Any(row => row is null || string.IsNullOrWhiteSpace(row.Source) ||
@@ -44,9 +76,11 @@ public sealed class LevelingHistoryRepository : ILevelingHistoryRepository
         {
             throw new JsonException("Leveling history contains duplicate minutes.");
         }
-        var history = new LevelingHistory();
-        history.Import(data);
-        return history;
+    }
+
+    internal static string JournalPath(string path)
+    {
+        return Path.ChangeExtension(path, ".jsonl");
     }
 
     public async Task SaveAsync(string path, LevelingHistory history, CancellationToken cancellationToken = default)
@@ -54,12 +88,12 @@ public sealed class LevelingHistoryRepository : ILevelingHistoryRepository
         await _saveGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var snapshot = history.Capture();
+            var snapshot = history.CaptureChanges();
             if (snapshot is null)
             {
                 return;
             }
-            await AtomicFile.WriteJsonAsync(path, snapshot.Value.Data, ct: cancellationToken).ConfigureAwait(false);
+            await PersistenceJournal.AppendAsync(JournalPath(path), snapshot.Value.Data, cancellationToken).ConfigureAwait(false);
             history.CompleteSave(snapshot.Value.Version);
         }
         finally

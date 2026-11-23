@@ -54,7 +54,7 @@ public partial class MainWindow
     private void ConfigureNpcToolbar(OverlayPanel panel)
     {
         var bar = new StackPanel();
-        var searchRow = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
+        var searchRow = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
         var lookup = new Button { Content = "Look up name", ToolTip = "Look up the exact typed NPC name even without recorded encounters." };
         DockPanel.SetDock(lookup, Dock.Right);
         searchRow.Children.Add(lookup);
@@ -100,14 +100,14 @@ public partial class MainWindow
             SelectNpc(exact?.Mob ?? name, exact?.Zone ?? "(unknown zone)");
             StartNpcWikiLookup(false);
         };
-        var buttons = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
-        var refresh = new Button { Content = "Refresh wiki", FontSize = 11, Padding = new Thickness(10, 5, 10, 5) };
+        var buttons = new WrapPanel { Margin = new Thickness(0, 2, 0, 0) };
+        var refresh = new Button { Content = "Refresh wiki", FontSize = 11, Padding = new Thickness(8, 3, 8, 3) };
         refresh.Click += (_, _) =>
         {
             UsageTelemetry.TrackFeature(UsageFeature.NpcWikiRefresh);
             StartNpcWikiLookup(true);
         };
-        var wiki = new Button { Content = "Open wiki", FontSize = 11, Padding = new Thickness(10, 5, 10, 5) };
+        var wiki = new Button { Content = "Open wiki", FontSize = 11, Padding = new Thickness(8, 3, 8, 3) };
         wiki.Click += (_, _) =>
         {
             if (_settings.NpcSelectedMob is { } mob && _settings.NpcSelectedZone is { } zone)
@@ -130,7 +130,7 @@ public partial class MainWindow
         {
             Content = "DPS by loadout",
             FontSize = 11,
-            Padding = new Thickness(10, 5, 10, 5),
+            Padding = new Thickness(8, 3, 8, 3),
             ToolTip = "Compare saved DPS for this NPC and zone by character, class loadout, and level; click fights for details.",
         };
         dpsHistory.Click += async (_, _) =>
@@ -178,7 +178,7 @@ public partial class MainWindow
         {
             Padding = new Thickness(0),
             BorderThickness = new Thickness(0),
-            Margin = new Thickness(0, 4, 0, 4),
+            Margin = new Thickness(0, 2, 0, 2),
         };
         views.Items.Add(new TabItem { Header = "Overview" });
         views.Items.Add(new TabItem { Header = "Spell resists" });
@@ -194,21 +194,21 @@ public partial class MainWindow
             }
         };
         bar.Children.Add(views);
-        _npcPager = new WrapPanel { Margin = new Thickness(0, 0, 0, 4), Visibility = Visibility.Collapsed };
-        _npcPrevious = new Button { Content = "Newer", FontSize = 11, Padding = new Thickness(10, 4, 10, 4) };
+        _npcPager = new WrapPanel { Margin = new Thickness(0, 0, 0, 2), Visibility = Visibility.Collapsed };
+        _npcPrevious = new Button { Content = "Newer", FontSize = 11, Padding = new Thickness(8, 3, 8, 3) };
         _npcPrevious.Click += (_, _) =>
         {
             _npcHistoryPage = Math.Max(0, _npcHistoryPage - 1);
             _npcNextRender = default;
         };
-        _npcNext = new Button { Content = "Older", FontSize = 11, Padding = new Thickness(10, 4, 10, 4) };
+        _npcNext = new Button { Content = "Older", FontSize = 11, Padding = new Thickness(8, 3, 8, 3) };
         _npcNext.Click += (_, _) =>
         {
             int count = SelectedNpc()?.Encounters.Count ?? 0;
             _npcHistoryPage = Math.Min(Math.Max(0, (count - 1) / NpcHistoryPageSize), _npcHistoryPage + 1);
             _npcNextRender = default;
         };
-        _npcPageLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 6), FontSize = 11 };
+        _npcPageLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 3), FontSize = 11 };
         _npcPageLabel.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
         _npcPager.Children.Add(_npcPrevious);
         _npcPager.Children.Add(_npcNext);

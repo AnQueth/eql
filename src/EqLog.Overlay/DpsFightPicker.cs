@@ -5,152 +5,222 @@ using EqLog.Core.Tracking;
 
 namespace EqLog.Overlay;
 
-/// <summary>One entry in the DPS overlay fight picker; a null key follows the current fight.</summary>
-public sealed record DpsFightChoice(DpsFightKey? Key, string Label)
+public partial class MainWindow
 {
-    public const int MaxFights = 10;
+    private DpsFightList? _dpsFightList;
 
-    public override string ToString()
+    internal static CheckBox ConfigureDpsToolbar(OverlayPanel panel, bool expanded, Action<bool> viewChanged)
     {
-        return Label;
-    }
-
-    /// <summary>"Current fight" followed by up to ten recent fights, newest first.</summary>
-    public static IReadOnlyList<DpsFightChoice> Build(IEnumerable<FightSnapshot> fights)
-    {
-        var choices = new List<DpsFightChoice> { new(null, "Current fight (auto)") };
-        foreach (var fight in fights.OrderByDescending(f => f.Start).Take(MaxFights))
+        var fullDetails = new CheckBox
         {
-            choices.Add(new(new DpsFightKey(fight.Target, fight.Start), $"{fight.Target}  ({fight.Start:HH:mm:ss})"));
-        }
-
-        return choices;
+            Content = "Full details",
+            IsChecked = expanded,
+            Margin = new Thickness(0, 3, 0, 3),
+            ToolTip = "Show ability tables and damage graphs under expanded fights.",
+        };
+        fullDetails.Checked += (_, _) => viewChanged(true);
+        fullDetails.Unchecked += (_, _) => viewChanged(false);
+        panel.SetToolbar(fullDetails);
+        return fullDetails;
     }
 }
 
-public partial class MainWindow
+internal sealed class DpsFightList : ScrollViewer
 {
-    private ComboBox? _dpsFightPicker;
-    private ComboBox? _dpsViewPicker;
-    private DpsFightKey? _dpsFight;
-    private bool _dpsPickerUpdating;
-    private DateTime _lastDpsDetailsRender;
-    private bool _dpsDetailsShown;
-    private int _dpsDetailsSelectedTab;
-    private AbilityDetailsView? _dpsDetailsView;
-    private const double DpsDetailsRefreshSeconds = 1;
+    private readonly OverlayPanel _panel;
+    private readonly StackPanel _rows = new();
+    private readonly TextBlock _empty = new() { Text = "No fight yet" };
+    private readonly Dictionary<(string Target, DateTime Start, int Occurrence), FightRow> _fights = [];
+    private bool _fullDetails;
 
-    private void ConfigureDpsToolbar(OverlayPanel panel)
+    internal DpsFightList(OverlayPanel panel, bool fullDetails)
     {
-        _dpsFightPicker = new ComboBox
+        _panel = panel;
+        _fullDetails = fullDetails;
+        VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+        Margin = new Thickness(0, 2, 0, 0);
+        _empty.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
+        Content = _rows;
+    }
+
+    internal void SetFullDetails(bool fullDetails)
+    {
+        if (_fullDetails == fullDetails)
         {
-            Width = 180,
-            Margin = new Thickness(0, 5, 0, 5),
-            ToolTip = "Show one of your last 10 fights (newest first) instead of the current fight.",
-        };
-        _dpsFightPicker.SelectionChanged += (_, _) =>
+            return;
+        }
+        _fullDetails = fullDetails;
+        foreach (var row in _fights.Values)
         {
-            if (_dpsPickerUpdating)
+            row.SetFullDetails(fullDetails);
+        }
+    }
+
+    internal void Update(EngineSnapshot snapshot)
+    {
+        IReadOnlyList<FightSnapshot> fights = snapshot.RecentFights;
+        if (fights.Count == 0 && snapshot.CurrentFight is { } current)
+        {
+            fights = [current];
+        }
+        var counts = new Dictionary<(string Target, DateTime Start), int>();
+        var orderedKeys = fights.Select(fight =>
+        {
+            var identity = (fight.Target.ToUpperInvariant(), fight.Start);
+            int occurrence = counts.GetValueOrDefault(identity);
+            counts[identity] = occurrence + 1;
+            return (identity.Item1, identity.Start, occurrence);
+        }).ToArray();
+        var keys = orderedKeys.ToHashSet();
+        foreach (var key in _fights.Keys.Where(key => !keys.Contains(key)).ToArray())
+        {
+            _rows.Children.Remove(_fights[key].Root);
+            _fights.Remove(key);
+        }
+        if (fights.Count == 0)
+        {
+            if (!_rows.Children.Contains(_empty))
+            {
+                _rows.Children.Add(_empty);
+            }
+            return;
+        }
+        _rows.Children.Remove(_empty);
+        for (int index = 0; index < fights.Count; index++)
+        {
+            var fight = fights[index];
+            var key = orderedKeys[index];
+            if (!_fights.TryGetValue(key, out var row))
+            {
+                row = new FightRow(_panel, fight, _fullDetails);
+                _fights.Add(key, row);
+            }
+            row.Update(fight);
+            int currentIndex = _rows.Children.IndexOf(row.Root);
+            if (currentIndex != index)
+            {
+                if (currentIndex >= 0)
+                {
+                    _rows.Children.RemoveAt(currentIndex);
+                }
+                _rows.Children.Insert(index, row.Root);
+            }
+        }
+    }
+
+    private sealed class FightRow
+    {
+        private readonly OverlayPanel _panel;
+        private readonly TextBlock _name = new() { TextTrimming = TextTrimming.CharacterEllipsis };
+        private readonly TextBlock _summary = new() { TextAlignment = TextAlignment.Right, Margin = new Thickness(8, 0, 0, 0) };
+        private readonly ContentControl _details = new() { Margin = new Thickness(4, 2, 0, 4), Visibility = Visibility.Collapsed };
+        private FightSnapshot _fight;
+        private IReadOnlyList<OverlayRow> _compactRows = [];
+        private AbilityDetailsView? _fullView;
+        private bool _fullDetails;
+        private bool _expanded;
+
+        internal FightRow(OverlayPanel panel, FightSnapshot fight, bool fullDetails)
+        {
+            _panel = panel;
+            _fight = fight;
+            _fullDetails = fullDetails;
+            var header = new DockPanel();
+            DockPanel.SetDock(_summary, Dock.Right);
+            header.Children.Add(_summary);
+            header.Children.Add(_name);
+            var button = new Button
+            {
+                Content = header,
+                Background = System.Windows.Media.Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(3, 0, 3, 0),
+                Margin = new Thickness(0, 0, 0, 1),
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                ToolTip = "Expand or collapse this fight",
+            };
+            button.Click += (_, _) =>
+            {
+                _expanded = !_expanded;
+                _details.Visibility = _expanded ? Visibility.Visible : Visibility.Collapsed;
+                if (_expanded)
+                {
+                    RefreshDetails();
+                }
+            };
+            Root = new StackPanel();
+            Root.Children.Add(button);
+            Root.Children.Add(_details);
+        }
+
+        internal StackPanel Root { get; }
+
+        internal void Update(FightSnapshot fight)
+        {
+            _fight = fight;
+            string summary = $"{OverlayPresenters.Short(EqLog.Application.Presentation.CombatQueries.PersonalDps(fight))} dps  {OverlayPresenters.Clock(fight.DurationSeconds)}";
+            if (_name.Text != fight.Target)
+            {
+                _name.Text = fight.Target;
+                _name.ToolTip = fight.Target;
+            }
+            if (_summary.Text != summary)
+            {
+                _summary.Text = summary;
+            }
+            if (_expanded)
+            {
+                RefreshDetails();
+            }
+        }
+
+        internal void SetFullDetails(bool fullDetails)
+        {
+            if (_fullDetails == fullDetails)
             {
                 return;
             }
-
-            _dpsFight = (_dpsFightPicker.SelectedItem as DpsFightChoice)?.Key;
-        };
-        _dpsPickerUpdating = true;
-        _dpsFightPicker.ItemsSource = DpsFightChoice.Build([]);
-        _dpsFightPicker.SelectedIndex = 0;
-        _dpsPickerUpdating = false;
-        _dpsViewPicker = new ComboBox
-        {
-            Width = 110,
-            ItemsSource = new[] { "Compact", "Full details" },
-            SelectedIndex = _settings.DpsExpandedView ? 1 : 0,
-            Margin = new Thickness(6, 5, 0, 5),
-            ToolTip = "Choose compact DPS rows or the full ability table and damage graphs.",
-        };
-        _dpsViewPicker.SelectionChanged += (_, _) =>
-        {
-            _settings.DpsExpandedView = _dpsViewPicker.SelectedIndex == 1;
-            _lastDpsDetailsRender = default;
-            SaveSettingsInBackground();
-        };
-        var toolbar = new StackPanel { Orientation = Orientation.Horizontal };
-        toolbar.Children.Add(_dpsFightPicker);
-        toolbar.Children.Add(_dpsViewPicker);
-        panel.SetToolbar(toolbar);
-    }
-
-    private void RefreshDpsChoices(EngineSnapshot snap)
-    {
-        if (_dpsFightPicker is null || _dpsFightPicker.IsDropDownOpen)
-        {
-            return;
-        }
-
-        var choices = DpsFightChoice.Build(snap.RecentFights);
-        if (_dpsFightPicker.ItemsSource is IReadOnlyList<DpsFightChoice> existing && existing.SequenceEqual(choices))
-        {
-            return;
-        }
-
-        if (_dpsFight is not null && !choices.Any(c => c.Key == _dpsFight))
-        {
-            _dpsFight = null;
-        }
-
-        _dpsPickerUpdating = true;
-        _dpsFightPicker.ItemsSource = choices;
-        _dpsFightPicker.SelectedItem = choices.First(c => c.Key == _dpsFight);
-        _lastDpsDetailsRender = default;
-        _dpsPickerUpdating = false;
-    }
-
-    private void UpdateDpsDetails(EngineSnapshot snapshot, OverlayPanel panel)
-    {
-        if (!_settings.DpsExpandedView)
-        {
-            if (_dpsDetailsShown)
+            _fullDetails = fullDetails;
+            _fullView = null;
+            _compactRows = [];
+            _details.Content = null;
+            if (_expanded)
             {
-                panel.SetAlternateBody(null);
-                _dpsDetailsShown = false;
-                _dpsDetailsView = null;
-                _dpsDetailsSelectedTab = 0;
+                RefreshDetails();
+            }
+        }
+
+        private void RefreshDetails()
+        {
+            if (_fullDetails)
+            {
+                var breakdown = OverlayPresenters.FightBreakdown(_fight);
+                if (_fullView is null || !_fullView.TryUpdate(breakdown))
+                {
+                    _fullView = new AbilityDetailsView(breakdown, compact: true);
+                    _fullView.Root.Height = 180;
+                    _details.Content = _fullView.Root;
+                }
+                return;
             }
 
-            return;
-        }
-
-        if (_dpsDetailsShown &&
-            (DateTime.Now - _lastDpsDetailsRender).TotalSeconds < DpsDetailsRefreshSeconds)
-        {
-            return;
-        }
-
-        var fight = OverlayPresenters.SelectedFight(snapshot, _dpsFight);
-        var details = fight is null
-            ? new AbilityBreakdown("No fight yet", "No fight data has been recorded.", "DPS", [])
-            : OverlayPresenters.FightBreakdown(fight);
-        _lastDpsDetailsRender = DateTime.Now;
-        if (_dpsDetailsShown && _dpsDetailsView is not null && _dpsDetailsView.TryUpdate(details))
-        {
-            return;
-        }
-
-        _dpsDetailsView = new AbilityDetailsView(details);
-        if (_dpsDetailsView.Root is TabControl tabs)
-        {
-            tabs.SelectedIndex = Math.Min(_dpsDetailsSelectedTab, tabs.Items.Count - 1);
-            tabs.SelectionChanged += (_, e) =>
+            var rows = OverlayPresenters.DpsAttackerRows(_fight);
+            if (_details.Content is not null && _compactRows.SequenceEqual(rows))
             {
-                if (ReferenceEquals(e.OriginalSource, tabs))
-                {
-                    _dpsDetailsSelectedTab = tabs.SelectedIndex;
-                }
-            };
+                return;
+            }
+            var content = new StackPanel();
+            foreach (var row in rows)
+            {
+                content.Children.Add(_panel.BuildRow(row));
+            }
+            if (rows.Count == 0)
+            {
+                content.Children.Add(new TextBlock { Text = "No attackers recorded." });
+            }
+            _compactRows = rows;
+            _details.Content = content;
         }
-
-        panel.SetAlternateBody(_dpsDetailsView.Root);
-        _dpsDetailsShown = true;
     }
 }

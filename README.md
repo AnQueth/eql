@@ -14,7 +14,7 @@ and linked wiki lookups add item, spell, NPC, and quest information.
   Explore ability breakdowns, damage timelines, and damage-type graphs, or revisit recent fights.
 - **Keep track of time.** See estimated spell-effect countdowns and learned respawn timers
   for the mobs you choose to track.
-- **Follow your session.** Monitor loot, coin, kills, deaths, XP/AA progress, and zone time.
+- **Follow your session.** Monitor loot, coin, kills, deaths, the AA-cap warning, and zone time.
   Track Motes of Potential across sessions and plan item or spell upgrades.
 - **Organize loot and upgrades.** Compare inventory across storage locations, find items
   ready to merge, track item-rank increases, and search installed or loose exaltations.
@@ -284,10 +284,11 @@ observed session drops, not just the recent-drop buffer, and reset with session 
 Your selected grouping is saved across restarts. Clicking a grouped item opens its EQLWiki page;
 right-click for quest references.
 
-Click a combatant in **DPS** for an ability breakdown of that fight, or click the target row
-for all attackers combined. Recent fight rows also open a combined breakdown. Use the dropdown
-at the top of **DPS** to view one of your last 10 fights (newest first); **Current fight (auto)**
-returns to following live combat. DPS details also include a **Damage timeline** tab: bars show
+Scroll through the last 20 fights in **DPS** and click a fight to expand or collapse its attackers.
+Click an attacker for a separate ability breakdown. Check **Full details** to show the ability table
+and graphs under each expanded fight instead; uncheck it to show the compact attacker rows.
+The checkbox selection is saved. Inline tabs use the shorter labels **Timeline**, **Types**,
+**Events**, and **Taken**; hover a tab for its full name. DPS details include a **Damage timeline** tab: bars show
 damage over the fight (one second each, or wider for long fights), with idle gaps shown as empty
 bars; hover a bar for its time span, damage, and DPS. The **Damage types** tab shows one row per
 damage type (Melee, Ranged, each named spell, DoT, or proc effect). Every row spans the whole fight, and bars run from
@@ -303,10 +304,8 @@ It includes observed pull hits within the fight timeout before your first outgoi
 trailing hits while the fight remains active; incoming rates use that extended span without
 changing outgoing DPS or fight-start rules. Only hits from that fight's named enemy are matched:
 unknown-caster damage and damage absent from your log cannot be reconstructed.
-Choose **Full details** in the DPS overlay to show the same ability table and damage graph tabs
-directly in the overlay; **Compact** restores the current small rows. The selection is saved.
-Full details update live each second without resetting column widths, sorting, the selected tab,
-or your scroll position in the **Damage types** graph.
+Inline full details update as fight data changes without resetting column widths, sorting, the selected
+tab, or your scroll position in the **Damage types** graph.
 Both graphs keep their existing visuals unless their own data, fight duration, or start time changes.
 Details show total, DPS/HPS, share, hits, crits, maximum, and healing overheal. Separate breakdown
 windows opened by clicking a row are snapshots at click time, not live windows; click again
@@ -324,11 +323,11 @@ Unlock floating overlays with Ctrl+Shift+L to click; docked panels remain intera
 
 | Overlay | Shows |
 |---|---|
-| DPS | Current or picked fight (last 10): your and others' damage, DPS, and share |
+| DPS | Last 20 fights with expandable attacker and ability details |
 | Damage Taken | Incoming damage by attacker/spell (encounter and session) |
 | Healing | Heals you cast (with overheal) and heals you received |
 | Spell Timers | Countdowns for mez, charm, DoTs, debuffs and similar effects you cast |
-| Session | Session and zone time, kills/hr, deaths, XP/AA progress, level, AA-cap warning |
+| Session | Session and zone time, kills/hr, deaths, and the AA-cap warning |
 | Loot | Recently looted items and coin |
 | Forage | Forage finds (recent with zone, or grouped by most recent / A-Z with per-zone totals), success rate, finds/hr, and Forage skill-ups this session |
 | Chat | Selected chat channels |
@@ -355,7 +354,8 @@ Unlock floating overlays with Ctrl+Shift+L to click; docked panels remain intera
   When all are locked, the same control unlocks all. Docked panels remain interactive.
 - **Only show floating overlays while EverQuest is active** (on by default): floating overlays hide
   when you Alt+Tab to another app (including the dock/settings), even if the game is still visible
-  on another monitor. They return when EverQuest has focus again. An unlocked floating overlay
+  on another monitor. Enabled floating panels appear temporarily in the current dock workspace
+  without changing their saved placement, and return when EverQuest has focus again. An unlocked floating overlay
   can keep focus while you interact with it. A minimized or unavailable game never enables them.
   Docked panels always stay visible. Turn this off to arrange overlays without the game running.
 - Expand **General > Overlays > Individual overlay appearance and locks**, then an overlay's name,
@@ -993,7 +993,7 @@ These are **recorded XP gains**, not guaranteed net XP: deaths can lose an unlog
 Reward-XP events are listed separately, without inventing their percentage. Missing combat XP
 percentages or character levels prevent affected windows from being ranked, but their recorded
 XP events remain visible in Levels. Hover a result for the measurement caveats.
-History is saved in `leveling-history.json` in the app's data folder; a corrupt file is reported
+History is saved in `leveling-history.json` and `leveling-history.jsonl` in the app's data folder; a corrupt file is reported
 and protected from overwriting until repaired or reset.
 
 ## Motes
@@ -1177,16 +1177,21 @@ Settings are stored in `%AppData%\EqLogOverlay\`:
 - `spell-durations.json`: learned samples, overrides, wiki duration estimates, relearn start times, untracked spells and removed spell/rank names
 - `spawn-timers.json`: respawn samples, overrides, relearn start times, tracked mobs and the last kill/sighting per zone, so countdowns keep running across restarts and new log files
 - `motes.json`: all-time mote totals per character and mote drops/kills per zone and mob
-- `leveling-history.json`: minute-resolution XP history, observed zone/level/class loadout, elapsed time, kills/deaths, and per-log replay watermarks
-- `mob-resistances.json`: resistance observations by zone/mob, replay watermarks, and cached EQLWiki NPC data
+- `leveling-history.json` and `leveling-history.jsonl`: minute-resolution XP history, observed zone/level/class loadout, elapsed time, kills/deaths, and per-log replay watermarks
+- `mob-resistances.json` and `mob-resistances.json.journal`: resistance observations by zone/mob, replay watermarks, and cached EQLWiki NPC data
 - `spell-info.jsonl`: cached EQLWiki spell resist types, appended one line per spell (latest wins); an older `mob-resistances.spells.jsonl` is renamed to this on load
-- `npc-compendium\`: NPC name/zone catalog, historical considers, active encounters and import watermarks in `index.json`, with completed encounter summaries and per-spell damage/outcome counts appended to one `npcs\*.jsonl` file per NPC (no raw log lines). An older single `npc-compendium.json` is migrated automatically and renamed to `npc-compendium.json.migrated`, which can be deleted afterwards.
+- `npc-compendium\`: NPC name/zone catalog, historical considers, active encounters and import watermarks in `index.json` and `index.json.journal`, with completed encounter summaries and per-spell damage/outcome counts appended to one `npcs\*.jsonl` file per NPC (no raw log lines). An older single `npc-compendium.json` is migrated automatically and renamed to `npc-compendium.json.migrated`, which can be deleted afterwards.
 - `quest-inventory.json`: non-zero quest inventory counts, completions and per-log loot watermarks per character
 - `quest-lookups.jsonl`: cached item quest references, appended one line per lookup (an older `quest-lookups.json` is migrated and removed automatically)
 - `sky-quests.json`: cached Plane of Sky quest catalog
-- `item-effects.json`: cached base-item effects and linked descriptions for the Exaltations overlay
+- `item-effects.json` and `item-effects.jsonl`: cached base-item effects and linked descriptions for the Exaltations overlay
+- `tradeskills.json` and `tradeskills.jsonl`: cached tradeskill recipes and merchant data
 
 Tracking data is saved periodically, on exit, and on Windows logoff/shutdown.
+The history, resistance, NPC index, item-effect, and tradeskill journals append changes and are merged into their JSON
+baselines at startup when they reach 1 MiB. Keep all journal and any `.checkpoint` files with
+their baselines. **Older versions cannot read journaled changes**; do not open the same data
+folder with an older version.
 To back up your data, close the app and copy the entire `%AppData%\EqLogOverlay` folder.
 To restore a backup, close the app before replacing the folder's contents.
 Application updates do not remove this folder.

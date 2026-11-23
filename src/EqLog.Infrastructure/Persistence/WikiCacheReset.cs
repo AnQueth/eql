@@ -16,7 +16,8 @@ public static class WikiCacheReset
         await (repository ?? new MobResistanceRepository()).ResetWikiCachesAsync(Path.Combine(folder, "mob-resistances.json"), mobs).ConfigureAwait(false);
         foreach (string name in new[]
         {
-            "quest-lookups.jsonl", "quest-lookups.json", "sky-quests.json", "item-effects.json", "tradeskills.json",
+            "quest-lookups.jsonl", "quest-lookups.json", "sky-quests.json", "item-effects.json", "item-effects.jsonl",
+            "tradeskills.json", "tradeskills.jsonl",
         })
         {
             File.Delete(Path.Combine(folder, name));

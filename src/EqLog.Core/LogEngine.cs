@@ -31,6 +31,8 @@ public sealed record EngineSnapshot(
 /// </summary>
 public sealed class LogEngine
 {
+    public const int RecentFightLimit = 20;
+
     public event Action<LootEvent, long>? LootObserved;
     public event Action<ConsiderEvent, string>? MobConsidered;
     public event Action<ConsiderAssessmentEvent>? ConsiderAssessment;
@@ -337,7 +339,7 @@ public sealed class LogEngine
                 _lines,
                 _lastLogTime,
                 _fights.Current(),
-                _fights.Recent(10),
+                _fights.Recent(RecentFightLimit),
                 _fights.SessionDamageByYou,
                 _fights.SessionMaxHitByYou,
                 _fights.SessionMaxHitSource,

@@ -108,42 +108,45 @@ public sealed class AbilityBreakdownWindow : Window
         return table;
     }
 
-    internal static FrameworkElement BuildTimelineContent(AbilityBreakdown breakdown)
+    internal static FrameworkElement BuildTimelineContent(AbilityBreakdown breakdown, bool compact = false)
     {
-        return BuildTimeline(breakdown.Timeline ?? [], breakdown.TimelineSeconds, breakdown.TimelineStart);
+        return BuildTimeline(breakdown.Timeline ?? [], breakdown.TimelineSeconds, breakdown.TimelineStart, compact);
     }
 
-    internal static DockPanel BuildLanesContent(AbilityBreakdown breakdown, DockPanel? panel = null)
+    internal static DockPanel BuildLanesContent(AbilityBreakdown breakdown, DockPanel? panel = null, bool compact = false)
     {
-        return BuildLanes(breakdown.AbilityTimelines ?? [], breakdown.TimelineSeconds, breakdown.TimelineStart, panel);
+        return BuildLanes(breakdown.AbilityTimelines ?? [], breakdown.TimelineSeconds, breakdown.TimelineStart, panel, compact);
     }
 
     /// <summary>One row per damage type; each row spans the whole fight, with a bar from the first to last hit of every stretch.</summary>
-    private static DockPanel BuildLanes(IReadOnlyList<AbilityTimeline> lanes, double seconds, DateTime? start, DockPanel? panel)
+    private static DockPanel BuildLanes(IReadOnlyList<AbilityTimeline> lanes, double seconds, DateTime? start, DockPanel? panel, bool compact)
     {
         int total = Math.Max(1, (int)Math.Ceiling(seconds));
         total = Math.Max(total, lanes.Max(l => l.Points.Max(p => p.Second)) + 1);
         var slices = BuildTimeSlices(total, TimelineTickInterval(total));
         if (panel is null)
         {
-            panel = new DockPanel { Margin = new Thickness(8) };
+            panel = new DockPanel { Margin = new Thickness(compact ? 4 : 8) };
             var description = new TextBlock
             {
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 8),
+                TextWrapping = compact ? TextWrapping.NoWrap : TextWrapping.Wrap,
+                TextTrimming = compact ? TextTrimming.CharacterEllipsis : TextTrimming.None,
+                Margin = new Thickness(0, 0, 0, compact ? 4 : 8),
             };
             description.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
             DockPanel.SetDock(description, Dock.Top);
             panel.Children.Add(description);
             var tracks = new Grid();
-            tracks.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Auto), MaxWidth = 220 });
+            tracks.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Auto), MaxWidth = compact ? 90 : 220 });
             tracks.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             panel.Children.Add(new ScrollViewer { Content = tracks, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         }
 
         var info = (TextBlock)panel.Children[0];
-        info.Text = $"Each row spans the full fight ({OverlayPresenters.Clock(total)}). Bars run from when a damage type started landing to when it finished; " +
-                    $"a gap over {DamageTimeline.SegmentGapSeconds} seconds starts a new bar. Vertical marks scale with fight length; hover a bar for times and damage.";
+        string descriptionText = $"Each row spans the full fight ({OverlayPresenters.Clock(total)}). Bars run from when a damage type started landing to when it finished; " +
+                                 $"a gap over {DamageTimeline.SegmentGapSeconds} seconds starts a new bar. Vertical marks scale with fight length; hover a bar for times and damage.";
+        info.Text = compact ? $"Damage types over {OverlayPresenters.Clock(total)}" : descriptionText;
+        info.ToolTip = compact ? descriptionText : null;
         // Keep the scroll viewer and its content grid alive so refreshes retain the user's offset.
         var grid = (Grid)((ScrollViewer)panel.Children[1]).Content;
         grid.Children.Clear();
@@ -168,7 +171,7 @@ public sealed class AbilityBreakdownWindow : Window
             row++;
         }
 
-        var axis = BuildLaneTimeAxis(slices, start);
+        var axis = BuildLaneTimeAxis(slices, start, compact);
         axis.Margin = new Thickness(0, 4, 0, 0);
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         Grid.SetRow(axis, row);
@@ -201,9 +204,35 @@ public sealed class AbilityBreakdownWindow : Window
         return slices;
     }
 
-    private static Grid BuildLaneTimeAxis(IReadOnlyList<int> slices, DateTime? start)
+    private static Grid BuildLaneTimeAxis(IReadOnlyList<int> slices, DateTime? start, bool compact)
     {
         var axis = new Grid();
+        if (compact)
+        {
+            axis.ColumnDefinitions.Add(new ColumnDefinition());
+            axis.ColumnDefinitions.Add(new ColumnDefinition());
+            var beginning = new TextBlock
+            {
+                Text = "0:00",
+                FontSize = 10,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                ToolTip = start is { } startTime ? $"Start: {startTime:HH:mm:ss}" : null,
+            };
+            beginning.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
+            axis.Children.Add(beginning);
+            var end = new TextBlock
+            {
+                Text = OverlayPresenters.Clock(slices.Sum()),
+                FontSize = 10,
+                TextAlignment = TextAlignment.Right,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            };
+            end.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
+            Grid.SetColumn(end, 1);
+            axis.Children.Add(end);
+            return axis;
+        }
+
         for (int i = 0; i < slices.Count; i++)
         {
             axis.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(slices[i], GridUnitType.Star) });
@@ -304,24 +333,37 @@ public sealed class AbilityBreakdownWindow : Window
         return mark;
     }
 
-    private static FrameworkElement BuildTimeline(IReadOnlyList<DamageTimelinePoint> points, double seconds, DateTime? start)
+    private static FrameworkElement BuildTimeline(IReadOnlyList<DamageTimelinePoint> points, double seconds, DateTime? start, bool compact)
     {
         var buckets = CombatQueries.Buckets(points, seconds, MaxTimelineBars);
         int width = buckets.Count == 0 ? 1 : buckets[0].EndSecond - buckets[0].StartSecond;
         long peak = buckets.Count == 0 ? 0 : buckets.Max(b => b.Amount);
-        var panel = new DockPanel { Margin = new Thickness(8) };
+        var panel = new DockPanel { Margin = new Thickness(compact ? 4 : 8) };
         var peakBucket = buckets.MaxBy(b => b.Amount);
         string summary = peakBucket is null || peak == 0
             ? "No damage recorded."
             : $"Each bar is {width} second{(width == 1 ? "" : "s")}. Peak {peak:N0} at {OverlayPresenters.Clock(peakBucket.StartSecond)} ({peakBucket.PerSecond:N0} dps). " +
               $"Active {points.Count:N0} of {Math.Max(1, (int)Math.Ceiling(seconds)):N0} seconds.";
-        var info = new TextBlock { Text = summary, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
+        var info = new TextBlock
+        {
+            Text = compact && peakBucket is not null && peak > 0
+                ? $"Peak {peak:N0} at {OverlayPresenters.Clock(peakBucket.StartSecond)} \u00b7 {points.Count:N0}/{Math.Max(1, (int)Math.Ceiling(seconds)):N0}s active"
+                : summary,
+            TextWrapping = compact ? TextWrapping.NoWrap : TextWrapping.Wrap,
+            TextTrimming = compact ? TextTrimming.CharacterEllipsis : TextTrimming.None,
+            ToolTip = compact ? summary : null,
+            Margin = new Thickness(0, 0, 0, compact ? 4 : 8),
+        };
         info.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
         DockPanel.SetDock(info, Dock.Top);
         panel.Children.Add(info);
 
         var axis = new Grid { Margin = new Thickness(0, 4, 0, 0) };
-        var left = new TextBlock { Text = start is { } s0 ? $"0:00 ({s0:HH:mm:ss})" : "0:00" };
+        var left = new TextBlock
+        {
+            Text = !compact && start is { } s0 ? $"0:00 ({s0:HH:mm:ss})" : "0:00",
+            ToolTip = compact && start is { } startTime ? $"Start: {startTime:HH:mm:ss}" : null,
+        };
         var right = new TextBlock { Text = OverlayPresenters.Clock(buckets.Count == 0 ? 0 : buckets[^1].EndSecond), HorizontalAlignment = HorizontalAlignment.Right };
         left.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
         right.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
@@ -353,7 +395,7 @@ public sealed class AbilityBreakdownWindow : Window
             bars.Children.Add(cell);
         }
 
-        var frame = new Border { BorderThickness = new Thickness(1, 0, 0, 1), Child = bars, MinHeight = 120 };
+        var frame = new Border { BorderThickness = new Thickness(1, 0, 0, 1), Child = bars, MinHeight = compact ? 50 : 120 };
         frame.SetResourceReference(Border.BorderBrushProperty, "NightMuted");
         panel.Children.Add(frame);
         return panel;

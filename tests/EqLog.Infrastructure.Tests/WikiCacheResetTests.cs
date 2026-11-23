@@ -31,7 +31,8 @@ public sealed class WikiCacheResetTests : IDisposable
         var before = await AtomicFile.ReadJsonAsync<MobResistanceStore.Data>(path);
         string[] caches =
         [
-            "quest-lookups.jsonl", "quest-lookups.json", "sky-quests.json", "item-effects.json",
+            "quest-lookups.jsonl", "quest-lookups.json", "sky-quests.json", "item-effects.json", "item-effects.jsonl",
+            "tradeskills.json", "tradeskills.jsonl",
             "mob-resistances.spells.jsonl",
         ];
         foreach (string name in caches)

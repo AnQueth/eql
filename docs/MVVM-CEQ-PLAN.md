@@ -1,205 +1,195 @@
-# MVVM + CEQ Migration Plan (EqLog.Overlay)
+# Change-driven MVVM migration plan
 
-Plan to convert the Overlay presentation layer to MVVM, with **Commands / Events / Queries (CEQ)**
-as the only channel between the UI and the data layer (Application → Core/Infrastructure).
-Core, Application, and Infrastructure are unchanged in behavior; this is an `EqLog.Overlay`
-refactor plus boundary-test updates.
+## Goal and scope
 
-## 1. Goals
+Replace the overlay's timed, manual frame rendering with WPF bindings backed by
+observable view models. Data changes should schedule only the work they require;
+an idle application should not repeatedly capture and render an unchanged frame.
+Preserve the current overlays, interactions, data, persistence, replay behavior,
+themes, and window chrome.
 
-- Views become passive: XAML + window chrome (drag/resize/click-through) only. No state, no rules.
-- ViewModels own all UI state and expose **`ICommand`** for every user intent and
-  **`ObservableCollection<T>`** for every row collection.
-- CEQ is the enforced seam: VMs issue commands, subscribe to events, and call queries —
-  never touching `LogEngine`, mutable stores, files, HTTP, or WPF-specific data types.
-- Row updates stay incremental (no full rebuilds); existing performance budgets are preserved
-  (250 ms render timer, one frame in flight, 8 ms replay work budget, 5 ms loot pump).
-- Each phase is independently shippable; the WPF code-behind version remains the fallback
-  per panel until its VM lands.
+This is an incremental migration across `EqLog.Overlay` **and**, where necessary,
+the Application/Core notification and time-advancement boundaries. Each phase
+must remain shippable. Do not remove the existing refresh path for a panel until
+its replacement handles every source of changes.
 
-## 2. Current state
+## Current state
 
-| Asset | Lines | Role today |
-|---|---|---|
-| `MainWindow.xaml.cs` | 2,278 | Settings UI, session controls, hidden controller window |
-| `OverlayPanel.cs` | 1,303 | Programmatic row rendering for all floating panels |
-| `DockWindow.cs` | 1,151 | Docked panel host + settings side panel |
-| `MoteUpgradeOverlay.cs` | 1,022 | Mote planning UI (4 plan tabs) |
-| `OverlayPresenters.cs` | 821 | Static presenters; **leaks WPF `Brush` into presenter layer** |
-| `LootQuests.cs`, `MobInfo.cs`, `ThemeEditor.cs`, `NpcBrowser.cs`, `SkyQuestBrowser.cs` | ~2,400 | Browser-style overlays in code-behind |
-| `ViewModels/InventoryViewModel.cs` | 266 | The one existing VM — hand-rolled `INotifyPropertyChanged`, `CollectionViewSource` filter |
+- `MainWindow` runs a 250 ms `DispatcherTimer`, captures a `LogSessionFrame`, and
+  renders visible panels. `OverlayPanel.Update` compares rows and skips unchanged
+  visuals, but snapshots and projections are still created on each tick.
+- `LogSessionService.BatchProcessed` already signals processed log batches on
+  the source worker. `LogSessionFrame` is currently **pulled**, not an event.
+  Progress is stored separately without a progress-changed event.
+- `GameSession.Revision` identifies a session replacement, not every data
+  change. Inventory has its own revision; wiki, settings, and other inputs also
+  change independently of log batches.
+- `InventoryViewModel` already uses `INotifyPropertyChanged`, an observable
+  collection, and a WPF collection view. Its inventory rows update several
+  properties in place without individual change notifications.
+- `AbilityDetailsView` uses observable collections for tables, while charts and
+  `DpsFightList` still create and update controls imperatively. The DPS list has
+  up to 20 fights, expandable inline compact/full details, and a saved
+  **Full details** checkbox; there is no fight picker.
+- `LogEngine.Snapshot(now)` is not a pure read: it advances resistance state,
+  expires fights, and snapshots timers that finalize or prune pending state.
+  Time-dependent maintenance must not disappear with the render timer.
 
-The data layer already speaks CEQ implicitly: views call `GameSession` commands, receive
-`LogSessionFrame` events, and read detached read models. This plan makes that seam explicit
-in the presentation layer and adds the MVVM mechanics (`ICommand`, `ObservableCollection`).
+See [MainWindow.xaml.cs](../src/EqLog.Overlay/MainWindow.xaml.cs),
+[LogSessionService.cs](../src/EqLog.Application/Sessions/LogSessionService.cs),
+[OverlayPanel.cs](../src/EqLog.Overlay/OverlayPanel.cs), and
+[DpsFightPicker.cs](../src/EqLog.Overlay/DpsFightPicker.cs).
 
-## 3. Target architecture
+## Target architecture
 
 ```mermaid
-flowchart TB
-    subgraph Views["Views (passive)"]
-        V1[XAML + window chrome<br/>drag / resize / click-through]
-    end
-    subgraph VMs["ViewModels"]
-        M1[ObservableObject state]
-        M2[ICommand intents]
-        M3["ObservableCollection&lt;T&gt; rows"]
-    end
-    subgraph CEQ["CEQ channels (the only seam)"]
-        C[Commands: writes]
-        E[Events: frames / alerts / progress]
-        Q[Queries: detached reads]
-    end
-    subgraph Data["Data layer (unchanged)"]
-        A[Application services<br/>GameSession, InventoryService,<br/>SettingsService, MotePlanningService]
-        K[Core rules + LogEngine]
-        I[Infrastructure adapters]
-    end
-    V1 -- binds --> M1
-    V1 -- invokes --> M2
-    M3 -- items --> V1
-    M2 -- issues --> C
-    E -- applies --> M3
-    M1 -- calls --> Q
-    C --> A
-    Q --> A
-    A --> K
-    A --> I
+flowchart LR
+    S[Log batches, inventory, wiki, commands] --> N[Change notifications]
+    T[Active deadlines and clock updates] --> N
+    N --> C[Coalescing coordinator]
+    C --> Q[Detached application queries]
+    Q --> V[View models and observable rows]
+    V --> W[WPF bindings and templates]
+    W -->|Commands| S
 ```
 
-### 3.1 Commands (UI → data, writes)
+Views bind to view-model properties, commands, and row collections. View models
+use Application commands and detached query results, not live trackers, files,
+HTTP, or WPF controls. Keep native window chrome, drag/resize, click-through,
+and view-specific rendering such as graphs in the view layer. Bind theme keys or
+semantic states to dynamic resources so theme changes continue to work.
 
-Every user intent is an `ICommand` on a VM (`RelayCommand` / `AsyncRelayCommand`).
-The command body calls the matching Application method — nothing else. No engine access,
-no file/HTTP, no WPF types in the path.
+### Change sources and scheduling
 
-| UI intent | VM command | Application target |
-|---|---|---|
-| Track/untrack spell | `SetSpellTrackedCommand` | `GameSession.SetSpellTracked` |
-| Override / relearn duration | `SetDurationOverrideCommand`, `RelearnDurationCommand` | `SetSpellDurationOverride`, `RelearnSpellDuration` |
-| Add/remove duration | `AddDurationCommand`, `RemoveDurationCommand` | `AddSpellDuration`, `RemoveSpellDuration` |
-| Track/untrack spawn, override, relearn | `SetSpawnTrackedCommand`, … | `SetSpawnTracked`, `SetSpawnOverride`, `RelearnSpawn` |
-| Apply spawn wiki | `ApplySpawnWikiCommand` | `ApplySpawnWiki` |
-| Reset resistances / session | `ResetResistancesCommand`, `ResetSessionCommand` | `ResetResistances`, `ResetSession` |
-| Save tracking | `SaveTrackingCommand` | `SaveSpellDurationsAsync`, `SaveSpawnsAsync`, `SaveMobsAsync`, `SaveNpcsAsync` |
-| Import inventory export | `ImportExportCommand` | `InventoryService` import/reconcile |
-| Quest lookups / complete-reopen | `LookupQuestsCommand`, `CompleteQuestCommand` | `InventoryService` + wiki queries |
-| Mote plan changes | `ApplyPlanCommand` | `MotePlanningService` |
-| Settings/theme save, import/export | per-tab commands | `SettingsService`, `ThemeService` |
-
-### 3.2 Events (data → UI)
-
-VMs subscribe to a small set of event channels; each has exactly one apply method:
-
-| Event | Source | VM apply point |
-|---|---|---|
-| `LogSessionFrame` (`Snapshot`, `Chat`, `Replay`, `Queries`) | render timer pump (existing 250 ms, one frame in flight) | `ApplyFrame(frame)` — the only method that mutates row collections from live data |
-| Alert trigger matches | `TriggerMatcher` via session | `AlertsViewModel.OnAlert(...)` |
-| Tail progress (`TailProgress`) | `LogSessionService` | progress bar binding |
-| Wiki/quest activity (`QuestWikiActivity`) | shared HTTP scheduler | status text bindings |
-| Housekeeping ticks (2 s / 6 s / 10 s) | `HousekeepingService` | save-state indicators |
-
-### 3.3 Queries (detached reads)
-
-Queries return immutable value data; VMs project it into row view models and collections.
-No calculated domain getters run in presentation — the read models already carry prepared
-values (rates, rates-of-damage, upgrade math).
-
-| Query | Returns |
+| Source | Required signal or action |
 |---|---|
-| `EngineQuerySnapshot.Capture(engine, channels, …)` | `SpellDurations`, `SpawnCandidates`, `Chat` |
-| `NpcReadModel.From(NpcEntry)` | encounters, DPS averages, resist evidence |
-| `InventoryReadModel.Opportunities / SkyProgress / Motes` | quest opportunities, Sky progress, mote inventory |
-| `MotePlanReadModel` | upgrade/farm/what-if math |
-| `SessionQueries.ExperiencePercentPerHour` | XP/AA rate with warmup policy |
-| `CombatQueries.PersonalDps` | per-fight DPS values |
-| `RawLogQueries.Message / TriggerPattern` | raw-log filter status (enum + diagnostic, not sentences) |
+| Log batches | Reuse `BatchProcessed`; signal data invalidation after processing. Preserve every log event and live-only trigger/alert behavior. |
+| Progress, reader completion/failure | Add progress and lifecycle notifications, including caught-up transitions with no new line. Report errors explicitly. |
+| Session start, stop, switch, reset | Publish session generation and invalidate affected state; unsubscribe/cancel old work and reject late results. |
+| Inventory and loot | Signal queued loot and inventory revisions; drain pending loot in bounded slices even when inventory UI is hidden. Signal export imports and reset/reconciliation results. |
+| Wiki, NPC, leveling, tradeskill and other background work | Signal completion, failure, relevant revisions and cache resets; refresh only dependent views. |
+| User actions and settings | Commands, filter/selection changes, tracked items, themes, and panel visibility invalidate the appropriate view, even without log input. |
+| Time | Schedule countdown display changes, expirations and maintenance deadlines independently of incoming log events. |
 
-## 4. Building blocks
+Notifications describe **invalidation**, not a promise that data differs. Only
+publish them after mutations are committed and outside state locks; subscriber
+failures must not silently corrupt or stop ingestion. Preserve durable log
+processing, trigger matching, alerts, and queued loot individually: coalescing
+UI invalidations must never drop those events.
 
-- **CommunityToolkit.Mvvm** — `ObservableObject`, `RelayCommand`, `AsyncRelayCommand`,
-  `[ObservableProperty]` source generators. (Alternative: keep hand-rolling like today's
-  `InventoryViewModel`; more boilerplate across ~12 VMs.)
-- **`ObservableCollection<T>`** for every row collection, replacing the presenter-driven
-  `OverlayRow` rebuilds. Items are small row view models (value data + display strings),
-  not WPF objects.
-- **VM-owned filtering** — keep the existing `CollectionViewSource.GetDefaultView` filter
-  pattern from `InventoryViewModel`, but owned by the VM; or a plain filtered projection.
-  Either way, no code-behind filter state.
-- **Theme-aware converters** — replace `OverlayPresenters`' direct `Brush` construction with
-  `IValueConverter`s that resolve theme resources at render time. This is what removes the
-  WPF leak from the presenter layer.
-- **Window chrome stays in code-behind** — `OverlayWindow` drag/resize/click-through,
-  `GameWindowWatcher`, native interop are View concerns. Normal MVVM; not modeled in VMs.
+The coordinator must:
 
-## 5. ViewModel inventory
+1. Track a session generation plus monotonically increasing dirty versions or
+   equivalent per-domain state. `GameSession.Revision` alone is insufficient.
+2. Coalesce bursts into bounded work, including during continuous replay; do
+   not enqueue one dispatcher update or a complete snapshot per log line.
+   Allow at most one query/apply operation per affected scope in flight.
+3. Capture detached data off the dispatcher, then apply on the dispatcher.
+   If a change arrives during capture or apply, retain the dirty marker and
+   schedule another pass. Reject results from an old session, filter, or view.
+4. Ensure related snapshot/query data is consistent enough for its consumers:
+   use coordinated capture or revision validation and retry where needed.
+5. Invalidate once when a hidden panel becomes visible, then stop unnecessary
+   view-specific work when hidden. Unsubscribe and cancel on shutdown.
 
-| Surface | New VM | Notes |
-|---|---|---|
-| Spell countdowns + spawn timers | `SpellTimersViewModel` | durations/spawn rows, track/override commands |
-| Inventory overlay | `InventoryViewModel` (convert existing) | first conversion; proves the pattern |
-| Loot quests | `LootQuestsViewModel` | opportunities rows, lookup commands; **ends the hidden-tab XAML adoption** |
-| NPC browser | `NpcBrowserViewModel` | encounters, resist classifications, pager modes |
-| Sky quests | `SkyQuestsViewModel` | progress rows, HAVE/NEED counts |
-| Mote planning | `MotePlanViewModel` | 4 plan tabs (Upgrade/Farm/WhatIf/Math) as sub-VMs or tab state |
-| Exaltations | `ExaltationsViewModel` | search + results rows |
-| Mob info | `MobInfoViewModel` | confirmation/result swap, wiki fields |
-| Alerts | `AlertsViewModel` | active alerts, trigger editor, effect options |
-| DPS / ability breakdown | `DpsFightViewModel`, `AbilityDetailsViewModel` | fight picker, timeline/ability rows |
-| Settings tabs | one VM per tab (General, Tracking, Themes, Inventory, …) | splits `MainWindow.xaml.cs` |
+During active input, target the existing roughly 250 ms update responsiveness
+without requiring an idle periodic frame. Preserve the existing one-operation
+in-flight protection, replay responsiveness, and budgeted loot processing.
+Do not introduce disk polling or constant writes: retain filesystem notifications
+and background persistence independently of overlay visibility. Measure against
+the current implementation rather than assuming binding alone is faster.
 
-## 6. Phased migration
+### Clock and replay
 
-Each phase ships independently; boundary tests pass at every step.
+Replace the global frame timer with targeted timers or next-deadline scheduling:
 
-1. **Phase 0 — Foundation.** Add CommunityToolkit.Mvvm to `EqLog.Overlay`. Convert
-   `InventoryViewModel` to toolkit types (same behavior). Proves the pattern end-to-end:
-   command → Application, frame event → collection update.
-2. **Phase 1 — Row VMs + converters.** Tame `OverlayPresenters`: row view models per panel,
-   theme-aware converters for brushes/colors. Unblocks every panel; presenters become pure
-   projections with no WPF types.
-3. **Phase 2 — Small overlays.** `SpellTimers`, `ExaltationsOverlay`, `InventoryOverlay`
-   (wires the converted VM to its panel).
-4. **Phase 3 — Browsers.** `NpcBrowser`, `SkyQuestBrowser`, `LootQuests`, `MobInfo`.
-   Loot quests lands here: the hidden `LootQuestsTab` adoption disappears; the overlay gets
-   its own view + `LootQuestsViewModel`.
-5. **Phase 4 — Mote planning.** `MoteUpgradeOverlay` (1,022 lines) with plan-tab sub-state.
-6. **Phase 5 — MainWindow split.** Settings tab VMs + session controls; the hidden
-   controller window shrinks to composition + hotkey handle only.
+- Keep spell and spawn countdowns, bars, warning transitions, and expiry current;
+  retain the existing cadence where it affects visible smoothness.
+- Expire fights, finalize/prune spell timers, advance resistance observations,
+  remove alerts, and hide mob info at the correct times even without input or
+  with a related overlay hidden. Separate advancement from reads where useful;
+  tests must prove the old `Snapshot` side effects are retained.
+- Preserve `LogSessionService`'s 30-minute live/replay transition and its use of
+  last log time for replay snapshots. Schedule the transition itself, and do not
+  advance replay countdowns using wall-clock time.
+- Keep independent housekeeping, file monitoring, game visibility, save, and
+  update-check mechanisms. They are not reasons to redraw every overlay.
 
-## 7. Boundary test updates
+## View-model and binding rules
 
-- `PresentationBoundaryTests`: update the allowed-call list so VM → Application service
-  calls are permitted; keep rejecting domain rule methods, calculated domain getters, and
-  live engine/store fields in presentation.
-- **New rule:** ViewModels must not reference `System.Windows*` types (except unavoidable
-  dispatcher marshaling). This is what makes them unit-testable off-Windows.
-- `LayerBoundaryTests`: unchanged — Core/Application/Infrastructure are untouched.
+- Use `INotifyPropertyChanged` for changing scalar and row properties, and
+  `ObservableCollection<T>` for collections whose membership or order changes.
+  An observable collection does **not** notify when a property of an existing
+  item changes: notify the property or replace the item deliberately.
+- Reconcile rows by stable identity, update only changed values, and preserve
+  selection, expansion, scroll, sorting, column widths, and selected graph tab.
+  The DPS `(target, start, occurrence)` key can shift for same-second duplicate
+  fights; introduce a stable per-session fight identity before relying on it.
+- Use data templates and commands for fight expansion, compact attacker rows,
+  inline full details, quest actions, links, and tracking toggles. Keep the
+  current saved **Full details** checkbox and clickable attacker breakdowns.
+- Preserve virtualization and recycling for large lists. Avoid clearing and
+  repopulating collections on every change; use a reset only for a measured
+  large replacement and restore user state when necessary.
+- Use the existing hand-written MVVM patterns first. Add CommunityToolkit.Mvvm
+  only if its benefits justify a dependency change. `ICollectionView`, WPF
+  dispatching, theme resources, and chart controls belong in WPF adapters/views,
+  not portable domain logic.
+- View-model tests can run off Windows only if the tested code is actually in a
+  non-Windows target. Merely removing WPF references from a type inside the
+  Windows-only overlay assembly does not make its tests portable.
 
-## 8. Testing payoff
+## Incremental delivery
 
-Today `EqLog.Overlay.Tests` is Windows-only WPF testing. After conversion, filter logic,
-selection state, and command behavior become plain xUnit tests using the existing
-fake-port patterns from `EqLog.Application.Tests`. Target: every VM has a non-Windows test
-covering its commands (fake services), one event apply (synthetic frame), and query
-projection (read model → collection).
+1. **Baseline and coordinator.** Record idle and active behavior; add change
+   signals, generation/version handling, bounded coalescing, and targeted clock
+   advancement behind the existing presentation path. Keep the old frame pump
+   for panels not yet migrated. Verify no lost updates during replay, resets,
+   session switches, or in-flight queries.
+2. **DPS pilot.** Introduce stable fight identities and bound fight/attacker
+   view models. Replace `DpsFightList`'s manual row controls with templates;
+   preserve 20-fight ordering, simultaneous expansions, the saved checkbox,
+   live inline charts, click behavior, and scroll state. Prove an unchanged
+   snapshot causes no collection or property notifications.
+3. **Time-sensitive and small overlays.** Migrate spell/spawn timers and alerts,
+   then other simple panels. Exercise countdowns and expiry with a fake clock;
+   retain smoothness and replay semantics without a global redraw.
+4. **Inventory and browsers.** Correct item-property notifications and migrate
+   inventory, loot quests, NPC, Sky, mob info, exaltations, and tradeskills.
+   Preserve filtering, asynchronous cancellation, progress/error reporting,
+   selection and list virtualization.
+5. **Remaining UI and retirement.** Migrate leveling, mote planning, settings,
+   and other panels; remove hidden-tab reparenting where replaced. Remove the
+   global frame pump only after every panel and nonvisual responsibility has an
+   event or clock-driven replacement. Keep independent housekeeping and native
+   window behavior.
 
-## 9. Risks and open questions
+Existing panels can coexist with migrated panels during the transition. Do not
+run both paths against the same panel after its cutover.
 
-- **`OverlayPresenters` rewrite is the biggest single chunk** — 821 lines of brush/geometry
-  logic moving into row VMs + converters. Mitigated by doing it in Phase 1 with per-panel
-  fallback until each panel's VM lands.
-- **Frame pump frequency** — keep the existing one-frame-in-flight policy; VM `ApplyFrame`
-  must stay allocation-light (row reuse, not new collections per frame).
-- **Open:** CommunityToolkit.Mvvm vs hand-rolled (recommend toolkit); explicit per-domain
-  CEQ facades vs direct Application calls (recommend direct — boundary tests already enforce
-  the seam, and facades would duplicate the service surface).
+## Verification and acceptance
 
-## 10. Definition of done
-
-- Every overlay has a VM; code-behind holds only window chrome and composition wiring.
-- No hidden-tab XAML adoption remains (`LootQuestsContent` reparenting removed).
-- Boundary tests pass with the new ViewModel rule; `LayerBoundaryTests` unchanged.
-- New non-Windows xUnit coverage for all VMs (commands, event apply, query projection).
-- No behavior change: same panels, same data, same performance budgets
-  (250 ms render, one frame in flight, 8 ms replay budget, 5 ms loot pump).
+- **Idle:** over 60 seconds with no input, pending work, or active time-dependent
+  state, count zero periodic full-frame captures, projections, and unchanged
+  collection/property notifications. Independent housekeeping and visibility
+  checks may still run.
+- **Changes:** verify real log batches, progress-only transitions, session
+  commands/resets, inventory exports, wiki completion/failure, filters, theme
+  changes, and showing a hidden panel update the correct views without new log
+  lines. Verify a change during an in-flight capture produces a later update.
+- **Clock/replay:** use a controllable clock for spell/spawn countdowns, fight
+  timeout, alerts, mob visibility, resistance advancement, and the 30-minute
+  replay transition; verify no skipped side effects or wall-clock drift in replay.
+- **Interaction:** verify duplicate fights and reorder/removal, compact/full
+  inline details, attacker breakdowns, scrolling, selection, chart tabs,
+  sorting, column widths, docking/floating, and theme changes.
+- **Load and reliability:** exercise sustained historical import and rapid
+  batches; compare latency, dispatcher work, allocations, and memory with the
+  baseline. In a deterministic scheduler test, verify a dirty scope is scheduled
+  within 250 ms even during continuous input, with at most one queued and one
+  in-flight operation per scope. Verify bounded queues, no per-line dispatcher
+  flood, no lost alerts/loot, explicit failures, and clean cancellation/disposal.
+- Keep and extend `PresentationBoundaryTests` and `LayerBoundaryTests`; add
+  focused coordinator and view-model tests plus WPF integration tests. Run
+  existing affected suites at each phase. Record measurements and remaining
+  limits; do not claim idle or responsiveness improvements without measuring.

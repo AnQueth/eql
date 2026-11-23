@@ -63,7 +63,7 @@ public partial class MainWindow
         };
         var toolbar = new StackPanel
         {
-            Margin = new Thickness(0, 4, 0, 4),
+            Margin = new Thickness(0, 2, 0, 2),
             Children =
             {
                 _levelingRange,
@@ -80,7 +80,7 @@ public partial class MainWindow
         var row = new WrapPanel();
         foreach (var control in controls)
         {
-            control.Margin = new Thickness(0, 2, 6, 2);
+            control.Margin = new Thickness(0, 1, 6, 1);
             control.VerticalAlignment = VerticalAlignment.Center;
             row.Children.Add(control);
         }

@@ -6,8 +6,9 @@ public static class TrackingDataReset
     private const string Marker = "tracking-reset.json";
     private static readonly string[] Files =
     [
-        "spell-durations.json", "spawn-timers.json", "motes.json", "mob-resistances.json",
-        "quest-inventory.json", "npc-compendium.json", "leveling-history.json",
+        "spell-durations.json", "spawn-timers.json", "motes.json", "mob-resistances.json", "mob-resistances.json.journal",
+        "mob-resistances.json.checkpoint",
+        "quest-inventory.json", "npc-compendium.json", "leveling-history.json", "leveling-history.jsonl",
     ];
 
     /// <summary>Persists a reset request in <paramref name="folder"/> without changing loaded stores.</summary>

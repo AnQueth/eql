@@ -42,7 +42,7 @@ public partial class MainWindow
         _exaltationSearch = new TextBox
         {
             ToolTip = "Search what it does (string, bard instruments, haste), an exaltation, host item, or location. All words must match.",
-            Margin = new Thickness(0, 0, 0, 6),
+            Margin = new Thickness(0, 0, 0, 3),
         };
         _exaltationSearch.TextChanged += (_, _) =>
         {
@@ -70,7 +70,7 @@ public partial class MainWindow
             Text = "Find an exaltation by what it does. Each card names the exaltation, its effects, " +
                 "and the item carrying it. Locations come from your last /outputfile inventory.",
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 6),
+            Margin = new Thickness(0, 0, 0, 3),
         };
         hint.ToolTip = "Only base-item/effect names are sent to EQLWiki; host names and locations stay local.";
         hint.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
@@ -81,12 +81,12 @@ public partial class MainWindow
                 "Wiki-default matches show expected effects, not confirmed ownership or installation. " +
                 "No match does not mean you do not own it. Check the in-game Find Item window.",
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 8),
+            Margin = new Thickness(0, 0, 0, 4),
         };
         exportLimitation.SetResourceReference(TextBlock.ForegroundProperty, "Pumpkin");
         panel.SetToolbar(new StackPanel
         {
-            Margin = new Thickness(0, 5, 0, 5),
+            Margin = new Thickness(0, 3, 0, 3),
             Children =
             {
                 hint,

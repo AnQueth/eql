@@ -37,7 +37,7 @@ public partial class MainWindow
     {
         var filter = new TextBox
         {
-            Margin = new Thickness(0, 5, 0, 5),
+            Margin = new Thickness(0, 3, 0, 3),
             VerticalContentAlignment = VerticalAlignment.Center,
             ToolTip = "Filter by item name (case-insensitive). Clear to show all. Unlock floating panels to type.",
         };
@@ -75,10 +75,10 @@ public partial class MainWindow
         _mergeFilter = new TextBox
         {
             ToolTip = "Filter by item name or location (case-insensitive). Clear to show all.",
-            Margin = new Thickness(0, 0, 0, 6),
+            Margin = new Thickness(0, 0, 0, 3),
         };
         _mergeFilter.TextChanged += (_, _) => RefreshMergeView(true);
-        _mergeSummary = new FixedLineTextBlock { Margin = new Thickness(0, 0, 0, 6) };
+        _mergeSummary = new FixedLineTextBlock { Margin = new Thickness(0, 0, 0, 3) };
         _mergeSummary.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
         _mergeHost = new StackPanel();
         var mergeTop = new StackPanel { Children = { _mergeFilter, _mergeSummary } };
@@ -89,7 +89,7 @@ public partial class MainWindow
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             Content = _mergeHost,
         };
-        var mergeView = new DockPanel { Margin = new Thickness(2, 6, 2, 2) };
+        var mergeView = new DockPanel { Margin = new Thickness(2, 3, 2, 2) };
         mergeView.Children.Add(mergeTop);
         mergeView.Children.Add(mergeScroll);
 
@@ -316,7 +316,7 @@ public partial class MainWindow
             _overlayToggles[key].IsChecked = true;
             SetOverlayVisible(key, true);
         }
-        if (_settings.Overlays[key].Docked)
+        if (_settings.Overlays[key].Docked || _dock.HasPanel(key))
         {
             ShowDock();
             _dock.RevealPanel(key);

@@ -57,6 +57,22 @@ Overlay tests exercise the actual inventory XAML bindings, read-only columns,
 selection retention, filters, copy-location refresh, splitter and long-list scrolling.
 These do not start the real app or write to your profile.
 
+Game log tailing, inventory export metadata and follow-newest discovery use
+filesystem change notifications. Idle inputs are not repeatedly read or rescanned;
+a 30-second recovery check covers missed notifications and initially missing
+folders. Inventory imports still require stable metadata and validate it again
+before committing. Notifications are coalesced, and watchers are disposed when
+their source changes or the app shuts down. Tracking saves remain dirty-only;
+settings and inventory repositories also compare in-memory content hashes to
+avoid rewriting unchanged snapshots. Periodic saves, retries and final shutdown
+saves remain enabled.
+
+Leveling history, mob resistance observations, the NPC index, item effects, and tradeskill caches append journaled changes
+instead of rewriting their full JSON baselines on each save. Startup compacts journals at
+1 MiB; NPC/resistance checkpoints use a recovery file so an interrupted checkpoint can finish
+before journal replay. Keep the entire data folder together for backup or restore. Older app
+versions cannot read these journaled changes and must not use the same data folder.
+
 Settings lists overlay visibility checkboxes and per-overlay appearance options
 alphabetically by displayed caption. Default placement and runtime presenter order
 remain independent of this settings-only ordering.

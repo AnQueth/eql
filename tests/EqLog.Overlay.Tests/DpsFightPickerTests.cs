@@ -12,35 +12,6 @@ public class DpsFightPickerTests
 {
     private static readonly DateTime Start = new(2026, 10, 27, 12, 0, 0);
 
-    private static FightSnapshot Fight(string target, DateTime start)
-    {
-        return new FightSnapshot(target, start, start, 1, 0, 0, false, true, []);
-    }
-
-    [Fact]
-    public void Build_ListsCurrentFirst_ThenTenNewestFightsByStart()
-    {
-        var fights = Enumerable.Range(0, 12).Select(i => Fight($"mob {i}", Start.AddMinutes(i))).Reverse().Skip(1).Append(Fight("mob 11", Start.AddMinutes(11)));
-
-        var choices = DpsFightChoice.Build(fights);
-
-        Assert.Equal(1 + DpsFightChoice.MaxFights, choices.Count);
-        Assert.Null(choices[0].Key);
-        Assert.Equal(new DpsFightKey("mob 11", Start.AddMinutes(11)), choices[1].Key);
-        Assert.Equal("mob 2", choices[^1].Key!.Target);
-        Assert.Equal(choices.Skip(1).OrderByDescending(c => c.Key!.Start).Select(c => c.Key), choices.Skip(1).Select(c => c.Key));
-    }
-
-    [Fact]
-    public void Key_MatchesSameTargetAndStart_Only()
-    {
-        var key = new DpsFightKey("A Goblin", Start);
-
-        Assert.True(key.Matches(Fight("a goblin", Start)));
-        Assert.False(key.Matches(Fight("a goblin", Start.AddSeconds(1))));
-        Assert.False(key.Matches(Fight("a rat", Start)));
-    }
-
     [Fact]
     public void BreakdownWindow_WithTimeline_AddsDamageTimelineTab()
     {
