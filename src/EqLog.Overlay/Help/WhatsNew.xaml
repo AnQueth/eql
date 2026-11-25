@@ -1,7 +1,24 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.47" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.48" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.48
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released November 25, 2026 at 12:04 AM CT.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Maintenance release
+        </Paragraph>
+        <Paragraph>
+            This update corrects a test-startup problem that blocked installer publication.
+            App styles and controls are unchanged, with no new settings to configure.
+            It includes the NPC history refresh fix described in 1.0.47 and the overlay
+            updates described in 1.0.46 below.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.47
     </Paragraph>

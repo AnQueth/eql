@@ -39,11 +39,21 @@ public sealed class OverlayChromeTests
         {
             try
             {
-                var application = new App
+                bool startupDispatched = false;
+                var application = new System.Windows.Application
                 {
                     ShutdownMode = ShutdownMode.OnExplicitShutdown,
+                    Resources = new ResourceDictionary
+                    {
+                        Source = new Uri("/EqLogOverlay;component/AppResources.xaml", UriKind.Relative),
+                    },
                 };
-                application.InitializeComponent();
+                application.Startup += (_, _) => startupDispatched = true;
+                Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, () =>
+                {
+                });
+                Assert.True(startupDispatched);
+                Assert.Empty(application.Windows);
                 var comboItemStyle = Assert.IsType<Style>(application.Resources[typeof(ComboBoxItem)]);
                 var buttonStyle = Assert.IsType<Style>(application.Resources[typeof(Button)]);
                 var menuItemStyle = Assert.IsType<Style>(application.Resources[typeof(MenuItem)]);

@@ -89,6 +89,8 @@ Use pure-rule tests in Core, fake ports in Application, temporary files/fake HTT
 in Infrastructure, and actual bindings/commands in Overlay. Test shared changes
 across the affected suites. Full-window and updater checks use a disposable profile.
 Do not run simultaneous builds against shared outputs.
+UI style tests load `AppResources.xaml` into a plain WPF `Application`; creating
+`App` would run production startup when the test pumps the dispatcher.
 
 C# uses Allman braces, braced control flow and expanded method bodies.
 Follow [.editorconfig](../.editorconfig); keep comments for non-obvious behavior.
