@@ -171,7 +171,6 @@ public partial class MainWindow
         const string key = "inventory";
         if (!_settings.Overlays[key].Visible)
         {
-            _overlayToggles[key].IsChecked = true;
             SetOverlayVisible(key, true);
         }
         if (_settings.Overlays[key].Docked || _dock.HasPanel(key))

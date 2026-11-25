@@ -17,7 +17,11 @@ public sealed class OverlayMessagePump : IDisposable
     /// <summary>The default pump interval.</summary>
     public static readonly TimeSpan DefaultInterval = TimeSpan.FromMilliseconds(250);
 
-    private static readonly TimeSpan ReplayYieldBudget = TimeSpan.FromMilliseconds(8);
+    /// <summary>
+    /// How often overlays render while log history loads. Every render re-lays out each visible overlay, and the
+    /// intermediate history states are not worth that cost.
+    /// </summary>
+    public static readonly TimeSpan ReplayFrameInterval = TimeSpan.FromSeconds(1);
 
     private readonly IOverlayLogFeed _feed;
     private readonly Dispatcher _dispatcher;
@@ -26,6 +30,7 @@ public sealed class OverlayMessagePump : IDisposable
     private readonly Dictionary<Type, List<object>> _receivers = [];
     private readonly Dictionary<Type, List<object>> _backgroundReceivers = [];
     private readonly object _backgroundGate = new();
+    private Stopwatch? _sinceReplayFrame;
     private bool _pumping;
     private bool _disposed;
 
@@ -149,6 +154,15 @@ public sealed class OverlayMessagePump : IDisposable
         var progress = _feed.Progress;
         Publish(new OverlayTickMessage(now, progress));
 
+        if (progress.CaughtUp)
+        {
+            _sinceReplayFrame = null;
+        }
+        else if (_sinceReplayFrame is { } sinceReplayFrame && sinceReplayFrame.Elapsed < ReplayFrameInterval)
+        {
+            return false;
+        }
+
         var frameReceivers = Receivers<OverlayFrameMessage>(_receivers, null);
         var requirements = FrameRequirements.None;
         foreach (var receiver in frameReceivers)
@@ -166,8 +180,12 @@ public sealed class OverlayMessagePump : IDisposable
             return false;
         }
 
+        if (!progress.CaughtUp)
+        {
+            _sinceReplayFrame = Stopwatch.StartNew();
+        }
+
         var frame = new OverlayFrameMessage(captured, now, progress);
-        var budget = Stopwatch.StartNew();
         foreach (var receiver in frameReceivers)
         {
             if (receiver is IOverlayFrameReceiver { WantsFrames: false })
@@ -176,15 +194,15 @@ public sealed class OverlayMessagePump : IDisposable
             }
 
             receiver.Receive(frame);
-            // While history loads, keep input responsive between receivers.
-            if (!progress.CaughtUp && budget.Elapsed >= ReplayYieldBudget)
+            // While history loads, yield after each overlay so WPF lays out (and updates automation for) one
+            // overlay at a time with input handled in between, instead of one long pass over every overlay.
+            if (!progress.CaughtUp)
             {
                 await Dispatcher.Yield(DispatcherPriority.Background);
                 if (_disposed || revision != _feed.Revision)
                 {
                     return false;
                 }
-                budget.Restart();
             }
         }
 

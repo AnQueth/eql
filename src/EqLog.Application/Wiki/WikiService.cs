@@ -12,6 +12,7 @@ public sealed class WikiService : IAsyncDisposable
     private readonly Dictionary<string, ItemEffectInfo> _itemEffects = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, TradeskillWikiPage> _tradeskills = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _retryAfter = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DateTime> _missingIcons = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _cacheErrors = new(StringComparer.OrdinalIgnoreCase);
     private readonly MobResistanceStore _mobs;
     private readonly IWikiCacheRepository _caches;
@@ -204,6 +205,106 @@ public sealed class WikiService : IAsyncDisposable
                 () => _caches.SaveItemEffectsAsync(result, operation.Cancellation.Token)).ConfigureAwait(false);
             return result;
         }, token);
+    }
+
+    /// <summary>Gets the local path of an item icon or mob portrait, downloading it once through the shared HTTP lane.</summary>
+    /// <param name="key">The item or mob the icon depicts.</param>
+    /// <param name="priority">Scheduler priority for page and image requests.</param>
+    /// <param name="token">Cancels this caller's wait.</param>
+    /// <returns>The cached image path, or null when the wiki has no image for it.</returns>
+    public Task<string?> GetIconAsync(WikiIconKey key, WikiPriority priority, CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        string name = key.Name.Trim();
+        if (key.Kind == WikiIconKind.Item)
+        {
+            name = ItemNames.Normalize(name);
+        }
+        if (name.Length == 0)
+        {
+            return Task.FromResult<string?>(null);
+        }
+        string operationKey = "icon:" + key.Kind + ":" + name;
+        return GetAsync<string?>(operationKey, priority, false, async operation =>
+        {
+            var ct = operation.Cancellation.Token;
+            string fileName = await GetIconFileAsync(key.Kind, name, operation.Context.Priority, ct).ConfigureAwait(false);
+            if (fileName.Length == 0)
+            {
+                return null;
+            }
+            int? width = null;
+            string cacheName = "item-" + fileName;
+            if (key.Kind == WikiIconKind.Mob)
+            {
+                width = WikiImages.MobThumbnailWidth;
+                cacheName = "mob" + width + "-" + fileName;
+            }
+            cacheName = SafeFileName(cacheName);
+            string? path = _caches.FindIcon(cacheName);
+            if (path is not null)
+            {
+                operation.CacheHit = true;
+                return path;
+            }
+            lock (_gate)
+            {
+                if (_missingIcons.GetValueOrDefault(cacheName) > DateTime.UtcNow)
+                {
+                    operation.CacheHit = true;
+                    return null;
+                }
+            }
+            byte[]? data = await _transport.FindImageAsync(WikiImages.ImageUrl(fileName, width), operation.Context, ct)
+                .ConfigureAwait(false);
+            if (data is null)
+            {
+                lock (_gate)
+                {
+                    _missingIcons[cacheName] = DateTime.UtcNow.AddDays(1);
+                }
+                return null;
+            }
+            return await _caches.SaveIconAsync(cacheName, data, ct).ConfigureAwait(false);
+        }, token);
+    }
+
+    /// <summary>Reads the icon file from the item or mob page, refetching pages cached before icons were recorded.</summary>
+    private async Task<string> GetIconFileAsync(WikiIconKind kind, string name, WikiPriority priority, CancellationToken token)
+    {
+        if (kind == WikiIconKind.Item)
+        {
+            var item = await GetItemEffectsAsync(name, priority, false, token).ConfigureAwait(false);
+            if (item.Found && item.IconFile is null)
+            {
+                item = await GetItemEffectsAsync(name, priority, true, token).ConfigureAwait(false);
+            }
+            return item.IconFile ?? "";
+        }
+        var mob = await GetMobAsync(name, priority, false, token).ConfigureAwait(false);
+        if (mob.Found && mob.IconFile is null)
+        {
+            mob = await GetMobAsync(name, priority, true, token).ConfigureAwait(false);
+        }
+        return mob.IconFile ?? "";
+    }
+
+    private static string SafeFileName(string name)
+    {
+        char[] invalid = Path.GetInvalidFileNameChars();
+        var safe = new System.Text.StringBuilder(name.Length);
+        foreach (char c in name)
+        {
+            if (Array.IndexOf(invalid, c) >= 0)
+            {
+                safe.Append('_');
+            }
+            else
+            {
+                safe.Append(c);
+            }
+        }
+        return safe.ToString();
     }
 
     public Task<SkyQuestCatalog> GetSkyAsync(WikiPriority priority, bool force, CancellationToken token)
@@ -469,6 +570,7 @@ public sealed class WikiService : IAsyncDisposable
                 _tradeskills.Clear();
                 _sky = null;
                 _retryAfter.Clear();
+                _missingIcons.Clear();
                 _cacheErrors.Clear();
             }
             await _caches.ResetAsync(_mobs).ConfigureAwait(false);

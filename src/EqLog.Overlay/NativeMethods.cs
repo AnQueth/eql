@@ -41,6 +41,12 @@ internal static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool UnregisterHotKey(IntPtr hWnd, int id);
 
+    public const int ASFW_ANY = -1;
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool AllowSetForegroundWindow(int processId);
+
     [StructLayout(LayoutKind.Sequential)]
     internal struct ChooseColorInfo
     {

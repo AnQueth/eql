@@ -1,0 +1,24 @@
+{
+  "Name": "Thanksgiving Harvest",
+  "Colors": {
+    "NightBackground": "#1A120B",
+    "NightSurface": "#241911",
+    "NightRaised": "#33241A",
+    "NightBorder": "#6B4A2E",
+    "NightText": "#F7ECDD",
+    "NightMuted": "#D2BBA0",
+    "Pumpkin": "#F28C28",
+    "Hover": "#3D2B1E",
+    "Pressed": "#4E3523",
+    "Selection": "#5A3A1E",
+    "Alternate": "#2A1E15",
+    "GridLine": "#3A2A1D",
+    "ScrollThumb": "#7A5A3C",
+    "AccentText": "#1A120B",
+    "OverlayHeader": "#FFB65C",
+    "OverlayDim": "#D2BBA0",
+    "OverlayGood": "#A9C96B",
+    "OverlayWarn": "#F2C14E",
+    "OverlayBad": "#FF7A5C"
+  }
+}

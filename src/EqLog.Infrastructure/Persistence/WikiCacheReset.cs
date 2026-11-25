@@ -6,6 +6,9 @@ namespace EqLog.Infrastructure.Persistence;
 /// <summary>Clears persisted wiki lookups while preserving tracking stores and settings.</summary>
 public static class WikiCacheReset
 {
+    /// <summary>The data subfolder holding downloaded item and mob icons.</summary>
+    public const string IconFolderName = "wiki-icons";
+
     /// <summary>Resets NPC/spell metadata and removes standalone wiki caches, including legacy formats.</summary>
     /// <param name="folder">The application's data folder.</param>
     /// <param name="mobs">The loaded resistance store; callers must first drain wiki writers.</param>
@@ -21,6 +24,11 @@ public static class WikiCacheReset
         })
         {
             File.Delete(Path.Combine(folder, name));
+        }
+        string icons = Path.Combine(folder, IconFolderName);
+        if (Directory.Exists(icons))
+        {
+            Directory.Delete(icons, recursive: true);
         }
     }
 }

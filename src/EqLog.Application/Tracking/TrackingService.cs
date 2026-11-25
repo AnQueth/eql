@@ -9,12 +9,13 @@ public sealed record TrackingStorageLocations(string Folder, string Durations, s
 public sealed record TrackingLoadFailure(string Store, Exception Error);
 public sealed record TrackingStartup(SpellDurationStore Durations, SpawnStore Spawns, MoteStore Motes,
     MobResistanceStore? Mobs, NpcCompendium? Npcs, IReadOnlyList<TrackingLoadFailure> Failures,
-    LevelingHistory? Leveling = null);
+    LevelingHistory? Leveling = null, DateTime? IgnoreLogLinesBefore = null);
 
 public interface ITrackingResetRepository
 {
-    Task RequestAsync(string folder);
+    Task RequestAsync(string folder, DateTime? ignoreLogLinesBefore);
     Task<string?> ApplyPendingAsync(string folder);
+    Task<DateTime?> LoadLogCutoffAsync(string folder, CancellationToken cancellationToken);
 }
 
 /// <summary>Tracking startup, persistence, lazy history and reset requests without exposing storage paths to views.</summary>
@@ -35,10 +36,11 @@ public sealed class TrackingService(ISpellDurationRepository durations, ISpawnRe
         var npcLoad = AttemptAsync("npcs", () => npcs.LoadAsync(locations.Npcs, locations.LegacyNpcs, cancellationToken));
         var levelingLoad = AttemptAsync("leveling", () => leveling.LoadAsync(
             Path.Combine(locations.Folder, "leveling-history.json"), cancellationToken));
-        var all = Task.WhenAll(durationLoad, spawnLoad, moteLoad, mobLoad, npcLoad, levelingLoad);
+        var cutoffLoad = LoadLogCutoffAsync(cancellationToken);
+        var all = Task.WhenAll(durationLoad, spawnLoad, moteLoad, mobLoad, npcLoad, levelingLoad, cutoffLoad);
         if (coreLoaded is not null)
         {
-            await Task.WhenAll(durationLoad, spawnLoad, moteLoad, npcLoad, levelingLoad).ConfigureAwait(false);
+            await Task.WhenAll(durationLoad, spawnLoad, moteLoad, npcLoad, levelingLoad, cutoffLoad).ConfigureAwait(false);
             await coreLoaded(CreateStartup(null)).ConfigureAwait(false);
         }
         await all.ConfigureAwait(false);
@@ -52,7 +54,23 @@ public sealed class TrackingService(ISpellDurationRepository durations, ISpawnRe
                 failures = _loadErrors.Select(pair => new TrackingLoadFailure(pair.Key, pair.Value)).ToArray();
             }
             return new(durationLoad.Result ?? new(), spawnLoad.Result ?? new(), moteLoad.Result ?? new(),
-                loadedMobs, npcLoad.Result, failures, levelingLoad.Result);
+                loadedMobs, npcLoad.Result, failures, levelingLoad.Result, cutoffLoad.Result);
+        }
+    }
+
+    private async Task<DateTime?> LoadLogCutoffAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await reset.LoadLogCutoffAsync(locations.Folder, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            lock (_loadErrors)
+            {
+                _loadErrors["log cutoff"] = ex;
+            }
+            return null;
         }
     }
 
@@ -107,9 +125,10 @@ public sealed class TrackingService(ISpellDurationRepository durations, ISpawnRe
     {
         return npcs.GetAsync(compendium, mob, zone, cancellationToken);
     }
-    public Task RequestResetAsync()
+    /// <param name="ignoreLogLinesBefore">Local time before which log lines stay ignored; null rebuilds from whole logs.</param>
+    public Task RequestResetAsync(DateTime? ignoreLogLinesBefore)
     {
-        return reset.RequestAsync(locations.Folder);
+        return reset.RequestAsync(locations.Folder, ignoreLogLinesBefore);
     }
     public Task<string?> ApplyPendingResetAsync()
     {

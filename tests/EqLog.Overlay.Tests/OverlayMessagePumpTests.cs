@@ -68,6 +68,27 @@ public sealed class OverlayMessagePumpTests
     }
 
     [Fact]
+    public void PumpOnce_WhileHistoryLoads_RendersAtMostOncePerReplayInterval()
+    {
+        RunOnDispatcher(async () =>
+        {
+            var feed = new FakeLogFeed { Progress = new(5, 10, 1, false) };
+            using var pump = new OverlayMessagePump(feed);
+            var log = new List<string>();
+            pump.Subscribe<OverlayFrameMessage>(new FakeFrameReceiver("overlay", log, FrameRequirements.None));
+            pump.Subscribe<OverlayTickMessage>(_ => log.Add("tick"));
+
+            Assert.True(await pump.PumpOnceAsync());
+            Assert.False(await pump.PumpOnceAsync());
+            Assert.Equal(new[] { "tick", "overlay", "tick" }, log);
+
+            feed.Progress = new(10, 10, 1, true);
+            Assert.True(await pump.PumpOnceAsync());
+            Assert.Equal(new[] { "tick", "overlay", "tick", "tick", "overlay" }, log);
+        });
+    }
+
+    [Fact]
     public void ReaderEvents_DeliverBackgroundMessagesNowAndQueueLiveAlerts()
     {
         RunOnDispatcher(async () =>

@@ -141,6 +141,33 @@ public sealed class LogSessionServiceTests
     }
 
     [Fact]
+    public async Task LinesBeforeTheResetCutoffAreNeverProcessed()
+    {
+        var input = new FakeInput();
+        var inventory = new InventoryService(new NoExport(), new NoStorage(), new());
+        await using var sessions = new LogSessionService(input, input, inventory);
+        var processed = new List<string>();
+        sessions.BatchProcessed += batch => processed.AddRange(batch.Lines);
+        var engine = new LogEngine();
+        sessions.Start(File("one", "Que"), engine, new DateTime(2026, 10, 27, 12, 0, 5, 500, DateTimeKind.Local));
+        await input.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        input.Lines!(["[Tue Oct 27 12:00:00 2026] You have entered Blackburrow."]);
+        input.Lines!(
+        [
+            "[Tue Oct 27 12:00:04 2026] You have entered Qeynos.",
+            "[Tue Oct 27 12:00:05 2026] You have entered Freeport.",
+            "[Tue Oct 27 12:00:03 2026] You say, 'kept after the cutoff'",
+        ]);
+        await sessions.StopAsync();
+        Assert.Equal(
+        [
+            "[Tue Oct 27 12:00:05 2026] You have entered Freeport.",
+            "[Tue Oct 27 12:00:03 2026] You say, 'kept after the cutoff'",
+        ], processed);
+        Assert.Equal("Freeport", engine.Snapshot(DateTime.Now).Session.Zone);
+    }
+
+    [Fact]
     public async Task OldSourceCallbacksCannotMutateAStoppedSession()
     {
         var input = new FakeInput();

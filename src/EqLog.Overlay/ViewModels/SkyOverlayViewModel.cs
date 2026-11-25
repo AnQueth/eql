@@ -633,7 +633,7 @@ internal static class SkyOverlayRenderer
             bool known = group.Mob.Length > 0;
             rows.Add(new(known ? group.Mob : "No specific mob listed", $"{group.Items.Count} item{(group.Items.Count == 1 ? "" : "s")}",
                 Bold: true, QuestHeading: true, Wrap: true, Link: known ? WikiLinks.SearchUrl(group.Mob) : null,
-                ToolTip: known ? $"Open {group.Mob} on EQLWiki" : "EQLWiki lists only the zone for these items (typically runes)."));
+                ToolTip: known ? $"Open {group.Mob} on EQLWiki" : "EQLWiki lists only the zone for these items (typically runes).", Mob: group.Mob));
             foreach (var item in group.Items)
             {
                 int owned = progress[item.Quests[0]].First(p => ItemPresentation.Comparer.Equals(p.Item, item.Item)).Owned;
@@ -734,7 +734,7 @@ internal static class SkyOverlayRenderer
             items += needed.Count;
             rows.Add(new(known ? group.Mob : "No specific mob listed", bossHeadings ? $"{needed.Count} item{(needed.Count == 1 ? "" : "s")}" : "",
                 Bold: true, QuestHeading: bossHeadings, Wrap: true, Link: known ? WikiLinks.SearchUrl(group.Mob) : null,
-                ToolTip: known ? $"Open {group.Mob} on EQLWiki" : "EQLWiki lists only the zone for these items (typically runes)."));
+                ToolTip: known ? $"Open {group.Mob} on EQLWiki" : "EQLWiki lists only the zone for these items (typically runes).", Mob: group.Mob));
             rows.AddRange(needed);
         }
         return (bosses, items);

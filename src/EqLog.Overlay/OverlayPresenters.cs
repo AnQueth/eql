@@ -10,7 +10,9 @@ using EqLog.Application.Presentation;
 
 namespace EqLog.Overlay;
 
-public sealed record OverlayContent(string Title, string? Subtitle, IReadOnlyList<OverlayRow> Rows, string? TitleLink = null);
+/// <summary>An overlay's header and rows. <paramref name="TitleMob"/> shows that mob's portrait beside the title.</summary>
+public sealed record OverlayContent(string Title, string? Subtitle, IReadOnlyList<OverlayRow> Rows, string? TitleLink = null,
+    string? TitleMob = null);
 
 public sealed record OverlayDefinition(string Key, string Caption, double Width, double Height, bool AutoScroll, Func<EngineSnapshot, EngineQuerySnapshot, OverlayView, OverlayContent> Render);
 
@@ -171,7 +173,7 @@ public static class OverlayPresenters
                 string previous = upgrade.PreviousRank == 0 ? "+0" : $"+{upgrade.PreviousRank}";
                 string current = upgrade.NewRank == 0 ? "+0" : $"+{upgrade.NewRank}";
                 rows.Add(new(upgrade.Item, $"{previous} to {current}",
-                    Details: upgrade.TimeUtc.ToLocalTime().ToString("g"), Bold: true));
+                    Details: upgrade.TimeUtc.ToLocalTime().ToString("g"), Bold: true, IconItem: upgrade.Item));
             }
         }
 
@@ -218,9 +220,16 @@ public static class OverlayPresenters
                     ? "No HTTP in flight - quest work / cache checks pending" : "Idle", Wrap: true, Foreground: Dim));
         }
         var requestNames = activity.Requests.Select(r => r.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (string operation in activity.Operations.Where(o => !requestNames.Contains(o)))
+        // Background work (such as icon lookups for every spawn and item row) can queue hundreds of operations;
+        // listing them all rebuilt a huge, non-virtualized row list every second and froze the UI.
+        var operations = activity.Operations.Where(o => !requestNames.Contains(o)).ToList();
+        foreach (string operation in operations.Take(MaxRequestRows))
         {
             rows.Add(new(operation, "Processing / cache", Foreground: Dim));
+        }
+        if (operations.Count > MaxRequestRows)
+        {
+            rows.Add(new($"{operations.Count - MaxRequestRows:N0} more operations waiting", Foreground: Dim));
         }
         if (view.QuestWiki is { Queued.Count: > 0 } backlog)
         {
@@ -266,10 +275,30 @@ public static class OverlayPresenters
             "The ≤+N part means this resource works on gear at +N or lower. Motes and fragments work on spells at any rank.\n" +
             "Example: 5/16 ≤+4 means 5 gear points at +4 or lower, or 16 spell points at any rank. " +
             "Values are from the EQLWiki Mote Guide.";
-        rows.Add(new("Tier", "session (all)", Foreground: Header, Bold: true,
-            ExtraColumn: "Owned", ToolTip: valuesTip + "\n\n" + inventoryTip, ValueColumn: "Gear/Spell"));
+        rows.Add(new("Tier", "Session (all)", Foreground: Header, Bold: true,
+            ExtraColumn: "Owned", ToolTip: valuesTip + "\n\n" + inventoryTip, ValueColumn: "Gear/Spell",
+            Tone: OverlayRowTone.TableHeader));
+        int group = -1;
         foreach (var tier in model.Tiers)
         {
+            bool fragment = tier.IsFragment;
+            if (!fragment || group < 0)
+            {
+                group++;
+            }
+
+            var tone = OverlayRowTone.TableRow;
+            if (group % 2 == 1)
+            {
+                tone = OverlayRowTone.TableRowBanded;
+            }
+
+            Brush? foreground = null;
+            if (tier.SessionCount > 0)
+            {
+                foreground = Good;
+            }
+
             string value = tier.Rank.HasValue
                 ? $"{tier.EquipmentPoints}/{tier.SpellPoints} ≤+{tier.MaximumEquipmentRank}" : "?";
             string tip = tier.Rank.HasValue
@@ -278,17 +307,18 @@ public static class OverlayPresenters
                     $"Adds {tier.SpellPoints} points to spells at any rank.\n\n" + inventoryTip
                 : $"No upgrade value is known for {tier.Tier}.\n\n{inventoryTip}";
             rows.Add(new(tier.Tier, $"{tier.SessionCount}  ({tier.AllTimeCount})",
-                Foreground: tier.SessionCount > 0 ? Good : Dim,
+                Foreground: foreground,
                 LootItem: tier.ItemName, ExtraColumn: tier.Owned?.ToString("N0") ?? "?",
-                ToolTip: tip, ValueColumn: value));
+                ToolTip: tip, ValueColumn: value, Tone: tone, Nested: fragment));
         }
 
         rows.Add(new("Total", $"{model.SessionTotal}  ({model.AllTimeTotal})", Bold: true,
-            ExtraColumn: model.OwnedTotal?.ToString("N0") ?? "?", ToolTip: inventoryTip, ValueColumn: ""));
+            ExtraColumn: model.OwnedTotal?.ToString("N0") ?? "?", ToolTip: inventoryTip, ValueColumn: "",
+            Tone: OverlayRowTone.TableTotal));
 
         if (model.Recent.Count > 0)
         {
-            rows.Add(new("Recent", "", Foreground: Header, Bold: true));
+            rows.Add(new("Recent", "", Foreground: Header, Bold: true, QuestHeading: true));
             foreach (var recent in model.Recent)
             {
                 bool isYou = recent.Looter == Names.You;
@@ -301,11 +331,11 @@ public static class OverlayPresenters
 
         if (model.ZoneRates.Count > 0)
         {
-            rows.Add(new("Drops here", "drops / kills", Foreground: Header, Bold: true));
+            rows.Add(new("Drops here", "drops / kills", Foreground: Header, Bold: true, QuestHeading: true));
             foreach (var r in model.ZoneRates)
             {
                 string rate = r.DropRate is double value ? $"  {value:P0}" : "";
-                rows.Add(new(r.Mob, $"{r.Drops}/{r.Kills}{rate}", Link: WikiLinks.SearchUrl(r.Mob)));
+                rows.Add(new(r.Mob, $"{r.Drops}/{r.Kills}{rate}", Link: WikiLinks.SearchUrl(r.Mob), Mob: r.Mob));
             }
         }
 
@@ -330,20 +360,20 @@ public static class OverlayPresenters
             switch (t.State)
             {
                 case SpawnState.Due:
-                    rows.Add(new(t.Mob, $"DUE +{Clock(-(t.RemainingSeconds ?? 0))}{source}", 1, WarnBar, Foreground: Warn, Bold: true, Link: link, SpawnTrack: tracking));
+                    rows.Add(new(t.Mob, $"DUE +{Clock(-(t.RemainingSeconds ?? 0))}{source}", 1, WarnBar, Foreground: Warn, Bold: true, Link: link, SpawnTrack: tracking, Mob: t.Mob));
                     break;
                 case SpawnState.Dead when t.RemainingSeconds is double rem && t.RespawnSeconds is double r:
-                    rows.Add(new(t.Mob, Clock(rem) + source, 1 - (rem / r), rem <= 60 ? WarnBar : TimerBar, Link: link, SpawnTrack: tracking));
+                    rows.Add(new(t.Mob, Clock(rem) + source, 1 - (rem / r), rem <= 60 ? WarnBar : TimerBar, Link: link, SpawnTrack: tracking, Mob: t.Mob));
                     break;
                 case SpawnState.Dead:
                     double ago = t.KilledAt is DateTime k ? (s.Now - k).TotalSeconds : 0;
-                    rows.Add(new(t.Mob, $"dead {Clock(ago)} (learning)", Foreground: Dim, Link: link, SpawnTrack: tracking));
+                    rows.Add(new(t.Mob, $"dead {Clock(ago)} (learning)", Foreground: Dim, Link: link, SpawnTrack: tracking, Mob: t.Mob));
                     break;
                 case SpawnState.Up:
-                    rows.Add(new(t.Mob, $"up  seen {t.SeenAt:HH:mm}", Foreground: Good, Link: link, SpawnTrack: tracking));
+                    rows.Add(new(t.Mob, $"up  seen {t.SeenAt:HH:mm}", Foreground: Good, Link: link, SpawnTrack: tracking, Mob: t.Mob));
                     break;
                 default:
-                    rows.Add(new(t.Mob, t.RespawnSeconds is double rs ? $"~{Clock(rs)}{source}" : "-", Foreground: Dim, Link: link, SpawnTrack: tracking));
+                    rows.Add(new(t.Mob, t.RespawnSeconds is double rs ? $"~{Clock(rs)}{source}" : "-", Foreground: Dim, Link: link, SpawnTrack: tracking, Mob: t.Mob));
                     break;
             }
         }
@@ -451,7 +481,7 @@ public static class OverlayPresenters
         var rows = new List<OverlayRow>();
         foreach (var a in d.EncounterByAttacker.Take(6))
         {
-            rows.Add(new(a.Name, $"{Short(a.Total)}  {a.Percent:0}%", a.Percent / 100, TakenBar, Link: WikiLinks.SearchUrl(a.Name)));
+            rows.Add(new(a.Name, $"{Short(a.Total)}  {a.Percent:0}%", a.Percent / 100, TakenBar, Link: WikiLinks.SearchUrl(a.Name), Mob: a.Name));
         }
 
         rows.Add(new("Session", $"{Short(d.SessionTotal)}", Foreground: Header, Bold: true));
@@ -462,7 +492,7 @@ public static class OverlayPresenters
 
         foreach (var a in d.SessionByAttacker.Take(4))
         {
-            rows.Add(new(a.Name, $"{Short(a.Total)}  {a.Percent:0}%", Foreground: Dim, Link: WikiLinks.SearchUrl(a.Name)));
+            rows.Add(new(a.Name, $"{Short(a.Total)}  {a.Percent:0}%", Foreground: Dim, Link: WikiLinks.SearchUrl(a.Name), Mob: a.Name));
         }
 
         string? sub = d.EncounterStart is null ? null : $"{Short(d.EncounterTotal)} in {Clock(d.EncounterSeconds)}  {Short(d.EncounterDtps)} dtps";

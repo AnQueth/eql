@@ -11,7 +11,7 @@ public sealed class ItemEffectClient(HttpClient http)
         var page = await pages.FindPageAsync(item, token).ConfigureAwait(false);
         if (page is null)
         {
-            return new(item, QuestLookup.PageUrl(item), DateTime.UtcNow, false, [], "");
+            return new(item, QuestLookup.PageUrl(item), DateTime.UtcNow, false, [], "", "");
         }
         var parsed = ItemEffectLookup.Parse(item, page.Value.Title, page.Value.Text, DateTime.UtcNow);
         var effects = new List<ItemEffect>();

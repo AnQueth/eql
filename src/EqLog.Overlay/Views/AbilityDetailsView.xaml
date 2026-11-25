@@ -1,0 +1,382 @@
+<UserControl x:Class="EqLog.Overlay.Views.AbilityDetailsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="clr-namespace:EqLog.Overlay.Views"
+             xmlns:vm="clr-namespace:EqLog.Overlay.ViewModels"
+             Focusable="False">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/EqLogOverlay;component/Styles/InlineDetails.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <views:BoolToVisibilityConverter x:Key="VisibleWhenTrue" />
+            <views:StarLengthConverter x:Key="Star" />
+
+            <!-- Hosts a keyed template; stretches so tables and charts fill their tab. -->
+            <Style x:Key="Slot" TargetType="ContentControl">
+                <Setter Property="Focusable" Value="False" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="VerticalContentAlignment" Value="Stretch" />
+            </Style>
+
+            <!-- Chart and incoming panels: tighter margins in the compact layout. -->
+            <Style x:Key="DetailsPanel" TargetType="DockPanel">
+                <Setter Property="Margin" Value="8" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding Compact}" Value="True">
+                        <Setter Property="Margin" Value="4" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+
+            <!-- Chart descriptions: wrapped, or one trimmed line with the full text as a tooltip when compact. -->
+            <Style x:Key="DetailsInfo" TargetType="TextBlock">
+                <Setter Property="DockPanel.Dock" Value="Top" />
+                <Setter Property="Foreground" Value="{DynamicResource NightMuted}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="Margin" Value="0,0,0,8" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding Compact}" Value="True">
+                        <Setter Property="TextWrapping" Value="NoWrap" />
+                        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                        <Setter Property="Margin" Value="0,0,0,4" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="IncomingSummary" TargetType="TextBlock">
+                <Setter Property="DockPanel.Dock" Value="Top" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="Margin" Value="0,8,0,8" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding Compact}" Value="True">
+                        <Setter Property="TextWrapping" Value="NoWrap" />
+                        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                        <Setter Property="Margin" Value="0,0,0,4" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+
+            <!-- Items placed by second: every item fills a shared cell and lays itself out as Start/Length/Remainder star columns. -->
+            <ItemsPanelTemplate x:Key="SpanItems">
+                <Grid />
+            </ItemsPanelTemplate>
+
+            <!-- A time axis: the start label on the left and tick labels at the end of each slice. -->
+            <DataTemplate x:Key="TimeAxis" DataType="{x:Type vm:TimeAxisViewModel}">
+                <Grid>
+                    <TextBlock Text="{Binding StartLabel}" ToolTip="{Binding StartToolTip}"
+                               Foreground="{DynamicResource NightMuted}" TextTrimming="CharacterEllipsis" />
+                    <ItemsControl ItemsSource="{Binding Ticks}" Focusable="False" ItemsPanel="{StaticResource SpanItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:TimeSlice}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="{Binding Start, Converter={StaticResource Star}}" />
+                                        <ColumnDefinition Width="{Binding Length, Converter={StaticResource Star}}" />
+                                        <ColumnDefinition Width="{Binding Remainder, Converter={StaticResource Star}}" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="1" Text="{Binding Label}" HorizontalAlignment="Right"
+                                               Foreground="{DynamicResource NightMuted}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </DataTemplate>
+
+            <!-- Ability totals. Columns sit outside the visual tree, so the rate header and overheal column bind through a proxy. -->
+            <DataTemplate x:Key="AbilitiesTable" DataType="{x:Type vm:AbilityDetailsViewModel}">
+                <DataGrid x:Name="AbilityTable" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedAbility, Mode=TwoWay}"
+                          IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                          SelectionMode="Single">
+                    <DataGrid.Resources>
+                        <views:BindingProxy x:Key="Details" Data="{Binding}" />
+                    </DataGrid.Resources>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Ability" Binding="{Binding Name}" Width="*" MinWidth="160" />
+                        <DataGridTextColumn Header="Total" Binding="{Binding Total, StringFormat=N0}" Width="Auto" MinWidth="65" />
+                        <DataGridTextColumn Header="{Binding Data.RateLabel, Source={StaticResource Details}}"
+                                            Binding="{Binding PerSecond, StringFormat=N1}" Width="Auto" MinWidth="65" />
+                        <DataGridTextColumn Header="Share %" Binding="{Binding Percent, StringFormat=N1}" Width="Auto" MinWidth="65" />
+                        <DataGridTextColumn Header="Hits" Binding="{Binding Hits, StringFormat=N0}" Width="Auto" MinWidth="65" />
+                        <DataGridTextColumn Header="Crits" Binding="{Binding Crits, StringFormat=N0}" Width="Auto" MinWidth="65" />
+                        <DataGridTextColumn Header="Max" Binding="{Binding MaxHit, StringFormat=N0}" Width="Auto" MinWidth="65" />
+                        <DataGridTextColumn Header="Overheal" Binding="{Binding Overheal, StringFormat=N0}" Width="Auto" MinWidth="65"
+                                            Visibility="{Binding Data.ShowOverheal, Source={StaticResource Details}, Converter={StaticResource VisibleWhenTrue}}" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DataTemplate>
+
+            <!-- Every damage event in time order. -->
+            <DataTemplate x:Key="EventsTable" DataType="{x:Type vm:AbilityDetailsViewModel}">
+                <DataGrid x:Name="EventsTable" ItemsSource="{Binding EventRows}" IsReadOnly="True" AutoGenerateColumns="False"
+                          CanUserAddRows="False" CanUserDeleteRows="False">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Time" Binding="{Binding Time, StringFormat=HH:mm:ss.fff}" Width="Auto" MinWidth="85" />
+                        <DataGridTextColumn Header="Attacker" Binding="{Binding Attacker}" Width="Auto" MinWidth="65" />
+                        <DataGridTextColumn Header="Target" Binding="{Binding Target}" Width="Auto" MinWidth="65" />
+                        <DataGridTextColumn Header="Type" Binding="{Binding Kind}" Width="Auto" MinWidth="65" />
+                        <DataGridTextColumn Header="Source" Binding="{Binding Source}" Width="Auto" MinWidth="65" />
+                        <DataGridTextColumn Header="Damage" Binding="{Binding Amount, StringFormat=N0}" Width="Auto" MinWidth="65" />
+                        <DataGridTextColumn Header="Modifier" Binding="{Binding Modifier}" Width="Auto" MinWidth="65" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DataTemplate>
+
+            <!-- Damage per time bucket, scaled to the peak bucket. -->
+            <DataTemplate x:Key="TimelineChart" DataType="{x:Type vm:DamageTimelineChartViewModel}">
+                <DockPanel x:Name="TimelinePanel" Style="{StaticResource DetailsPanel}">
+                    <TextBlock x:Name="TimelineSummary" Style="{StaticResource DetailsInfo}" Text="{Binding Summary}"
+                               ToolTip="{Binding SummaryToolTip}" />
+                    <ContentControl DockPanel.Dock="Bottom" Margin="0,4,0,0" Style="{StaticResource Slot}"
+                                    Content="{Binding Axis}" ContentTemplate="{StaticResource TimeAxis}" />
+                    <TextBlock DockPanel.Dock="Top" Text="{Binding PeakLabel}" FontSize="11" Foreground="{DynamicResource NightMuted}" />
+                    <Border x:Name="TimelineFrame" BorderThickness="1,0,0,1" BorderBrush="{DynamicResource NightMuted}">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="MinHeight" Value="120" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Compact}" Value="True">
+                                        <Setter Property="MinHeight" Value="50" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <ItemsControl x:Name="TimelineBars" ItemsSource="{Binding Bars}" Focusable="False">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <UniformGrid Rows="1" Columns="{Binding BarColumns}" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemContainerStyle>
+                                <Style TargetType="ContentPresenter">
+                                    <Setter Property="Margin" Value="1,0,1,0" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding DataContext.DenseBars, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                     Value="True">
+                                            <Setter Property="Margin" Value="0.5,0,0.5,0" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ItemsControl.ItemContainerStyle>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:TimelineBar}">
+                                    <Grid Background="Transparent" ToolTip="{Binding ToolTip}">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="{Binding Remainder, Converter={StaticResource Star}}" />
+                                            <RowDefinition Height="{Binding Fraction, Converter={StaticResource Star}}" />
+                                        </Grid.RowDefinitions>
+                                        <Border Grid.Row="1" Background="{DynamicResource Pumpkin}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+                </DockPanel>
+            </DataTemplate>
+
+            <!-- One damage type: its name, then its stretches across the fight over slice guide lines. -->
+            <DataTemplate x:Key="LaneRow" DataType="{x:Type vm:DamageLaneViewModel}">
+                <Grid Height="24">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="LaneName" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="LaneName" Text="{Binding Name}" ToolTip="{Binding ToolTip}" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" Margin="0,0,10,0">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="MaxWidth" Value="210" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding DataContext.Compact, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                 Value="True">
+                                        <Setter Property="MaxWidth" Value="80" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <Grid x:Name="LaneTrack" Grid.Column="1" Margin="0,2,0,2">
+                        <Border Background="{DynamicResource NightMuted}" Opacity="0.18" />
+                        <ItemsControl x:Name="LaneSegments" ItemsSource="{Binding Segments}" Focusable="False"
+                                      ItemsPanel="{StaticResource SpanItems}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:LaneSegment}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="{Binding Start, Converter={StaticResource Star}}" />
+                                            <ColumnDefinition Width="{Binding Length, Converter={StaticResource Star}}" />
+                                            <ColumnDefinition Width="{Binding Remainder, Converter={StaticResource Star}}" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid Grid.Column="1" Background="Transparent" ToolTip="{Binding ToolTip}">
+                                            <Border Background="{DynamicResource Pumpkin}" Opacity="0.55" Margin="0,4,0,4" />
+                                            <Border Width="2" HorizontalAlignment="Left" Background="{DynamicResource NightText}" />
+                                            <Border Width="2" HorizontalAlignment="Right" Background="{DynamicResource NightText}" />
+                                        </Grid>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <ItemsControl x:Name="LaneGuides" ItemsSource="{Binding Guides}" Focusable="False" IsHitTestVisible="False"
+                                      ItemsPanel="{StaticResource SpanItems}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:TimeSlice}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="{Binding Start, Converter={StaticResource Star}}" />
+                                            <ColumnDefinition Width="{Binding Length, Converter={StaticResource Star}}" />
+                                            <ColumnDefinition Width="{Binding Remainder, Converter={StaticResource Star}}" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border Grid.Column="1" BorderThickness="0,0,1,0" BorderBrush="{DynamicResource NightMuted}" Opacity="0.55"
+                                                Visibility="{Binding ShowGuide, Converter={StaticResource VisibleWhenTrue}}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Grid>
+                </Grid>
+            </DataTemplate>
+
+            <!-- Damage type lanes. The scroll viewer stays alive across refreshes so the user's offset survives. -->
+            <DataTemplate x:Key="LanesChart" DataType="{x:Type vm:AbilityDetailsViewModel}">
+                <DockPanel x:Name="LanesPanel" Style="{StaticResource DetailsPanel}">
+                    <TextBlock x:Name="LanesDescription" Style="{StaticResource DetailsInfo}" Text="{Binding LanesDescription}"
+                               ToolTip="{Binding LanesDescriptionToolTip}" />
+                    <ScrollViewer x:Name="LaneScroll" VerticalScrollBarVisibility="Auto" Focusable="False">
+                        <StackPanel Grid.IsSharedSizeScope="True">
+                            <ItemsControl x:Name="LaneRows" ItemsSource="{Binding Lanes}" Focusable="False"
+                                          ItemTemplate="{StaticResource LaneRow}" />
+                            <Grid Margin="0,4,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LaneName" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <ContentControl x:Name="LaneAxis" Grid.Column="1" Content="{Binding LaneAxis}"
+                                                ContentTemplate="{StaticResource TimeAxis}">
+                                    <ContentControl.Style>
+                                        <Style TargetType="ContentControl" BasedOn="{StaticResource Slot}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Compact}" Value="True">
+                                                    <Setter Property="FontSize" Value="10" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ContentControl.Style>
+                                </ContentControl>
+                            </Grid>
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+            </DataTemplate>
+
+            <!-- Drops the lanes view while there are no damage types, so lanes that return start at the top. -->
+            <Style x:Key="LanesSlot" TargetType="ContentControl" BasedOn="{StaticResource Slot}">
+                <Setter Property="ContentTemplate" Value="{StaticResource LanesChart}" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding HasLanes}" Value="False">
+                        <Setter Property="ContentTemplate" Value="{x:Null}" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+
+            <!-- Damage the player took from the selected enemy, shown as a nested breakdown. -->
+            <DataTemplate x:Key="IncomingDamage" DataType="{x:Type vm:AbilityDetailsViewModel}">
+                <DockPanel x:Name="IncomingPanel" Style="{StaticResource DetailsPanel}">
+                    <TextBlock x:Name="IncomingSummary" Style="{StaticResource IncomingSummary}" Text="{Binding IncomingSummary}"
+                               ToolTip="{Binding IncomingSummaryToolTip}" />
+                    <ContentControl x:Name="IncomingDetails" Style="{StaticResource Slot}" Content="{Binding Incoming}">
+                        <ContentControl.ContentTemplate>
+                            <DataTemplate DataType="{x:Type vm:AbilityDetailsViewModel}">
+                                <views:AbilityDetailsView />
+                            </DataTemplate>
+                        </ContentControl.ContentTemplate>
+                    </ContentControl>
+                </DockPanel>
+            </DataTemplate>
+
+            <!-- Tab contents are element instances, so each tab keeps its scroll, sort and column state while hidden. -->
+            <DataTemplate x:Key="Tabbed" DataType="{x:Type vm:AbilityDetailsViewModel}">
+                <TabControl x:Name="DetailsTabs" SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
+                    <TabItem Header="Abilities">
+                        <ContentControl Style="{StaticResource Slot}" Content="{Binding}" ContentTemplate="{StaticResource AbilitiesTable}" />
+                    </TabItem>
+                    <TabItem Header="Damage timeline">
+                        <ContentControl Style="{StaticResource Slot}" Content="{Binding Timeline}" ContentTemplate="{StaticResource TimelineChart}" />
+                    </TabItem>
+                    <TabItem Header="Damage types" Visibility="{Binding HasLanes, Converter={StaticResource VisibleWhenTrue}}">
+                        <ContentControl Style="{StaticResource LanesSlot}" Content="{Binding}" />
+                    </TabItem>
+                    <TabItem Header="Damage data" Visibility="{Binding HasEvents, Converter={StaticResource VisibleWhenTrue}}">
+                        <ContentControl Style="{StaticResource Slot}" Content="{Binding}" ContentTemplate="{StaticResource EventsTable}" />
+                    </TabItem>
+                    <TabItem Header="Incoming damage" Visibility="{Binding HasIncoming, Converter={StaticResource VisibleWhenTrue}}">
+                        <ContentControl Style="{StaticResource Slot}" Content="{Binding}" ContentTemplate="{StaticResource IncomingDamage}" />
+                    </TabItem>
+                </TabControl>
+            </DataTemplate>
+
+            <!-- Inline overlays: one header row of short, trimmed titles; the full title is the tooltip and automation name. -->
+            <DataTemplate x:Key="CompactTabbed" DataType="{x:Type vm:AbilityDetailsViewModel}">
+                <TabControl x:Name="DetailsTabs" Style="{StaticResource InlineDpsDetailsTabs}"
+                            SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
+                    <TabItem Padding="3" Margin="0" FontSize="12" ToolTip="Abilities" AutomationProperties.Name="Abilities">
+                        <TabItem.Header>
+                            <TextBlock Text="Abilities" TextTrimming="CharacterEllipsis" />
+                        </TabItem.Header>
+                        <ContentControl Style="{StaticResource Slot}" Content="{Binding}" ContentTemplate="{StaticResource AbilitiesTable}" />
+                    </TabItem>
+                    <TabItem Padding="3" Margin="0" FontSize="12" ToolTip="Damage timeline" AutomationProperties.Name="Damage timeline">
+                        <TabItem.Header>
+                            <TextBlock Text="Timeline" TextTrimming="CharacterEllipsis" />
+                        </TabItem.Header>
+                        <ContentControl Style="{StaticResource Slot}" Content="{Binding Timeline}" ContentTemplate="{StaticResource TimelineChart}" />
+                    </TabItem>
+                    <TabItem Padding="3" Margin="0" FontSize="12" ToolTip="Damage types" AutomationProperties.Name="Damage types"
+                             Visibility="{Binding HasLanes, Converter={StaticResource VisibleWhenTrue}}">
+                        <TabItem.Header>
+                            <TextBlock Text="Types" TextTrimming="CharacterEllipsis" />
+                        </TabItem.Header>
+                        <ContentControl Style="{StaticResource LanesSlot}" Content="{Binding}" />
+                    </TabItem>
+                    <TabItem Padding="3" Margin="0" FontSize="12" ToolTip="Damage data" AutomationProperties.Name="Damage data"
+                             Visibility="{Binding HasEvents, Converter={StaticResource VisibleWhenTrue}}">
+                        <TabItem.Header>
+                            <TextBlock Text="Events" TextTrimming="CharacterEllipsis" />
+                        </TabItem.Header>
+                        <ContentControl Style="{StaticResource Slot}" Content="{Binding}" ContentTemplate="{StaticResource EventsTable}" />
+                    </TabItem>
+                    <TabItem Padding="3" Margin="0" FontSize="12" ToolTip="Incoming damage" AutomationProperties.Name="Incoming damage"
+                             Visibility="{Binding HasIncoming, Converter={StaticResource VisibleWhenTrue}}">
+                        <TabItem.Header>
+                            <TextBlock Text="Taken" TextTrimming="CharacterEllipsis" />
+                        </TabItem.Header>
+                        <ContentControl Style="{StaticResource Slot}" Content="{Binding}" ContentTemplate="{StaticResource IncomingDamage}" />
+                    </TabItem>
+                </TabControl>
+            </DataTemplate>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <!-- Without a timeline the view is just the ability table; otherwise the table and graphs share tabs. -->
+    <ContentControl x:Name="DetailsRoot" Content="{Binding}">
+        <ContentControl.Style>
+            <Style TargetType="ContentControl" BasedOn="{StaticResource Slot}">
+                <Setter Property="ContentTemplate" Value="{StaticResource AbilitiesTable}" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding HasTabs}" Value="True">
+                        <Setter Property="ContentTemplate" Value="{StaticResource Tabbed}" />
+                    </DataTrigger>
+                    <MultiDataTrigger>
+                        <MultiDataTrigger.Conditions>
+                            <Condition Binding="{Binding HasTabs}" Value="True" />
+                            <Condition Binding="{Binding Compact}" Value="True" />
+                        </MultiDataTrigger.Conditions>
+                        <Setter Property="ContentTemplate" Value="{StaticResource CompactTabbed}" />
+                    </MultiDataTrigger>
+                </Style.Triggers>
+            </Style>
+        </ContentControl.Style>
+    </ContentControl>
+</UserControl>

@@ -92,6 +92,7 @@ public partial class MainWindow
                 }
                 _spawnsSignature = "";
                 _durationsSignature = "";
+                _wikiIcons?.Reset();
                 RefreshMergeView();
             }).Task.Unwrap(), _tracking);
             ResetWikiCacheStatus.Text = "All wiki caches reset. Next lookups fetch fresh information; tracking history and settings are unchanged.";
@@ -118,6 +119,10 @@ public partial class MainWindow
             viewModel is ViewModels.MobInfoOverlayViewModel mobInfo)
         {
             mobInfo.RefreshAfterWikiCacheReset();
+        }
+        if (!WikiLookupPaused)
+        {
+            _wikiIcons?.ResumePending();
         }
     }
 

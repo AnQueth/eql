@@ -440,6 +440,47 @@ public sealed class WikiCacheRepository(string folder, bool mobWritesAllowed = t
         }
     }
 
+    private string IconFolder { get; } = Path.Combine(folder, WikiCacheReset.IconFolderName);
+
+    public string? FindIcon(string cacheName)
+    {
+        string path = IconPath(cacheName);
+        if (File.Exists(path))
+        {
+            return path;
+        }
+        return null;
+    }
+
+    public async Task<string> SaveIconAsync(string cacheName, byte[] data, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        string path = IconPath(cacheName);
+        Directory.CreateDirectory(IconFolder);
+        string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await File.WriteAllBytesAsync(temporary, data, cancellationToken).ConfigureAwait(false);
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(temporary);
+        }
+        return path;
+    }
+
+    private string IconPath(string cacheName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(cacheName);
+        if (Path.GetFileName(cacheName) != cacheName || cacheName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+            cacheName.StartsWith('.'))
+        {
+            throw new ArgumentException("Icon cache names must be plain file names.", nameof(cacheName));
+        }
+        return Path.Combine(IconFolder, cacheName);
+    }
+
     private static bool IsStorageFailure(Exception error)
     {
         return error is IOException or UnauthorizedAccessException or JsonException;

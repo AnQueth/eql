@@ -67,6 +67,22 @@ public sealed class ItemEffectLookupTests
             """, DateTime.UtcNow);
         Assert.True(result.Found);
         Assert.Empty(result.Effects);
+        Assert.Equal("", result.IconFile);
+    }
+
+    [Fact]
+    public void Parse_IconFromLucyImageId_AndMobPortraitFileName()
+    {
+        var item = ItemEffectLookup.Parse("Cap", "Cap", "{{Itempage\n|lucy_img_ID = 590\n}}", DateTime.UtcNow);
+        var mob = MobWikiLookup.ParseMob("Cazic", "{{Namedmobpage\n| imagefilename = npc cazic.png\n}}", DateTime.UtcNow);
+        var unsafeMob = MobWikiLookup.ParseMob("Bad", "{{Namedmobpage\n| imagefilename = ../x.png\n}}", DateTime.UtcNow);
+
+        Assert.Equal("Item_590.png", item.IconFile);
+        Assert.Equal("Npc_cazic.png", mob.IconFile);
+        Assert.Equal("", unsafeMob.IconFile);
+        Assert.Equal("https://eqlwiki.com/images/1/13/Item_590.png", WikiImages.ImageUrl("Item_590.png", null));
+        Assert.Equal("https://eqlwiki.com/images/thumb/7/75/Npc_Cazic.png/48px-Npc_Cazic.png",
+            WikiImages.ImageUrl("Npc_Cazic.png", WikiImages.MobThumbnailWidth));
     }
 
     [Fact]

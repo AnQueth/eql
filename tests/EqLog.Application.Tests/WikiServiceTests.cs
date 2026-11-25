@@ -91,6 +91,51 @@ public sealed class WikiServiceTests
         Assert.Same(first, second);
     }
 
+    [Fact]
+    public async Task ItemIconDownloadsOnceFromHashedPathThenUsesCache()
+    {
+        var transport = new Transport { ItemIcon = "Item_590.png", Image = [0x89, 0x50, 0x4E, 0x47] };
+        var caches = new Caches();
+        await using var service = new WikiService(transport, new(), caches);
+        var key = new WikiIconKey(WikiIconKind.Item, "Cloth Cap");
+
+        string? first = await service.GetIconAsync(key, WikiPriority.Background, default);
+        string? second = await service.GetIconAsync(new WikiIconKey(WikiIconKind.Item, "Cloth Cap +4"), WikiPriority.Background, default);
+
+        Assert.Equal("icons/item-Item_590.png", first);
+        Assert.Equal(first, second);
+        Assert.Equal(["https://eqlwiki.com/images/1/13/Item_590.png"], transport.ImageUrls);
+        Assert.Equal(1, transport.ItemFetches);
+    }
+
+    [Fact]
+    public async Task MissingIconImageIsNotRequestedAgain()
+    {
+        var transport = new Transport { ItemIcon = "Item_590.png" };
+        await using var service = new WikiService(transport, new(), new Caches());
+        var key = new WikiIconKey(WikiIconKind.Item, "Cloth Cap");
+
+        Assert.Null(await service.GetIconAsync(key, WikiPriority.Background, default));
+        Assert.Null(await service.GetIconAsync(key, WikiPriority.Background, default));
+
+        Assert.Single(transport.ImageUrls);
+    }
+
+    [Fact]
+    public async Task ItemCachedBeforeIconsRefetchesPageOnceForIcon()
+    {
+        var transport = new Transport { ItemIcon = "", Image = [1] };
+        await using var service = new WikiService(transport, new(), new Caches());
+        service.SeedItemEffects(new("Cloth Cap", "", DateTime.UtcNow, true, [], ""));
+        var key = new WikiIconKey(WikiIconKind.Item, "Cloth Cap");
+
+        Assert.Null(await service.GetIconAsync(key, WikiPriority.Background, default));
+        Assert.Null(await service.GetIconAsync(key, WikiPriority.Background, default));
+
+        Assert.Equal(1, transport.ItemFetches);
+        Assert.Empty(transport.ImageUrls);
+    }
+
     private sealed class Caches : IWikiCacheRepository
     {
         public IReadOnlyList<string> LoadWarnings { get; } = [];
@@ -148,11 +193,43 @@ public sealed class WikiServiceTests
         {
             return Task.CompletedTask;
         }
+        public Dictionary<string, byte[]> Icons { get; } = [];
+        public string? FindIcon(string cacheName)
+        {
+            if (Icons.ContainsKey(cacheName))
+            {
+                return "icons/" + cacheName;
+            }
+            return null;
+        }
+        public Task<string> SaveIconAsync(string cacheName, byte[] data, CancellationToken cancellationToken = default)
+        {
+            Icons[cacheName] = data;
+            return Task.FromResult("icons/" + cacheName);
+        }
     }
 
     private sealed class Transport : IWikiTransport
     {
         private readonly List<WikiActivityEvent> _events = [];
+        public List<string> ImageUrls { get; } = [];
+        public byte[]? Image
+        {
+            get; set;
+        }
+        public string? ItemIcon
+        {
+            get; set;
+        }
+        public int ItemFetches
+        {
+            get; private set;
+        }
+        public Task<byte[]?> FindImageAsync(string url, WikiRequestContext context, CancellationToken cancellationToken)
+        {
+            ImageUrls.Add(url);
+            return Task.FromResult(Image);
+        }
         public int Fetches
         {
             get; private set;
@@ -200,7 +277,8 @@ public sealed class WikiServiceTests
         }
         public Task<ItemEffectInfo> FindItemEffectsAsync(string item, WikiRequestContext context, CancellationToken cancellationToken)
         {
-            throw new NotSupportedException();
+            ItemFetches++;
+            return Task.FromResult(new ItemEffectInfo(item, "", DateTime.UtcNow, true, [], "", ItemIcon));
         }
         public Task<SkyQuestCatalog> FindSkyAsync(WikiRequestContext context, CancellationToken cancellationToken)
         {

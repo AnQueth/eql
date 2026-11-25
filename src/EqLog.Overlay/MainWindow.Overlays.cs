@@ -155,7 +155,7 @@ public partial class MainWindow
         {
             HistoryProgress.Tag = $"Loading log history {progress:P0}";
         }
-        _dock.SetLoadingNotice(loading ? _historyNotice : null);
+        _dock.SetLoadingNotice(loading ? HistoryProgress : null);
         var progressVisibility = loading ? Visibility.Visible : Visibility.Hidden;
         if (HistoryProgress.Visibility != progressVisibility)
         {
@@ -306,6 +306,11 @@ public partial class MainWindow
             {
                 return shell.WikiLookupPaused;
             }
+        }
+
+        public WikiIconViewModel? GetWikiIcon(WikiIconKey key)
+        {
+            return shell._wikiIcons?.Get(key);
         }
 
         public IOverlayWikiLookupLease BeginLookup()

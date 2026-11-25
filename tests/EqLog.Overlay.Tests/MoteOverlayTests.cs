@@ -180,8 +180,22 @@ public sealed class MoteOverlayTests
         Assert.Equal(knownAndUnknownTiers.SelectMany(tier => new[] { tier, MoteTiers.FragmentItemName(tier) }),
             tiers.Select(row => row.Left));
 
-        Assert.Equal(("Tier", "Gear/Spell", "session (all)", "Owned"),
+        Assert.Equal(("Tier", "Gear/Spell", "Session (all)", "Owned"),
             (content.Rows[0].Left, content.Rows[0].ValueColumn, content.Rows[0].Right, content.Rows[0].ExtraColumn));
+        Assert.Equal(OverlayRowTone.TableHeader, content.Rows[0].Tone);
+        Assert.Equal(OverlayRowTone.TableTotal, content.Rows.Single(row => row.Left == "Total").Tone);
+        for (int index = 0; index < tiers.Length; index++)
+        {
+            int group = index / 2;
+            var expectedTone = OverlayRowTone.TableRow;
+            if (group % 2 == 1)
+            {
+                expectedTone = OverlayRowTone.TableRowBanded;
+            }
+
+            Assert.Equal(expectedTone, tiers[index].Tone);
+            Assert.Equal(index % 2 == 1, tiers[index].Nested);
+        }
         Assert.Contains("the first number is for gear; the second is for spells", content.Rows[0].ToolTip);
         Assert.Contains("5/16 ≤+4 means 5 gear points at +4 or lower", content.Rows[0].ToolTip);
         var byTier = tiers.ToDictionary(row => row.Left, StringComparer.OrdinalIgnoreCase);

@@ -44,6 +44,9 @@ public sealed class WikiCacheResetTests : IDisposable
         {
             await File.WriteAllTextAsync(Path.Combine(_folder, name), "keep");
         }
+        string iconFolder = Path.Combine(_folder, WikiCacheReset.IconFolderName);
+        Directory.CreateDirectory(iconFolder);
+        await File.WriteAllBytesAsync(Path.Combine(iconFolder, "item-Item_1.png"), [1]);
         // Include an unsaved spell so a subsequent save cannot append stale pending metadata.
         store.SetSpell(new("Pending", ResistanceType.Cold, "url", DateTime.UtcNow));
 
@@ -53,6 +56,7 @@ public sealed class WikiCacheResetTests : IDisposable
         Assert.Null(store.Get("Zone", "NPC").Wiki);
         Assert.Null(store.GetSpell("Spell"));
         Assert.Null(store.GetSpell("Pending"));
+        Assert.False(Directory.Exists(iconFolder));
         foreach (string name in caches.Append("spell-info.jsonl"))
         {
             Assert.False(File.Exists(Path.Combine(_folder, name)));

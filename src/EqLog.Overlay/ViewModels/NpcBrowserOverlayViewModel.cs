@@ -778,7 +778,7 @@ public sealed class NpcBrowserOverlayViewModel : OverlayViewModel, IDisposable
         {
             rows.AddRange(MobInfoOverlayViewModel.MobQuestRows(resistanceInfo.Wiki));
         }
-        Show(new(mob, zone, rows, WikiLinks.SearchUrl(mob)));
+        Show(new(mob, zone, rows, WikiLinks.SearchUrl(mob), mob));
     }
 
     private void AddNpcOverviewRows(List<OverlayRow> rows, NpcReadModel? entry, string mob, string zone)

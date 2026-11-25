@@ -20,6 +20,12 @@ public sealed class OverlayWindow : Window
     private bool _textInteraction;
     private bool _dragInteraction;
 
+    /// <summary>Hides the floating overlay window from accessibility tools; see <see cref="Views.HiddenAutomationPeer"/>.</summary>
+    protected override System.Windows.Automation.Peers.AutomationPeer OnCreateAutomationPeer()
+    {
+        return new Views.HiddenWindowAutomationPeer(this);
+    }
+
     public OverlayWindow(OverlayPanel panel)
     {
         Panel = panel;

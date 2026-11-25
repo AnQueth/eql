@@ -67,6 +67,9 @@ public interface IWikiTransport : IAsyncDisposable
     Task<SkyQuestCatalog> FindSkyAsync(WikiRequestContext context, CancellationToken cancellationToken);
     Task<TradeskillWikiPage> FindTradeskillAsync(TradeskillPageKind kind, string title,
         WikiRequestContext context, CancellationToken cancellationToken);
+
+    /// <summary>Downloads an image upload; null when it does not exist, is too large, or is not an image.</summary>
+    Task<byte[]?> FindImageAsync(string url, WikiRequestContext context, CancellationToken cancellationToken);
 }
 
 public interface IWikiCacheRepository
@@ -86,4 +89,11 @@ public interface IWikiCacheRepository
     Task SaveTradeskillAsync(TradeskillWikiPage result, CancellationToken cancellationToken = default);
     Task FlushAsync(CancellationToken cancellationToken = default);
     Task ResetAsync(MobResistanceStore mobs, CancellationToken cancellationToken = default);
+
+    /// <summary>The local path of a downloaded icon, or null when it has not been downloaded.</summary>
+    /// <param name="cacheName">A file name made only of safe characters, as built by <see cref="WikiService"/>.</param>
+    string? FindIcon(string cacheName);
+
+    /// <summary>Stores a downloaded icon and returns its local path.</summary>
+    Task<string> SaveIconAsync(string cacheName, byte[] data, CancellationToken cancellationToken = default);
 }

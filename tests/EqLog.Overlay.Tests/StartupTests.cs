@@ -77,6 +77,7 @@ internal static class StartupTests
         Assert.True(panel.Header.IsEnabled);
         Assert.True(controller.OverlayAppearance.IsEnabled);
         Assert.False(controller.BrowseLogButton.IsEnabled);
+        VerifySettingsPanelBindings(controller, settings, panel);
 
         panel.ViewModel.ToggleDockCommand.Execute(null);
         PumpUntil(() => !dock.HasPanel("inventory"), () => "Inventory remained docked after Pop out.");
@@ -145,6 +146,64 @@ internal static class StartupTests
         Assert.True(settingsRepository.Saves > 0);
         Assert.Equal(0, inventoryRepository.Saves);
         Assert.False(pending.Task.IsCompleted);
+    }
+
+    private static void VerifySettingsPanelBindings(MainWindow controller, AppSettings settings, OverlayPanel inventory)
+    {
+        var toggles = Visuals(controller.OverlayToggles).OfType<CheckBox>().ToArray();
+        var visible = toggles.Single(box => Equals(box.Tag, "inventory"));
+        Assert.True(visible.IsChecked);
+        ToggleLikeUser(visible);
+        Assert.False(settings.Overlays["inventory"].Visible);
+        ToggleLikeUser(visible);
+        Assert.True(settings.Overlays["inventory"].Visible);
+        var row = (FrameworkElement)VisualTreeHelper.GetParent(visible);
+        Assert.True(Visuals(row).OfType<CheckBox>().Single(box => Equals(box.Content, "docked")).IsChecked);
+        var workspace = Visuals(row).OfType<ComboBox>().Single();
+        Assert.Equal(settings.DockWindow.Workspaces.Single(item => !item.Deleted).Name,
+            Assert.IsType<DockWorkspaceChoice>(workspace.SelectedItem).Name);
+
+        var channel = Visuals(controller.ChatToggles).OfType<CheckBox>().First();
+        var name = Enum.Parse<EqLog.Core.Parsing.ChatChannel>((string)channel.Content);
+        bool wasEnabled = settings.ChatChannels.Contains(name);
+        Assert.Equal(wasEnabled, channel.IsChecked == true);
+        ToggleLikeUser(channel);
+        Assert.Equal(!wasEnabled, settings.ChatChannels.Contains(name));
+        ToggleLikeUser(channel);
+        Assert.Equal(wasEnabled, settings.ChatChannels.Contains(name));
+
+        var outer = (Expander)controller.OverlayAppearance.Parent;
+        outer.IsExpanded = true;
+        controller.SettingsRoot.UpdateLayout();
+        var appearance = Visuals(controller.OverlayAppearance).OfType<Expander>()
+            .Single(expander => Equals(expander.Header, inventory.ViewModel.Caption));
+        appearance.IsExpanded = true;
+        controller.SettingsRoot.UpdateLayout();
+        var sliders = Visuals(appearance).OfType<Slider>().ToArray();
+        Assert.Equal(3, sliders.Length);
+        sliders[0].Value = 16;
+        Assert.Equal(16, settings.Overlays["inventory"].FontSize);
+        Assert.Equal(16, inventory.ViewModel.FontSize);
+        inventory.ViewModel.BackgroundOpacity = 0.5;
+        controller.SettingsRoot.UpdateLayout();
+        Assert.Equal(0.5, sliders[1].Value);
+        Assert.Equal(0.5, settings.Overlays["inventory"].BackgroundOpacity);
+        Assert.Contains(Visuals(appearance).OfType<TextBlock>(),
+            text => text.Text == 0.5.ToString("P0", System.Globalization.CultureInfo.CurrentCulture));
+        Assert.Contains(Visuals(appearance).OfType<TextBlock>(), text => text.Text == "16 pt");
+        var locked = Visuals(appearance).OfType<CheckBox>().Single();
+        Assert.Equal(settings.Overlays["inventory"].Locked == true, locked.IsChecked == true);
+        ToggleLikeUser(locked);
+        Assert.Equal(locked.IsChecked == true, settings.Overlays["inventory"].Locked);
+        ToggleLikeUser(locked);
+        appearance.IsExpanded = false;
+        outer.IsExpanded = false;
+    }
+
+    private static void ToggleLikeUser(CheckBox box)
+    {
+        var peer = new System.Windows.Automation.Peers.CheckBoxAutomationPeer(box);
+        ((System.Windows.Automation.Provider.IToggleProvider)peer).Toggle();
     }
 
     private static void PumpUntil(Func<bool> completed, Func<string> diagnostic)

@@ -91,7 +91,8 @@ public sealed record ResistanceObservation(ResistanceType Type, long Landed, lon
 }
 public sealed record MobWikiInfo(string Title, string Url, DateTime CheckedUtc, bool Found,
     string? Level, string? Class, string? HitPoints, IReadOnlyDictionary<ResistanceType, string> Resistances,
-    string? Special = null, MobWikiStats? Stats = null, IReadOnlyList<QuestReference>? Quests = null);
+    string? Special = null, MobWikiStats? Stats = null, IReadOnlyList<QuestReference>? Quests = null,
+    string? IconFile = null);
 public sealed record MobWikiStats(string? Race, string? ArmorClass, string? HpRegen, string? ManaRegen,
     string? AttacksPerRound, string? AttackSpeed, string? DamagePerHit, string? AggroRadius,
     string? RunSpeed, string? RespawnTime, string? Location);

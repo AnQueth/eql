@@ -318,6 +318,10 @@ public partial class MainWindow
         _tracking = state.Tracking ?? throw new InvalidOperationException("Tracking startup has not been initialized.");
         _dataReady = complete;
         InitializeStartupData(state);
+        if (_dataReady)
+        {
+            _wikiIcons?.ResumePending();
+        }
         if (!complete && _settings.LogPath is { } savedLog)
         {
             try
@@ -373,8 +377,11 @@ public partial class MainWindow
                 {
                     disposable.Dispose();
                 }
-                var slider = _backgroundSliders[definition.Key];
-                TrackBackgroundOpacity(viewModel, _settings.Overlays[definition.Key], value => slider.Value = value);
+                var setting = _overlaySettings[definition.Key];
+                TrackBackgroundOpacity(viewModel, _settings.Overlays[definition.Key], value =>
+                {
+                    setting.BackgroundOpacity = value;
+                });
                 if (viewModel is ViewModels.MobInfoOverlayViewModel mobInfo)
                 {
                     MobTimeoutBox.DataContext = mobInfo;

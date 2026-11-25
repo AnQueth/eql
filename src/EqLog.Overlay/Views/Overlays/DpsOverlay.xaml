@@ -23,15 +23,24 @@
                 <DockPanel>
                     <TextBlock x:Name="FightSummary" DockPanel.Dock="Right" Text="{Binding Summary}" TextAlignment="Right"
                                Margin="8,0,0,0" />
-                    <TextBlock x:Name="FightTarget" Text="{Binding Target}" ToolTip="{Binding Target}"
-                               TextTrimming="CharacterEllipsis" />
+                    <views:WikiLabel x:Name="FightLabel" Subject="{Binding Target}" Kind="Mob">
+                        <TextBlock x:Name="FightTarget" Text="{Binding Target}" ToolTip="{Binding Target}"
+                                   TextTrimming="CharacterEllipsis" />
+                    </views:WikiLabel>
                 </DockPanel>
             </Button>
             <ContentControl x:Name="FightDetails" Margin="4,4,0,8" Focusable="False"
                             Visibility="{Binding IsExpanded, Converter={StaticResource DpsVisibleWhenTrue}}">
                 <Grid>
-                    <views:AbilityDetailsHost x:Name="FightBreakdown" Breakdown="{Binding Breakdown}" Focusable="False"
-                                              Visibility="{Binding FullDetails, Converter={StaticResource DpsVisibleWhenTrue}}" />
+                    <ContentControl x:Name="FightBreakdown" Content="{Binding Details}" Focusable="False"
+                                    HorizontalContentAlignment="Stretch"
+                                    Visibility="{Binding FullDetails, Converter={StaticResource DpsVisibleWhenTrue}}">
+                        <ContentControl.ContentTemplate>
+                            <DataTemplate DataType="{x:Type vm:AbilityDetailsViewModel}">
+                                <views:AbilityDetailsView Height="180" />
+                            </DataTemplate>
+                        </ContentControl.ContentTemplate>
+                    </ContentControl>
                     <StackPanel x:Name="FightAttackers"
                                 Visibility="{Binding ShowAttackers, Converter={StaticResource DpsVisibleWhenTrue}}">
                         <ItemsControl x:Name="AttackerRows" ItemsSource="{Binding Attackers}" Focusable="False"

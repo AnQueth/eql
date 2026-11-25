@@ -33,6 +33,74 @@
             <DataTrigger Binding="{Binding HasForeground, Mode=OneTime}" Value="True">
                 <Setter Property="Foreground" Value="{Binding Foreground, Mode=OneTime}" />
             </DataTrigger>
+            <!-- Table rows: links stay quiet until hovered, and nested sub-items recede. -->
+            <DataTrigger Binding="{Binding IsInTable, Mode=OneTime}" Value="True">
+                <Setter Property="TextDecorations" Value="{x:Null}" />
+            </DataTrigger>
+            <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                    <Condition Binding="{Binding IsInTable, Mode=OneTime}" Value="True" />
+                    <Condition Binding="{Binding IsLeftUnderlined, Mode=OneTime}" Value="True" />
+                    <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Grid}}" Value="True" />
+                </MultiDataTrigger.Conditions>
+                <Setter Property="TextDecorations" Value="Underline" />
+            </MultiDataTrigger>
+            <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                    <Condition Binding="{Binding IsNested, Mode=OneTime}" Value="True" />
+                    <Condition Binding="{Binding HasForeground, Mode=OneTime}" Value="False" />
+                </MultiDataTrigger.Conditions>
+                <Setter Property="Foreground" Value="{DynamicResource NightMuted}" />
+            </MultiDataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Secondary columns of an idle table row are muted so the label and totals carry the eye. -->
+    <Style x:Key="OverlayRowSecondaryText" TargetType="TextBlock" BasedOn="{StaticResource OverlayRowText}">
+        <Style.Triggers>
+            <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                    <Condition Binding="{Binding IsTableRow, Mode=OneTime}" Value="True" />
+                    <Condition Binding="{Binding HasForeground, Mode=OneTime}" Value="False" />
+                </MultiDataTrigger.Conditions>
+                <Setter Property="Foreground" Value="{DynamicResource NightMuted}" />
+            </MultiDataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Behind a table row: banding, the active-row tint, and the header and total rules. -->
+    <Style x:Key="OverlayTableStripe" TargetType="Border">
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="IsHitTestVisible" Value="False" />
+        <Setter Property="Visibility" Value="Collapsed" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Tone, Mode=OneTime}" Value="TableRowBanded">
+                <Setter Property="Visibility" Value="Visible" />
+                <Setter Property="Background" Value="{DynamicResource NightRaised}" />
+                <Setter Property="Opacity" Value="0.75" />
+                <Setter Property="CornerRadius" Value="3" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Tone, Mode=OneTime}" Value="TableHeader">
+                <Setter Property="Visibility" Value="Visible" />
+                <Setter Property="BorderBrush" Value="{DynamicResource Pumpkin}" />
+                <Setter Property="BorderThickness" Value="0,0,0,1" />
+                <Setter Property="Opacity" Value="0.7" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Tone, Mode=OneTime}" Value="TableTotal">
+                <Setter Property="Visibility" Value="Visible" />
+                <Setter Property="BorderBrush" Value="{DynamicResource NightBorder}" />
+                <Setter Property="BorderThickness" Value="0,1,0,0" />
+            </DataTrigger>
+            <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                    <Condition Binding="{Binding IsTableRow, Mode=OneTime}" Value="True" />
+                    <Condition Binding="{Binding HasForeground, Mode=OneTime}" Value="True" />
+                </MultiDataTrigger.Conditions>
+                <Setter Property="Visibility" Value="Visible" />
+                <Setter Property="Background" Value="{Binding Foreground, Mode=OneTime}" />
+                <Setter Property="Opacity" Value="0.16" />
+                <Setter Property="CornerRadius" Value="3" />
+            </MultiDataTrigger>
         </Style.Triggers>
     </Style>
 
@@ -99,6 +167,7 @@
     <DataTemplate x:Key="OverlayRowBody" DataType="{x:Type vm:OverlayRowViewModel}">
         <Grid x:Name="RowRoot" Style="{StaticResource OverlayRowRoot}" Margin="{Binding RowMargin, Mode=OneTime}"
               ToolTip="{Binding ToolTip, Mode=OneTime}">
+            <Border x:Name="TableStripe" Style="{StaticResource OverlayTableStripe}" />
             <Border x:Name="CardGlass" CornerRadius="6" Opacity="0.6" BorderThickness="1"
                     Background="{DynamicResource NightRaised}" BorderBrush="{DynamicResource NightBorder}"
                     Visibility="{Binding IsCard, Mode=OneTime, Converter={StaticResource VisibleWhenTrue}}" />
@@ -137,7 +206,7 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" SharedSizeGroup="{Binding RightSizeGroup, Mode=OneTime}" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Style="{StaticResource OverlayRowText}" Text="{Binding Right, Mode=OneTime}"
+                    <TextBlock Style="{StaticResource OverlayRowSecondaryText}" Text="{Binding Right, Mode=OneTime}"
                                MinWidth="{Binding RightMinWidth, Mode=OneTime}"
                                TextAlignment="{Binding RightAlignment, Mode=OneTime}" Margin="8,0,0,0" />
                 </Grid>
@@ -146,34 +215,36 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" SharedSizeGroup="OverlayValueColumn" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Style="{StaticResource OverlayRowText}" Text="{Binding ValueColumn, Mode=OneTime}"
+                    <TextBlock Style="{StaticResource OverlayRowSecondaryText}" Text="{Binding ValueColumn, Mode=OneTime}"
                                TextAlignment="Right" Margin="8,0,0,0" />
                 </Grid>
-                <StackPanel x:Name="RowContent">
-                    <TextBlock x:Name="LeftText" Style="{StaticResource OverlayRowLeftText}" Text="{Binding Left, Mode=OneTime}"
-                               local:AlertEffects.Effect="{Binding Effect, Mode=OneTime}"
-                               Visibility="{Binding ShowLeftText, Mode=OneTime, Converter={StaticResource VisibleWhenTrue}}" />
-                    <TextBlock x:Name="BadgeText" Style="{StaticResource OverlayRowLeftText}"
-                               Visibility="{Binding ShowBadgeText, Mode=OneTime, Converter={StaticResource VisibleWhenTrue}}">
-                        <Hyperlink FontWeight="SemiBold" Foreground="{DynamicResource Pumpkin}"
-                                   ToolTip="Quest references available: click to view. Wiki mentions may include ingredients or rewards, not a turn-in checklist."
-                                   Command="{Binding Owner.LookupQuestReferencesCommand}" CommandParameter="{Binding}">[Quest]</Hyperlink><Run Text="{Binding QuestBadgeText, Mode=OneTime}" />
-                    </TextBlock>
-                    <TextBlock x:Name="StackedRight" Style="{StaticResource OverlayStackedRight}" Text="{Binding Right, Mode=OneTime}"
-                               Visibility="{Binding ShowStackedRight, Mode=OneTime, Converter={StaticResource VisibleWhenTrue}}" />
-                    <ItemsControl x:Name="CardTables" ItemsSource="{Binding Tables, Mode=OneTime}" Focusable="False">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type vm:OverlayTablePart}">
-                                <views:OverlayTableView Style="{StaticResource OverlayCardTable}" Table="{Binding Table, Mode=OneTime}"
-                                                        FontSize="{Binding Owner.FontSize, Converter={StaticResource SecondaryFontSize}}"
-                                                        LinkCommand="{Binding Owner.OpenLinkCommand}" />
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                    <TextBlock x:Name="CardDetails" Style="{StaticResource OverlayCardDetails}" Text="{Binding Details, Mode=OneTime}"
-                               FontSize="{Binding Owner.FontSize, Converter={StaticResource SecondaryFontSize}}"
-                               Visibility="{Binding ShowDetails, Mode=OneTime, Converter={StaticResource VisibleWhenTrue}}" />
-                </StackPanel>
+                <views:WikiLabel x:Name="RowLabel" Icon="{Binding Icon, Mode=OneTime}" IconVerticalAlignment="Top">
+                    <StackPanel x:Name="RowContent">
+                        <TextBlock x:Name="LeftText" Style="{StaticResource OverlayRowLeftText}" Text="{Binding Left, Mode=OneTime}"
+                                   local:AlertEffects.Effect="{Binding Effect, Mode=OneTime}"
+                                   Visibility="{Binding ShowLeftText, Mode=OneTime, Converter={StaticResource VisibleWhenTrue}}" />
+                        <TextBlock x:Name="BadgeText" Style="{StaticResource OverlayRowLeftText}"
+                                   Visibility="{Binding ShowBadgeText, Mode=OneTime, Converter={StaticResource VisibleWhenTrue}}">
+                            <Hyperlink FontWeight="SemiBold" Foreground="{DynamicResource Pumpkin}"
+                                       ToolTip="Quest references available: click to view. Wiki mentions may include ingredients or rewards, not a turn-in checklist."
+                                       Command="{Binding Owner.LookupQuestReferencesCommand}" CommandParameter="{Binding}">[Quest]</Hyperlink><Run Text="{Binding QuestBadgeText, Mode=OneTime}" />
+                        </TextBlock>
+                        <TextBlock x:Name="StackedRight" Style="{StaticResource OverlayStackedRight}" Text="{Binding Right, Mode=OneTime}"
+                                   Visibility="{Binding ShowStackedRight, Mode=OneTime, Converter={StaticResource VisibleWhenTrue}}" />
+                        <ItemsControl x:Name="CardTables" ItemsSource="{Binding Tables, Mode=OneTime}" Focusable="False">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:OverlayTablePart}">
+                                    <views:OverlayTableView Style="{StaticResource OverlayCardTable}" Table="{Binding Table, Mode=OneTime}"
+                                                            FontSize="{Binding Owner.FontSize, Converter={StaticResource SecondaryFontSize}}"
+                                                            LinkCommand="{Binding Owner.OpenLinkCommand}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock x:Name="CardDetails" Style="{StaticResource OverlayCardDetails}" Text="{Binding Details, Mode=OneTime}"
+                                   FontSize="{Binding Owner.FontSize, Converter={StaticResource SecondaryFontSize}}"
+                                   Visibility="{Binding ShowDetails, Mode=OneTime, Converter={StaticResource VisibleWhenTrue}}" />
+                    </StackPanel>
+                </views:WikiLabel>
             </DockPanel>
         </Grid>
     </DataTemplate>
@@ -202,15 +273,12 @@
 
     <!-- The default overlay body: a scrolling row list. -->
     <DataTemplate x:Key="OverlayRows" DataType="{x:Type vm:OverlayViewModel}">
-        <ScrollViewer x:Name="RowScroll" Margin="0,2,0,0" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Hidden"
+        <ScrollViewer x:Name="RowScroll" Margin="0,2,0,0" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
                       Focusable="False" views:AutoScrollToEnd.IsEnabled="{Binding AutoScrollToEnd, Mode=OneTime}">
             <ItemsControl x:Name="RowItems" ItemsSource="{Binding Rows}" ItemTemplateSelector="{StaticResource OverlayRowSelector}"
                           Focusable="False" />
         </ScrollViewer>
         <DataTemplate.Triggers>
-            <DataTrigger Binding="{Binding ShowsRowScrollBar, Mode=OneTime}" Value="True">
-                <Setter TargetName="RowScroll" Property="VerticalScrollBarVisibility" Value="Auto" />
-            </DataTrigger>
             <DataTrigger Binding="{Binding CentersRows, Mode=OneTime}" Value="True">
                 <Setter TargetName="RowItems" Property="VerticalAlignment" Value="Center" />
             </DataTrigger>

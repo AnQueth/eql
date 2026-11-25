@@ -130,5 +130,13 @@ internal sealed class WikiTestComposition : IAsyncDisposable
         {
             return Task.CompletedTask;
         }
+        public string? FindIcon(string cacheName)
+        {
+            return null;
+        }
+        public Task<string> SaveIconAsync(string cacheName, byte[] data, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(cacheName);
+        }
     }
 }

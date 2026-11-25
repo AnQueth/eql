@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Media;
 
 namespace EqLog.Overlay.Views;
 
@@ -28,6 +29,22 @@ public sealed class BoolToVisibilityConverter : IValueConverter
     }
 }
 
+/// <summary>Maps a number to a proportional (star) grid length, for chart rows and columns sized by value.</summary>
+public sealed class StarLengthConverter : IValueConverter
+{
+    /// <inheritdoc />
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        return value is double weight ? new GridLength(Math.Max(0, weight), GridUnitType.Star) : DependencyProperty.UnsetValue;
+    }
+
+    /// <inheritdoc />
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        return Binding.DoNothing;
+    }
+}
+
 /// <summary>Offsets a font size and keeps it at or above a minimum, for secondary text such as card details.</summary>
 public sealed class FontSizeOffsetConverter : IValueConverter
 {
@@ -50,7 +67,10 @@ public sealed class FontSizeOffsetConverter : IValueConverter
     }
 }
 
-/// <summary>Multiplies numeric binding values, for example an overlay font size by a row scale.</summary>
+/// <summary>
+/// Multiplies numeric binding values, for example an overlay font size by a row scale. A boolean counts as 1 or 0, so a
+/// flag can switch a value off.
+/// </summary>
 public sealed class ProductConverter : IMultiValueConverter
 {
     /// <inheritdoc />
@@ -59,13 +79,42 @@ public sealed class ProductConverter : IMultiValueConverter
         double product = 1;
         foreach (object value in values)
         {
-            if (value is not double number)
+            if (value is bool flag)
+            {
+                product *= flag ? 1 : 0;
+            }
+            else if (value is double number)
+            {
+                product *= number;
+            }
+            else
             {
                 return DependencyProperty.UnsetValue;
             }
-            product *= number;
         }
         return product;
+    }
+
+    /// <inheritdoc />
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
+    {
+        return [];
+    }
+}
+
+/// <summary>Turns a width, height, and <see cref="CornerRadius"/> into a rounded clip for a border's own bounds.</summary>
+public sealed class RoundedClipConverter : IMultiValueConverter
+{
+    /// <inheritdoc />
+    public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (values is not [double width, double height, CornerRadius corners])
+        {
+            return DependencyProperty.UnsetValue;
+        }
+        var clip = new RectangleGeometry(new Rect(0, 0, width, height), corners.TopLeft, corners.TopLeft);
+        clip.Freeze();
+        return clip;
     }
 
     /// <inheritdoc />
@@ -239,6 +288,71 @@ public static class AutoScrollToEnd
         if ((bool)viewer.GetValue(WasAtEndProperty))
         {
             viewer.ScrollToEnd();
+        }
+    }
+}
+
+/// <summary>
+/// Gives a <see cref="Grid"/> data-driven columns and rows. XAML can only declare a fixed set of definitions, so a grid
+/// whose shape comes from its data (such as an items panel) binds these instead.
+/// </summary>
+public static class GridDefinitions
+{
+    /// <summary>The column widths.</summary>
+    public static readonly DependencyProperty ColumnsProperty = DependencyProperty.RegisterAttached(
+        "Columns", typeof(IReadOnlyList<GridLength>), typeof(GridDefinitions), new PropertyMetadata(null, ColumnsChanged));
+
+    /// <summary>The number of auto-height rows.</summary>
+    public static readonly DependencyProperty AutoRowsProperty = DependencyProperty.RegisterAttached(
+        "AutoRows", typeof(int), typeof(GridDefinitions), new PropertyMetadata(0, AutoRowsChanged));
+
+    /// <summary>Gets the column widths.</summary>
+    public static IReadOnlyList<GridLength>? GetColumns(DependencyObject element)
+    {
+        return (IReadOnlyList<GridLength>?)element.GetValue(ColumnsProperty);
+    }
+
+    /// <summary>Sets the column widths.</summary>
+    public static void SetColumns(DependencyObject element, IReadOnlyList<GridLength>? value)
+    {
+        element.SetValue(ColumnsProperty, value);
+    }
+
+    /// <summary>Gets the number of auto-height rows.</summary>
+    public static int GetAutoRows(DependencyObject element)
+    {
+        return (int)element.GetValue(AutoRowsProperty);
+    }
+
+    /// <summary>Sets the number of auto-height rows.</summary>
+    public static void SetAutoRows(DependencyObject element, int value)
+    {
+        element.SetValue(AutoRowsProperty, value);
+    }
+
+    private static void ColumnsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is not Grid grid)
+        {
+            return;
+        }
+        grid.ColumnDefinitions.Clear();
+        foreach (var width in (IReadOnlyList<GridLength>?)e.NewValue ?? [])
+        {
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = width });
+        }
+    }
+
+    private static void AutoRowsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is not Grid grid)
+        {
+            return;
+        }
+        grid.RowDefinitions.Clear();
+        for (int row = 0; row < (int)e.NewValue; row++)
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         }
     }
 }

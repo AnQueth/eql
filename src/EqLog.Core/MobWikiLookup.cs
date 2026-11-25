@@ -68,7 +68,8 @@ public static class MobWikiLookup
             new MobWikiStats(Field(text, "race"), Field(text, "AC"), Field(text, "HP_regen"), Field(text, "mana_regen"),
                 Field(text, "attacks_per_round"), Field(text, "attack_speed"), Field(text, "damage_per_hit"),
                 Field(text, "agro_radius", "aggro_radius"), Field(text, "run_speed"), Field(text, "respawn_time"),
-                Field(text, "location")), ParseQuestReferences(text));
+                Field(text, "location")), ParseQuestReferences(text),
+            WikiImages.NormalizeFileName(Field(text, "imagefilename", "image")));
     }
 
     private static IReadOnlyList<QuestReference> ParseQuestReferences(string text)

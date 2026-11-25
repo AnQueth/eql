@@ -50,12 +50,14 @@
                                                        views:ClickCommand.Command="{Binding DataContext.LookupQuestItemCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                                        views:ClickCommand.CommandParameter="{Binding Item}"><Run Text="[Quest]" /></Hyperlink>
                                         </TextBlock>
-                                        <TextBlock TextTrimming="CharacterEllipsis" VerticalAlignment="Center">
-                                            <Hyperlink Foreground="{DynamicResource Pumpkin}"
-                                                       ToolTip="Show all copy locations and quest references. Use Item wiki page to open EQLWiki."
-                                                       views:ClickCommand.Command="{Binding DataContext.SelectItemCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                                       views:ClickCommand.CommandParameter="{Binding}"><Run Text="{Binding Item}" /></Hyperlink>
-                                        </TextBlock>
+                                        <views:WikiLabel x:Name="InventoryItemLabel" Subject="{Binding Item}">
+                                            <TextBlock TextTrimming="CharacterEllipsis" VerticalAlignment="Center">
+                                                <Hyperlink Foreground="{DynamicResource Pumpkin}"
+                                                           ToolTip="Show all copy locations and quest references. Use Item wiki page to open EQLWiki."
+                                                           views:ClickCommand.Command="{Binding DataContext.SelectItemCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                           views:ClickCommand.CommandParameter="{Binding}"><Run Text="{Binding Item}" /></Hyperlink>
+                                            </TextBlock>
+                                        </views:WikiLabel>
                                     </DockPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>

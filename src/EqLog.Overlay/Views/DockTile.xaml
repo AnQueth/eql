@@ -1,0 +1,14 @@
+<Grid x:Class="EqLog.Overlay.Views.DockTile"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      VerticalAlignment="Top" AllowDrop="True">
+    <Border x:Name="PanelHost" />
+    <Thumb x:Name="ResizeGrip" Width="12" Height="12" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+           Cursor="SizeNWSE" ToolTip="Drag to resize">
+        <Thumb.Template>
+            <ControlTemplate TargetType="Thumb">
+                <Path Data="M 12,0 L 12,12 L 0,12 Z" Fill="#AAFFD700" />
+            </ControlTemplate>
+        </Thumb.Template>
+    </Thumb>
+</Grid>

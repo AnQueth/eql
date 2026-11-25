@@ -18,6 +18,10 @@ public class ThemePaletteTests
     [InlineData("HighContrastLight.json", "High Contrast Light")]
     [InlineData("ColorblindRedGreen.json", "Colorblind Safe (Red-Green)")]
     [InlineData("ColorblindBlueYellow.json", "Colorblind Safe (Blue-Yellow)")]
+    [InlineData("Thanksgiving.json", "Thanksgiving Harvest")]
+    [InlineData("ChristmasClassic.json", "Christmas Classic")]
+    [InlineData("ChristmasSnowfall.json", "Christmas Snowfall")]
+    [InlineData("ChristmasEve.json", "Christmas Eve")]
     public void Parse_BundledTheme_ContainsCompletePalette(string file, string name)
     {
         var theme = ThemePalette.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Themes", file)));
@@ -32,6 +36,10 @@ public class ThemePaletteTests
     [InlineData("ColorblindBlueYellow.json", 4.5)]
     [InlineData("NeutralDark.json", 4.5)]
     [InlineData("NeutralLight.json", 4.5)]
+    [InlineData("Thanksgiving.json", 4.5)]
+    [InlineData("ChristmasClassic.json", 4.5)]
+    [InlineData("ChristmasSnowfall.json", 4.5)]
+    [InlineData("ChristmasEve.json", 4.5)]
     public void AccessibilityTheme_TextMeetsWcagContrast(string file, double minimum)
     {
         var theme = ThemePalette.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Themes", file)));

@@ -6,6 +6,7 @@ namespace EqLog.Infrastructure.Wiki;
 /// <summary>Owns the paced/retrying HTTP lane and clients, but not shared request deduplication or cache policy.</summary>
 public sealed class WikiTransport : IWikiTransport
 {
+    private const int MaxImageBytes = 512 * 1024;
     private readonly WikiRequestScheduler _scheduler;
     private readonly HttpClient _client;
     private readonly HttpClient _http;
@@ -73,6 +74,31 @@ public sealed class WikiTransport : IWikiTransport
         WikiRequestContext context, CancellationToken cancellationToken)
     {
         return FetchAsync(context, () => new TradeskillWikiClient(_client).FetchAsync(kind, title, cancellationToken));
+    }
+
+    public Task<byte[]?> FindImageAsync(string url, WikiRequestContext context, CancellationToken cancellationToken)
+    {
+        return FetchAsync(context, () => DownloadImageAsync(url, cancellationToken));
+    }
+
+    private async Task<byte[]?> DownloadImageAsync(string url, CancellationToken cancellationToken)
+    {
+        using var response = await _client.GetAsync(url, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+        response.EnsureSuccessStatusCode();
+        if (response.Content.Headers.ContentLength > MaxImageBytes)
+        {
+            return null;
+        }
+        byte[] data = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+        if (data.Length > MaxImageBytes || !WikiImages.LooksLikeImage(data))
+        {
+            return null;
+        }
+        return data;
     }
 
     private async Task<T> FetchAsync<T>(WikiRequestContext context, Func<Task<T>> fetch)

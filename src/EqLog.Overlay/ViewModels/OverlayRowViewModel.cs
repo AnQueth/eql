@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using EqLog.Core;
 using EqLog.Core.Triggers;
 
 namespace EqLog.Overlay.ViewModels;
@@ -37,6 +38,29 @@ public sealed class OverlayRowViewModel
             first = false;
         }
         Tables = parts;
+        WikiIconKey? iconKey = null;
+        if (!string.IsNullOrWhiteSpace(row.LootItem))
+        {
+            iconKey = new WikiIconKey(WikiIconKind.Item, row.LootItem);
+        }
+        else if (!string.IsNullOrWhiteSpace(row.IconItem))
+        {
+            iconKey = new WikiIconKey(WikiIconKind.Item, row.IconItem);
+        }
+        else if (!string.IsNullOrWhiteSpace(row.Mob))
+        {
+            iconKey = new WikiIconKey(WikiIconKind.Mob, row.Mob);
+        }
+        if (iconKey is not null)
+        {
+            Icon = owner.GetWikiIcon(iconKey);
+        }
+    }
+
+    /// <summary>The item icon or mob portrait shown before the left text, when the row names one.</summary>
+    public WikiIconViewModel? Icon
+    {
+        get;
     }
 
     /// <summary>The overlay whose commands the row invokes.</summary>
@@ -330,6 +354,18 @@ public sealed class OverlayRowViewModel
             {
                 return new Thickness(0, 0, 0, 6);
             }
+            if (Row.Tone == OverlayRowTone.TableHeader)
+            {
+                return new Thickness(0, 0, 0, 2);
+            }
+            if (Row.Tone == OverlayRowTone.TableTotal)
+            {
+                return new Thickness(0, 2, 0, 3);
+            }
+            if (IsTableRow)
+            {
+                return new Thickness(0);
+            }
             return Row.QuestHeading ? new Thickness(0, 12, 0, 5) : new Thickness(0, 0, 0, 3);
         }
     }
@@ -339,7 +375,56 @@ public sealed class OverlayRowViewModel
     {
         get
         {
-            return IsCard ? new Thickness(9, 7, 9, 7) : new Thickness(4, 2, 4, 2);
+            if (IsCard)
+            {
+                return new Thickness(9, 7, 9, 7);
+            }
+            if (Row.Tone != OverlayRowTone.None)
+            {
+                double left = 6;
+                if (Row.Nested)
+                {
+                    left = 18;
+                }
+                return new Thickness(left, 3, 6, 3);
+            }
+            return new Thickness(4, 2, 4, 2);
+        }
+    }
+
+    /// <summary>How the row draws as part of an inline table.</summary>
+    public OverlayRowTone Tone
+    {
+        get
+        {
+            return Row.Tone;
+        }
+    }
+
+    /// <summary>Whether the row is any part of an inline table.</summary>
+    public bool IsInTable
+    {
+        get
+        {
+            return Row.Tone != OverlayRowTone.None;
+        }
+    }
+
+    /// <summary>Whether the row is a body row of an inline table (not its header or total).</summary>
+    public bool IsTableRow
+    {
+        get
+        {
+            return Row.Tone is OverlayRowTone.TableRow or OverlayRowTone.TableRowBanded;
+        }
+    }
+
+    /// <summary>Whether the row's label is a nested sub-item of the row above it.</summary>
+    public bool IsNested
+    {
+        get
+        {
+            return Row.Nested;
         }
     }
 

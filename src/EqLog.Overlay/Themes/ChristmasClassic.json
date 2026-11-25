@@ -1,0 +1,24 @@
+{
+  "Name": "Christmas Classic",
+  "Colors": {
+    "NightBackground": "#0D1A12",
+    "NightSurface": "#12241A",
+    "NightRaised": "#1A3324",
+    "NightBorder": "#3E6B4E",
+    "NightText": "#F4F1E8",
+    "NightMuted": "#C3D2C6",
+    "Pumpkin": "#F05A50",
+    "Hover": "#1F3D2B",
+    "Pressed": "#285036",
+    "Selection": "#5A1F22",
+    "Alternate": "#102019",
+    "GridLine": "#1F3A29",
+    "ScrollThumb": "#4F7A5E",
+    "AccentText": "#0D1A12",
+    "OverlayHeader": "#F2C75C",
+    "OverlayDim": "#C3D2C6",
+    "OverlayGood": "#7FD98F",
+    "OverlayWarn": "#F2C75C",
+    "OverlayBad": "#FF7B72"
+  }
+}

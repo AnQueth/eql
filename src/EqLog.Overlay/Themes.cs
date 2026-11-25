@@ -52,7 +52,8 @@ public partial class MainWindow
                 }
             }
             ThemePicker.ItemsSource = _themes;
-            _themeEditor = new ThemeEditor { ApplyRequested = ApplyEditedThemeAsync };
+            _themeEditor = new ThemeEditor();
+            _themeEditor.ViewModel.ApplyRequested = ApplyEditedThemeAsync;
             ThemeEditorHost.Content = _themeEditor;
             var theme = _settings.Theme ?? ThemeManager.GetSystemTheme(_themes);
             ApplyTheme(theme);
@@ -98,10 +99,6 @@ public partial class MainWindow
     private void ApplyTheme(ThemePalette theme)
     {
         ThemeManager.Apply(theme);
-        foreach (var overlay in _overlays.Values)
-        {
-            overlay.Panel.RefreshChrome();
-        }
     }
 
     private void RefreshSystemTheme()

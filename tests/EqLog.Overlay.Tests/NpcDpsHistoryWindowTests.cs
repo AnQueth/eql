@@ -2,6 +2,7 @@ using System.Runtime.ExceptionServices;
 using System.Windows;
 using System.Windows.Controls;
 using EqLog.Application.Sessions;
+using EqLog.Overlay.ViewModels;
 using Xunit;
 
 namespace EqLog.Overlay.Tests;
@@ -54,8 +55,27 @@ public sealed class NpcDpsHistoryWindowTests
             window.Loadouts.SelectedIndex = 2;
             Assert.Null(((NpcLoadoutDps)window.Loadouts.SelectedItem).AverageDps);
             Assert.Equal("Melee", Assert.Single(window.Abilities.Items.OfType<NpcDpsAbility>()).Name);
+            foreach (var (header, expected) in new[]
+            {
+                ("Loadout", "Unknown"), ("Level", "?"), ("Weighted average DPS", "No completed fights"),
+                ("Mean DPS", "-"), ("P90 DPS", "-"), ("P99 DPS", "-"), ("Best DPS", "-"),
+            })
+            {
+                var column = window.Loadouts.Columns.Single(c => Equals(c.Header, header));
+                window.Loadouts.ScrollIntoView(window.Loadouts.SelectedItem, column);
+                window.UpdateLayout();
+                Assert.Equal(expected, Assert.IsType<TextBlock>(column.GetCellContent(window.Loadouts.SelectedItem)).Text);
+            }
             window.Encounters.SelectedIndex = -1;
             Assert.Empty(window.Abilities.Items);
+            Assert.Equal("Select a fight for its saved effect details.",
+                Assert.IsType<NpcDpsHistoryViewModel>(window.DataContext).Details);
+            window.Loadouts.SelectedIndex = -1;
+            Assert.Empty(window.Encounters.Items);
+            Assert.Empty(window.Abilities.Items);
+            window.Loadouts.SelectedIndex = 0;
+            Assert.Equal(2, window.Encounters.Items.Count);
+            Assert.Equal("Melee", Assert.Single(window.Abilities.Items.OfType<NpcDpsAbility>()).Name);
             Assert.True(window.Loadouts.EnableRowVirtualization);
             Assert.True(window.Encounters.EnableRowVirtualization);
             window.Close();
@@ -70,6 +90,8 @@ public sealed class NpcDpsHistoryWindowTests
             var npc = new NpcReadModel("Sphinx", "Sky", DateTime.Now, DateTime.Now, 0, null, null,
                 [], 0, 0, 0, 0, 0, 0, false, false);
             var window = new NpcDpsHistoryWindow(npc);
+            window.Show();
+            window.UpdateLayout();
             var root = Assert.IsType<DockPanel>(window.Content);
             var header = root.Children.OfType<StackPanel>().Single();
             Assert.Contains(header.Children.OfType<TextBlock>(), text => text.Text.Contains("No personal damage history"));
@@ -78,6 +100,40 @@ public sealed class NpcDpsHistoryWindowTests
             Assert.Empty(window.Abilities.Items);
             window.Close();
         });
+    }
+
+    [Fact]
+    public void ViewModel_ChangingSelectionsUpdatesAndClearsDetails()
+    {
+        var start = new DateTime(2026, 11, 4);
+        NpcEncounterDetails[] fights =
+        [
+            new("one", start, "Que", "DRU", 50, NpcEncounterOutcome.NpcDied,
+                1000, 100, 20, 10, 100, [new("Ranged", 1000, 0, 0)]),
+            new("two", start.AddMinutes(1), "Que", "WIZ", 50, NpcEncounterOutcome.NpcDied,
+                500, 100, 10, 10, 50, [new("Melee", 500, 0, 0)]),
+        ];
+        var npc = new NpcReadModel("Sphinx", "Sky", start, start, 0, null, null,
+            fights, 0, 0, 1500, 200, 30, 2, true, true);
+        var viewModel = new NpcDpsHistoryViewModel(npc);
+        var changes = new List<string?>();
+        viewModel.PropertyChanged += (_, e) =>
+        {
+            changes.Add(e.PropertyName);
+        };
+
+        Assert.NotNull(viewModel.SelectedEncounter);
+        viewModel.SelectedLoadout = viewModel.Loadouts[1];
+        Assert.Single(viewModel.Encounters);
+        Assert.Same(viewModel.Encounters[0], viewModel.SelectedEncounter);
+        Assert.Contains(nameof(viewModel.Encounters), changes);
+        Assert.Contains(nameof(viewModel.Abilities), changes);
+        Assert.Contains(nameof(viewModel.Details), changes);
+        viewModel.SelectedLoadout = null;
+        Assert.Empty(viewModel.Encounters);
+        Assert.Empty(viewModel.Abilities);
+        Assert.Null(viewModel.SelectedEncounter);
+        Assert.Equal("Select a fight for its saved effect details.", viewModel.Details);
     }
 
     private static void RunSta(Action action)

@@ -191,21 +191,33 @@
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="CaretBrush" Value="{DynamicResource Pumpkin}" />
         <Setter Property="SelectionBrush" Value="{DynamicResource Selection}" />
-        <Setter Property="Padding" Value="8,4,0,4" />
+        <Setter Property="Padding" Value="8,6,0,6" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="DatePickerTextBox">
                     <Grid Background="{TemplateBinding Background}">
-                        <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" />
+                        <!-- TextBoxBase applies Padding to the text itself, so the host must not repeat it. -->
+                        <ScrollViewer x:Name="PART_ContentHost" />
                         <ContentControl x:Name="PART_Watermark" Margin="{TemplateBinding Padding}"
-                                        Foreground="{DynamicResource NightMuted}" VerticalContentAlignment="Center"
-                                        IsHitTestVisible="False" Visibility="Collapsed" />
+                                        Foreground="{DynamicResource NightMuted}"
+                                        IsHitTestVisible="False" Focusable="False" Visibility="Collapsed">
+                            <ContentControl.Template>
+                                <ControlTemplate TargetType="ContentControl">
+                                    <!-- Matches the text view's caret inset so the watermark lines up with typed dates. -->
+                                    <ContentPresenter Margin="2,0,0,0" VerticalAlignment="Center" />
+                                </ControlTemplate>
+                            </ContentControl.Template>
+                        </ContentControl>
                     </Grid>
                     <ControlTemplate.Triggers>
-                        <Trigger Property="Text" Value="">
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="Text" Value="" />
+                                <Condition Property="IsKeyboardFocusWithin" Value="False" />
+                            </MultiTrigger.Conditions>
                             <Setter TargetName="PART_Watermark" Property="Visibility" Value="Visible" />
-                        </Trigger>
+                        </MultiTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>

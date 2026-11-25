@@ -24,9 +24,10 @@ public sealed class TrackingDataResetTests : IDisposable
         [
             "spell-durations.json", "spawn-timers.json", "motes.json", "mob-resistances.json", "mob-resistances.json.journal",
             "mob-resistances.json.checkpoint",
-            "quest-inventory.json", "npc-compendium.json", "leveling-history.json", "leveling-history.jsonl",
+            "quest-inventory.json", "npc-compendium.json", "npc-compendium.json.migrated",
+            "leveling-history.json", "leveling-history.jsonl", "spawn-timers.json.tmp", "leveling-history.jsonl.tmp",
         ];
-        string[] preserved = ["settings.json", "quest-lookups.jsonl", "sky-quests.json", "game-log.txt"];
+        string[] preserved = ["settings.json", "settings.json.tmp", "quest-lookups.jsonl", "sky-quests.json", "game-log.txt"];
         foreach (string name in tracking.Concat(preserved))
         {
             await File.WriteAllTextAsync(Path.Combine(_folder, name), name);
@@ -57,7 +58,8 @@ public sealed class TrackingDataResetTests : IDisposable
         await File.WriteAllTextAsync(Path.Combine(_folder, "motes.json"), "motes");
         await File.WriteAllTextAsync(Path.Combine(_folder, "spawn-timers.json"), "spawns");
         await TrackingDataReset.RequestAsync(_folder);
-        string id = (await AtomicFile.ReadJsonAsync<string>(Path.Combine(_folder, "tracking-reset.json")))!;
+        var request = await AtomicFile.ReadJsonAsync<System.Text.Json.JsonElement>(Path.Combine(_folder, "tracking-reset.json"));
+        string id = request.GetProperty("Id").GetString()!;
         string backup = Path.Combine(_folder, "tracking-backups", id);
         Directory.CreateDirectory(backup);
         await File.WriteAllTextAsync(Path.Combine(backup, "motes.json"), "existing backup");
@@ -71,6 +73,35 @@ public sealed class TrackingDataResetTests : IDisposable
         Assert.Equal(backup, await TrackingDataReset.ApplyPendingAsync(_folder));
         Assert.Equal("motes", await File.ReadAllTextAsync(Path.Combine(backup, "motes.json")));
         Assert.False(File.Exists(Path.Combine(_folder, "tracking-reset.json")));
+    }
+
+    [Fact]
+    public async Task ApplyPending_IgnoreRequest_PersistsCutoffAndRebuildRequestRemovesIt()
+    {
+        Directory.CreateDirectory(_folder);
+        var cutoff = new DateTime(2026, 10, 27, 12, 0, 5, DateTimeKind.Local);
+        Assert.Null(await TrackingDataReset.LoadLogCutoffAsync(_folder));
+
+        await TrackingDataReset.RequestAsync(_folder, cutoff);
+        Assert.Null(await TrackingDataReset.LoadLogCutoffAsync(_folder));
+        await TrackingDataReset.ApplyPendingAsync(_folder);
+        Assert.Equal(cutoff, await TrackingDataReset.LoadLogCutoffAsync(_folder));
+
+        await TrackingDataReset.RequestAsync(_folder);
+        string backup = Assert.IsType<string>(await TrackingDataReset.ApplyPendingAsync(_folder));
+        Assert.Null(await TrackingDataReset.LoadLogCutoffAsync(_folder));
+        Assert.True(File.Exists(Path.Combine(backup, "tracking-log-cutoff.json")));
+    }
+
+    [Fact]
+    public async Task ApplyPending_LegacyStringRequest_RebuildsFromWholeLogs()
+    {
+        Directory.CreateDirectory(_folder);
+        await File.WriteAllTextAsync(Path.Combine(_folder, "motes.json"), "motes");
+        await AtomicFile.WriteJsonAsync(Path.Combine(_folder, "tracking-reset.json"), Guid.NewGuid().ToString("N"));
+        string backup = Assert.IsType<string>(await TrackingDataReset.ApplyPendingAsync(_folder));
+        Assert.Equal("motes", await File.ReadAllTextAsync(Path.Combine(backup, "motes.json")));
+        Assert.Null(await TrackingDataReset.LoadLogCutoffAsync(_folder));
     }
 
     [Fact]

@@ -332,7 +332,8 @@ public sealed class TradeskillsOverlayViewModel : OverlayViewModel
         }
         else
         {
-            rows.Add(new(recipe.Outcome, Bold: true, Wrap: true, Link: TradeskillQueries.PageUrl(recipe.PageTitle)));
+            rows.Add(new(recipe.Outcome, Bold: true, Wrap: true, Link: TradeskillQueries.PageUrl(recipe.PageTitle),
+                IconItem: recipe.Outcome));
             rows.Add(new($"Recipe: {recipe.Name} | Trivial: {(recipe.Trivial.Length > 0 ? recipe.Trivial : "Unknown")}", Wrap: true));
             rows.Add(new($"Combine in: {(recipe.Container.Length > 0 ? recipe.Container : "Not listed on the item page")}" +
                 (recipe.Yield is { } yield ? $" | Yield: {yield}" : ""), Wrap: true));
@@ -343,7 +344,7 @@ public sealed class TradeskillsOverlayViewModel : OverlayViewModel
             foreach (var item in availability)
             {
                 rows.Add(new($"{item.Ingredient.Quantity}x {item.Ingredient.Item}", Bold: true, Wrap: true,
-                    Link: TradeskillQueries.PageUrl(item.Ingredient.PageTitle)));
+                    Link: TradeskillQueries.PageUrl(item.Ingredient.PageTitle), IconItem: item.Ingredient.Item));
                 if (item.Ingredient.Source.Length > 0)
                 {
                     rows.Add(new($"Source: {item.Ingredient.Source}", Wrap: true));
@@ -370,7 +371,7 @@ public sealed class TradeskillsOverlayViewModel : OverlayViewModel
                     rows.Add(new($"{merchant.Name} - {merchant.Zone}", Wrap: true,
                         Link: TradeskillQueries.PageUrl(merchant.PageTitle),
                         Details: string.Join(" | ", new[] { merchant.Area, merchant.Location }.Where(text => text.Length > 0)),
-                        ToolTip: "Open this merchant's EQLWiki page"));
+                        ToolTip: "Open this merchant's EQLWiki page", Mob: merchant.Name));
                 }
             }
         }

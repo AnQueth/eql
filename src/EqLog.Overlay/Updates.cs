@@ -3,6 +3,8 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Threading;
+using EqLog.Overlay.Mvvm;
+using EqLog.Overlay.ViewModels;
 using Velopack;
 using Velopack.Sources;
 
@@ -228,33 +230,18 @@ public partial class MainWindow
             return;
         }
 
-        var version = _availableUpdate.TargetFullRelease.Version;
-        var text = new System.Windows.Controls.TextBlock
-        {
-            Text = _updateDownloaded
-                ? $"\u2B06 Version {version} is ready"
-                : _updateBusy
-                    ? $"\u2B06 Downloading version {version}..."
-                    : $"\u2B06 Version {version} is available",
-            FontWeight = FontWeights.Bold,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 8, 0),
-        };
-        text.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "Pumpkin");
-        var button = new System.Windows.Controls.Button
-        {
-            Content = _updateDownloaded ? "Restart to update" : "Download update",
-            IsEnabled = !_updateBusy,
-            Padding = new Thickness(8, 2, 8, 2),
-            Margin = new Thickness(0),
-            VerticalAlignment = VerticalAlignment.Center,
-            Focusable = false,
-        };
-        button.Click += _updateDownloaded ? RestartUpdate_Click : DownloadUpdate_Click;
-        var panel = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
-        panel.Children.Add(text);
-        panel.Children.Add(button);
-        _dock.SetNotice(panel);
+        _dock.SetNotice(UpdateNoticeViewModel.For(
+            _availableUpdate.TargetFullRelease.Version.ToString(),
+            _updateDownloaded,
+            _updateBusy,
+            new RelayCommand(() =>
+            {
+                DownloadUpdate_Click(this, new RoutedEventArgs());
+            }),
+            new RelayCommand(() =>
+            {
+                RestartUpdate_Click(this, new RoutedEventArgs());
+            })));
     }
 
     private async void RestartUpdate_Click(object sender, RoutedEventArgs e)

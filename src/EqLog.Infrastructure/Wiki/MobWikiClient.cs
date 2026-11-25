@@ -15,7 +15,7 @@ public sealed class MobWikiClient(HttpClient http)
             RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1)))
         {
             return new(mob, QuestLookup.PageUrl(mob), DateTime.UtcNow, false, null, null, null,
-                new Dictionary<ResistanceType, string>());
+                new Dictionary<ResistanceType, string>(), IconFile: "");
         }
         var info = MobWikiLookup.ParseMob(page.Value.Title, page.Value.Text, DateTime.UtcNow);
         var references = await new QuestWikiClient(http).FindReferencesAsync(page.Value.Title, token).ConfigureAwait(false);

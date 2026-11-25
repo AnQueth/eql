@@ -79,13 +79,35 @@ public sealed record SpawnTrackChange(string Zone, string Mob, bool Tracked);
 
 public sealed record SpellTrackChange(string Spell, bool Tracked);
 
-/// <summary>One overlay row. A non-null <paramref name="ValueColumn"/> appears between Left and Right; empty reserves the column.</summary>
+/// <summary>One overlay row. A non-null <paramref name="ValueColumn"/> appears between Left and Right; empty reserves the column.
+/// <paramref name="LootItem"/> rows are item rows (wiki click, quest references) with the item's icon; <paramref name="IconItem"/>
+/// only shows an item icon. <paramref name="Mob"/> rows show the mob's portrait.</summary>
 public sealed record OverlayRow(string Left, string Right = "", double Fraction = 0, Brush? Bar = null, Brush? Foreground = null,
     bool Wrap = false, bool Bold = false, double Scale = 1, string? LootItem = null, AbilityBreakdown? Breakdown = null,
     bool QuestHeading = false, string? Details = null, bool Stacked = false, string? ExtraColumn = null, string? ToolTip = null,
     string? WatchKey = null, bool Watched = false, OverlayTable? Table = null, string? Link = null, bool HasQuestReferences = false,
     AlertEffect Effect = AlertEffect.None, SpawnTrackChange? SpawnTrack = null, SpellTrackChange? SpellTrack = null,
-    string? ValueColumn = null);
+    string? ValueColumn = null, OverlayRowTone Tone = OverlayRowTone.None, bool Nested = false, string? Mob = null,
+    string? IconItem = null);
+
+/// <summary>How a row draws as part of an inline table. <see cref="None"/> keeps the plain list look.</summary>
+public enum OverlayRowTone
+{
+    /// <summary>A plain list row.</summary>
+    None,
+
+    /// <summary>Column headings with a rule underneath.</summary>
+    TableHeader,
+
+    /// <summary>A table row on the unbanded stripe.</summary>
+    TableRow,
+
+    /// <summary>A table row on the banded stripe.</summary>
+    TableRowBanded,
+
+    /// <summary>A totals row with a rule above.</summary>
+    TableTotal,
+}
 
 /// <summary>
 /// A small grid shown inside a row's card, below its title. With <see cref="Header"/> it is a column table

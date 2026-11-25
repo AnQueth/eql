@@ -4,6 +4,7 @@
         <ResourceDictionary.MergedDictionaries>
             <ResourceDictionary Source="Styles/DatePicker.xaml" />
             <ResourceDictionary Source="Styles/InlineDetails.xaml" />
+            <ResourceDictionary Source="Styles/WikiLabel.xaml" />
         </ResourceDictionary.MergedDictionaries>
         <Style TargetType="Control">
             <Setter Property="FontFamily" Value="Segoe UI" />
@@ -55,6 +56,15 @@
             <Setter Property="BorderBrush" Value="{DynamicResource NightBorder}" />
             <Setter Property="Padding" Value="8,6" />
             <Setter Property="MinHeight" Value="32" />
+            <!-- Only realized entries are built, so item and mob pickers fetch icons for visible names only. -->
+            <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel />
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ComboBox">
@@ -230,6 +240,32 @@
             <Setter Property="BorderThickness" Value="0,0,1,1" />
             <Setter Property="BorderBrush" Value="{DynamicResource NightBorder}" />
             <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <!-- The slim selection handle on the left of grids with row headers (alert triggers). -->
+        <Style TargetType="DataGridRowHeader">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="ToolTip" Value="Click to select; Ctrl or Shift-click to select several" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DataGridRowHeader">
+                        <Border x:Name="Strip" Background="{DynamicResource NightRaised}" BorderBrush="{DynamicResource GridLine}"
+                                BorderThickness="0,0,1,1">
+                            <Border x:Name="Marker" Width="4" Margin="0,8" CornerRadius="2" HorizontalAlignment="Center"
+                                    Background="{DynamicResource NightBorder}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Strip" Property="Background" Value="{DynamicResource Hover}" />
+                                <Setter TargetName="Marker" Property="Background" Value="{DynamicResource NightMuted}" />
+                            </Trigger>
+                            <Trigger Property="IsRowSelected" Value="True">
+                                <Setter TargetName="Strip" Property="Background" Value="{DynamicResource Selection}" />
+                                <Setter TargetName="Marker" Property="Background" Value="{DynamicResource Pumpkin}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style TargetType="DataGridCell">
             <Setter Property="BorderThickness" Value="0" />

@@ -104,8 +104,6 @@ public sealed class SpawnRow
 
 public partial class MainWindow : Window
 {
-    private sealed record DockWorkspaceChoice(string? Id, string Name, bool IsMultiple = false);
-
     private const int LockHotkeyId = 0x4C31;
 
     private DateTime _alertTestVisibleUntil;
@@ -114,11 +112,8 @@ public partial class MainWindow : Window
     private TrackingService _tracking;
     private ApplicationPersistenceService _persistence = null!;
     private readonly Dictionary<string, OverlayWindow> _overlays = [];
-    private readonly Dictionary<string, CheckBox> _overlayToggles = [];
-    private readonly Dictionary<string, CheckBox> _dockToggles = [];
-    private readonly Dictionary<string, ComboBox> _workspaceSelectors = [];
-    private readonly Dictionary<string, CheckBox> _lockToggles = [];
-    private readonly Dictionary<string, Slider> _backgroundSliders = [];
+    private readonly SettingsPanelViewModel _settingsPanel = new();
+    private readonly Dictionary<string, OverlaySettingViewModel> _overlaySettings = [];
     private DockWindow _dock = null!;
     private string? _activeDockWorkspaceId;
     private readonly HashSet<ChatChannel> _chatChannels;
@@ -149,7 +144,6 @@ public partial class MainWindow : Window
 
     private bool _dataReady;
     private LogFileInfo? _startupLogPreview;
-    private readonly ContentControl _historyNotice;
 
     public MainWindow(StartupState state)
         : this(state, null)
@@ -164,12 +158,6 @@ public partial class MainWindow : Window
         _tracking = state.Tracking ?? TrackingComposition.CreateService();
         _session = state.Session;
         InitializeComponent();
-        _historyNotice = new ContentControl
-        {
-            Name = "HistoryLoadingNotice",
-            Template = (ControlTemplate)FindResource("HistoryLoadingNotice"),
-            DataContext = HistoryProgress,
-        };
         InitializeThemes(state);
         InitializeStartupData(state);
         _chatChannels = [.. _settings.ChatChannels];
@@ -189,11 +177,13 @@ public partial class MainWindow : Window
         ResetOnLoginBox.IsChecked = _settings.ResetOnLogin;
 
         _overlayServices = new OverlayShellServices(this, state);
+        OverlaysGroup.DataContext = _settingsPanel;
+        ChatChannelsGroup.DataContext = _settingsPanel;
         CreateOverlays();
         CreateMessagePump();
         TrackUsageState();
         UpdateLockState();
-        CreateChatToggles();
+        CreateChatChannelOptions();
 
         System.Windows.Application.Current.SessionEnding += (_, _) => SaveAllBlocking();
         _gameTimer.Tick += (_, _) => CheckGameVisible();
@@ -222,7 +212,7 @@ public partial class MainWindow : Window
             StatusText.Text = "Saved history is being restored in the background. Workspace layout is ready.";
             HistoryProgress.Tag = "Loading saved data...";
             HistoryProgress.IsIndeterminate = true;
-            _dock.SetLoadingNotice(_historyNotice);
+            _dock.SetLoadingNotice(HistoryProgress);
             _pump.Start();
             StartupCompletion = CompleteStartupAsync(pendingState, availableData);
         }
@@ -306,54 +296,15 @@ public partial class MainWindow : Window
             EnsureOnScreen(w);
             _overlays[def.Key] = w;
 
-            var toggle = new CheckBox { Content = def.Caption, IsChecked = p.Visible, Tag = def.Key, Margin = new Thickness(0, 6, 8, 6) };
-            toggle.Click += (_, _) => SetOverlayVisible(def.Key, toggle.IsChecked == true);
-            _overlayToggles[def.Key] = toggle;
-            var docked = new CheckBox
-            {
-                Content = "docked",
-                IsChecked = _dock.IsPanelInActiveWorkspace(def.Key),
-                FontSize = 11,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 6, 0, 6),
-                ToolTip = "Show this panel in the selected workspace instead of as a floating overlay",
-            };
-            docked.SetResourceReference(ForegroundProperty, "NightMuted");
-            docked.Click += (_, _) => SetDocked(def.Key, docked.IsChecked == true);
-            _dockToggles[def.Key] = docked;
-            var workspaceSelector = new ComboBox
-            {
-                MinWidth = 128,
-                MaxWidth = 150,
-                Margin = new Thickness(6, 3, 0, 3),
-                VerticalAlignment = VerticalAlignment.Center,
-                ToolTip = "Move this overlay to a workspace",
-                Tag = def.Key,
-            };
-            workspaceSelector.SelectionChanged += (_, _) =>
-            {
-                if (_refreshingWorkspaceSelectors ||
-                    workspaceSelector.SelectedItem is not DockWorkspaceChoice choice ||
-                    choice.IsMultiple)
-                {
-                    return;
-                }
-
-                MoveOverlayToWorkspace(def.Key, choice.Id);
-            };
-            _workspaceSelectors[def.Key] = workspaceSelector;
+            var setting = new OverlaySettingViewModel(def.Key, def.Caption, p, _dock.IsPanelInActiveWorkspace(def.Key),
+                new OverlaySettingsHost(this));
+            _overlaySettings[def.Key] = setting;
+            _settingsPanel.Overlays.Add(setting);
             RefreshWorkspaceSelector(def.Key);
-            var toggleRow = new Grid { Width = 340, Margin = new Thickness(0, 0, 12, 0) };
-            toggleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            toggleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            toggleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            Grid.SetColumn(docked, 1);
-            Grid.SetColumn(workspaceSelector, 2);
-            toggleRow.Children.Add(toggle);
-            toggleRow.Children.Add(docked);
-            toggleRow.Children.Add(workspaceSelector);
-            OverlayToggles.Children.Add(toggleRow);
-            OverlayAppearance.Children.Add(CreateOverlayAppearance(w, p));
+            TrackBackgroundOpacity(vm, p, value =>
+            {
+                setting.BackgroundOpacity = value;
+            });
 
             ApplyMode(def.Key);
         }
@@ -378,84 +329,71 @@ public partial class MainWindow : Window
         }
     }
 
-    private Expander CreateOverlayAppearance(OverlayWindow window, OverlayPlacement placement)
+    private void SetOverlayLocked(string key, bool locked)
     {
-        var controls = new StackPanel { Margin = new Thickness(8, 4, 8, 8) };
-        var locked = new CheckBox
-        {
-            Content = "Locked (click-through)",
-            IsChecked = placement.Locked,
-            Margin = new Thickness(0, 4, 0, 8),
-            ToolTip = "Locks this floating overlay only. Docked panels remain interactive. Unlock here to move or resize it.",
-        };
-        locked.Click += (_, _) =>
-        {
-            placement.Locked = locked.IsChecked == true;
-            window.SetLocked(placement.Locked.Value);
-            UpdateLockState();
-        };
-        _lockToggles[window.Panel.Key] = locked;
-        controls.Children.Add(locked);
+        _settings.Overlays[key].Locked = locked;
+        _overlays[key].SetLocked(locked);
+        UpdateLockState();
+    }
 
-        AddSlider("Text size", 9, 22, placement.FontSize!.Value, 1, value =>
+    private void SetOverlayFontSize(string key, double value)
+    {
+        _settings.Overlays[key].FontSize = value;
+        _overlays[key].Panel.ViewModel.FontSize = value;
+        if (key == "merge")
         {
-            placement.FontSize = value;
-            window.Panel.ViewModel.FontSize = value;
-            if (window.Panel.Key == "merge")
-            {
-                RefreshMergeView();
-            }
-        }, value => $"{value:0} pt");
-        var backgroundSlider = AddSlider("Background", 0, 1, placement.BackgroundOpacity!.Value, 0.05, value =>
-        {
-            placement.BackgroundOpacity = value;
-            window.Panel.ViewModel.BackgroundOpacity = value;
-        }, value => $"{value:P0}");
-        _backgroundSliders[window.Panel.Key] = backgroundSlider;
-        TrackBackgroundOpacity(window.Panel.ViewModel, placement, value => backgroundSlider.Value = value);
-        AddSlider("Mouse-over background", 0, 1, placement.HoverBackgroundOpacity!.Value, 0.05, value =>
-        {
-            placement.HoverBackgroundOpacity = value;
-            window.Panel.ViewModel.HoverBackgroundOpacity = value;
-        }, value => $"{value:P0}");
-        return new Expander { Header = window.Panel.Caption, Content = controls };
+            RefreshMergeView();
+        }
+    }
 
-        Slider AddSlider(string caption, double minimum, double maximum, double value, double tick,
-            Action<double> changed, Func<double, string> format)
+    private void SetOverlayBackgroundOpacity(string key, double value)
+    {
+        _settings.Overlays[key].BackgroundOpacity = value;
+        _overlays[key].Panel.ViewModel.BackgroundOpacity = value;
+    }
+
+    private void SetOverlayHoverBackgroundOpacity(string key, double value)
+    {
+        _settings.Overlays[key].HoverBackgroundOpacity = value;
+        _overlays[key].Panel.ViewModel.HoverBackgroundOpacity = value;
+    }
+
+    /// <summary>Routes the settings panel's overlay rows to the shell.</summary>
+    private sealed class OverlaySettingsHost(MainWindow shell) : IOverlaySettingsHost
+    {
+        public void SetOverlayVisible(string key, bool visible)
         {
-            var row = new Grid { Margin = new Thickness(0, 4, 0, 4) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(54) });
-            row.Children.Add(new TextBlock { Text = caption, VerticalAlignment = VerticalAlignment.Center });
-            var slider = new Slider
-            {
-                Minimum = minimum,
-                Maximum = maximum,
-                Value = value,
-                TickFrequency = tick,
-                SmallChange = tick,
-                LargeChange = tick * 2,
-                IsSnapToTickEnabled = true,
-                ToolTip = $"{caption} for {window.Panel.Caption}",
-            };
-            var label = new TextBlock
-            {
-                Text = format(slider.Value),
-                HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            slider.ValueChanged += (_, e) =>
-            {
-                changed(e.NewValue);
-                label.Text = format(e.NewValue);
-            };
-            Grid.SetColumn(slider, 1);
-            Grid.SetColumn(label, 2);
-            row.Children.Add(slider);
-            row.Children.Add(label);
-            controls.Children.Add(row);
-            return slider;
+            shell.SetOverlayVisible(key, visible);
+        }
+
+        public void SetDocked(string key, bool docked)
+        {
+            shell.SetDocked(key, docked);
+        }
+
+        public void SetOverlayLocked(string key, bool locked)
+        {
+            shell.SetOverlayLocked(key, locked);
+        }
+
+        public void MoveOverlayToWorkspace(string key, string? workspaceId)
+        {
+            shell.MoveOverlayToWorkspace(key, workspaceId);
+        }
+
+        public void SetOverlayFontSize(string key, double value)
+        {
+            shell.SetOverlayFontSize(key, value);
+        }
+
+        public void SetOverlayBackgroundOpacity(string key, double value)
+        {
+            shell.SetOverlayBackgroundOpacity(key, value);
+        }
+
+        public void SetOverlayHoverBackgroundOpacity(string key, double value)
+        {
+            shell.SetOverlayHoverBackgroundOpacity(key, value);
         }
     }
 
@@ -579,7 +517,7 @@ public partial class MainWindow : Window
         bool changed = _dock.IsPanelInActiveWorkspace(key) != docked;
         _dock.SetPanelInActiveWorkspace(key, docked, _settings.Overlays[key], append: docked && changed);
         _settings.Overlays[key].Docked = _dock.IsPanelInAnyWorkspace(key);
-        _dockToggles[key].IsChecked = _dock.IsPanelInActiveWorkspace(key);
+        _overlaySettings[key].SyncDocked(_dock.IsPanelInActiveWorkspace(key));
         ApplyMode(key);
         RefreshWorkspaceSelector(key);
         if (changed)
@@ -598,7 +536,7 @@ public partial class MainWindow : Window
         _settings.DockWindow.MovePanelToWorkspace(
             key, targetWorkspaceId: null, DockPanelSettings.From(_settings.Overlays[key]));
         _settings.Overlays[key].Docked = _dock.IsPanelInAnyWorkspace(key);
-        _dockToggles[key].IsChecked = false;
+        _overlaySettings[key].SyncDocked(false);
         ApplyMode(key);
         RefreshWorkspaceSelector(key);
         if (changed)
@@ -607,11 +545,9 @@ public partial class MainWindow : Window
         }
     }
 
-    private bool _refreshingWorkspaceSelectors;
-
     private void RefreshWorkspaceSelector(string key)
     {
-        if (!_workspaceSelectors.TryGetValue(key, out var selector))
+        if (!_overlaySettings.TryGetValue(key, out var setting))
         {
             return;
         }
@@ -642,17 +578,7 @@ public partial class MainWindow : Window
             }
         }
 
-        _refreshingWorkspaceSelectors = true;
-        try
-        {
-            selector.ItemsSource = choices;
-            selector.DisplayMemberPath = nameof(DockWorkspaceChoice.Name);
-            selector.SelectedItem = selected;
-        }
-        finally
-        {
-            _refreshingWorkspaceSelectors = false;
-        }
+        setting.SetWorkspaceChoices(choices, selected);
     }
 
     private void MoveOverlayToWorkspace(string key, string? targetWorkspaceId)
@@ -708,9 +634,9 @@ public partial class MainWindow : Window
         foreach (var (key, placement) in _settings.Overlays)
         {
             placement.Docked = _dock.IsPanelInAnyWorkspace(key);
-            if (_dockToggles.TryGetValue(key, out var toggle))
+            if (_overlaySettings.TryGetValue(key, out var setting))
             {
-                toggle.IsChecked = _dock.IsPanelInActiveWorkspace(key);
+                setting.SyncDocked(_dock.IsPanelInActiveWorkspace(key));
             }
 
             if (_overlays.ContainsKey(key))
@@ -719,7 +645,7 @@ public partial class MainWindow : Window
             }
         }
 
-        foreach (string key in _workspaceSelectors.Keys)
+        foreach (string key in _overlaySettings.Keys)
         {
             RefreshWorkspaceSelector(key);
         }
@@ -796,32 +722,26 @@ public partial class MainWindow : Window
         }
     }
 
-    private void CreateChatToggles()
+    private void CreateChatChannelOptions()
     {
         foreach (var channel in Enum.GetValues<ChatChannel>())
         {
-            var box = new CheckBox
-            {
-                Content = channel.ToString(),
-                IsChecked = _chatChannels.Contains(channel),
-                Width = 140,
-                Margin = new Thickness(0, 6, 10, 6),
-            };
-            box.Click += (_, _) =>
-            {
-                if (box.IsChecked == true)
-                {
-                    _chatChannels.Add(channel);
-                }
-                else
-                {
-                    _chatChannels.Remove(channel);
-                }
-
-                _settings.ChatChannels = [.. _chatChannels];
-            };
-            ChatToggles.Children.Add(box);
+            _settingsPanel.ChatChannels.Add(new ChatChannelOptionViewModel(channel, _chatChannels.Contains(channel), SetChatChannel));
         }
+    }
+
+    private void SetChatChannel(ChatChannel channel, bool enabled)
+    {
+        if (enabled)
+        {
+            _chatChannels.Add(channel);
+        }
+        else
+        {
+            _chatChannels.Remove(channel);
+        }
+
+        _settings.ChatChannels = [.. _chatChannels];
     }
 
     private void SetOverlayVisible(string key, bool visible)
@@ -833,6 +753,11 @@ public partial class MainWindow : Window
         }
 
         _settings.Overlays[key].Visible = visible;
+        if (_overlaySettings.TryGetValue(key, out var setting))
+        {
+            setting.SyncVisible(visible);
+        }
+
         ApplyMode(key);
         if (changed)
         {
@@ -1324,7 +1249,7 @@ public partial class MainWindow : Window
         foreach (var (key, w) in _overlays)
         {
             _settings.Overlays[key].Locked = locked;
-            _lockToggles[key].IsChecked = locked;
+            _overlaySettings[key].SyncLocked(locked);
             w.SetLocked(locked);
         }
         UpdateLockState();
@@ -1382,6 +1307,7 @@ public partial class MainWindow : Window
             return;
         }
         _shuttingDown = true;
+        SingleInstance.MarkClosing();
         await ShutdownAsync();
         _shutDown = true;
         _ = Dispatcher.BeginInvoke(() => _dock.Close());
@@ -1672,7 +1598,6 @@ public partial class MainWindow : Window
         var alerts = _session.MatchTriggers([TestLineBox.Text]);
         double previewSeconds = AlertsOverlayViewModel.DisplaySeconds(alerts);
         _alertTestVisibleUntil = DateTime.Now.AddSeconds(previewSeconds + 1);
-        _overlayToggles["alerts"].IsChecked = true;
         SetOverlayVisible("alerts", true);
         if (_settings.Overlays["alerts"].Docked)
         {

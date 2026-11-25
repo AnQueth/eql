@@ -1,13 +1,60 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.48" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.49" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
-        What's New in 1.0.48
+        What's New in 1.0.49
     </Paragraph>
     <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
-        Released November 25, 2026 at 12:04 AM CT.
+        Released November 25, 2026 at 5:49 PM CT.
     </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Faster response while logs load
+        </Paragraph>
+        <Paragraph>
+            During initial log reading, overlays now update less often and yield between
+            panels so the rest of the app can respond. Once the log is caught up, normal
+            refresh timing resumes. To reduce background work, overlay contents are not
+            exposed to screen readers or other Windows accessibility tools; the main window
+            and Settings remain accessible. Launching the app again brings the existing
+            window forward instead of opening a second copy.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Wiki item icons and mob portraits
+        </Paragraph>
+        <Paragraph>
+            Item and mob labels across overlays and pickers can now show their wiki image.
+            Images are cached locally after lookup, so they load faster next time. Some wiki
+            pages have no image; their names still appear normally. The Wiki activity overlay
+            shows current request and background-work progress.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Choose what a tracking reset does
+        </Paragraph>
+        <Paragraph>
+            Open Settings &gt; General &gt; Tracking data &gt; Reset tracking data... to
+            choose whether existing lines in the selected log are ignored, starting fresh,
+            or reloaded from the beginning to rebuild available history. Reset tracking
+            data and NPC/DPS history are backed up; settings, original game logs, and wiki
+            lookup caches are kept.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Seasonal themes and clearer controls
+        </Paragraph>
+        <Paragraph>
+            Settings &gt; Theme now includes Thanksgiving Harvest, Christmas Classic,
+            Christmas Snowfall, and Christmas Eve. Scrolling overlays show a scrollbar
+            when more rows are available, alert-trigger selection is easier to see, and
+            date-picker watermarks now clear when focused or when you start typing.
+        </Paragraph>
+    </Section>
     <Section>
         <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
             Maintenance release

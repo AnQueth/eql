@@ -308,7 +308,7 @@ public sealed class ExaltationsOverlayViewModel : OverlayViewModel, IDisposable
         }
         return new(first.WikiDefault ? $"Expected exaltation (unverified): {first.Name}" : $"Exaltation: {first.Name}",
             Wrap: true, Bold: true, Stacked: true,
-            Table: OverlayTable.Pairs(fields).WithLinks(links), Details: warning);
+            Table: OverlayTable.Pairs(fields).WithLinks(links), Details: warning, IconItem: first.Name);
     }
 
     private void SetInstalledOnly(object parameter)

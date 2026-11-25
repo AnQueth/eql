@@ -1,6 +1,7 @@
 using System.Runtime.ExceptionServices;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Automation.Peers;
 using System.Windows.Automation.Provider;
@@ -94,6 +95,7 @@ public sealed class OverlayChromeTests
                     application.Resources.Remove(typeof(Button));
                 }
                 AsyncTextFilterTests.VerifyQuestVirtualization();
+                VerifyOverlayAutomationHidesContent();
                 VerifyQuestAndSkyTemplates();
                 TradeskillOverlayTests.VerifyMerchantListScrolling();
                 TradeskillOverlayTests.VerifyCompactToolbarAndRecipeLoading();
@@ -103,8 +105,10 @@ public sealed class OverlayChromeTests
                 VerifyBreakdownButtonsUsePressClickMode();
                 VerifyDpsRecentFightsScrolling();
                 VerifyFloatingPlacement();
+                VerifyDockWindowBindings();
                 VerifyCompactCards();
                 VerifyCardTableBindings();
+                VerifyTableLayout();
                 VerifyFloatingChrome();
                 VerifyMoteColumns();
                 VerifyAllMoteTiersVisible();
@@ -112,13 +116,16 @@ public sealed class OverlayChromeTests
                 VerifyItemFilterToolbars();
                 VerifyKnownSpellsVisibilityControl();
                 VerifyInventoryMergeMoteTemplates();
+                VerifyWikiLabelLooksUpIcons();
                 VerifyViewModelReplacement();
                 VerifyOptionalTemplateLookups();
                 VerifyStandaloneRowSelectors();
                 MotePlanRestoredTests.PlannerScrollBody_LongCopyEditorAndResultsAreReachableInEveryTab();
                 MotePlanRestoredTests.PlannerTabs_SwitchTasksWithoutMixingPagesOrRefreshingForNestedControls();
                 StartupTests.WorkspaceOpensBeforeDataAndClosingDoesNotSavePlaceholderHistory();
-                application.Shutdown();
+                // Later test classes build WPF trees on other threads; leave no resources owned by this one.
+                application.Resources = new ResourceDictionary();
+                ReleaseProcessWideApplication();
             }
             catch (Exception ex)
             {
@@ -132,6 +139,17 @@ public sealed class OverlayChromeTests
         {
             ExceptionDispatchInfo.Capture(failure).Throw();
         }
+    }
+
+    private static void ReleaseProcessWideApplication()
+    {
+        // Closing the dock in StartupTests requests app shutdown, which sets WPF's static shutting-down flag for the
+        // rest of the process and makes Window.Show a no-op on every thread. Completing the shutdown is worse: it
+        // unregisters the pack://application package, so later InitializeComponent calls fail fast. Leave the idle
+        // Application in place and clear only the flag so later test classes can show windows.
+        typeof(System.Windows.Application)
+            .GetProperty("IsShuttingDown", BindingFlags.NonPublic | BindingFlags.Static)!
+            .SetValue(null, false);
     }
 
     private static void VerifyStandaloneRowSelectors()
@@ -483,6 +501,27 @@ public sealed class OverlayChromeTests
         sky.Dispose();
     }
 
+    private static void VerifyWikiLabelLooksUpIcons()
+    {
+        var provider = new WikiIconProvider((_, _) => Task.FromResult<string?>(null), () => false);
+        var host = new StackPanel();
+        host.Resources.MergedDictionaries.Add(new ResourceDictionary
+        {
+            Source = new Uri("/EqLogOverlay;component/Styles/WikiLabel.xaml", UriKind.Relative),
+        });
+        WikiLabel.SetIconSource(host, provider);
+        var label = new WikiLabel { Kind = WikiIconKind.Mob, Content = "Cazic Thule" };
+        host.Children.Add(label);
+
+        label.Subject = "Cazic Thule";
+        Assert.Same(provider.Get(new WikiIconKey(WikiIconKind.Mob, "cazic thule")), label.Icon);
+        Layout(host, 200, 40);
+        Assert.Equal(Visibility.Collapsed, ((FrameworkElement)label.Template.FindName("PART_Icon", label)).Visibility);
+
+        label.Subject = null;
+        Assert.Null(label.Icon);
+    }
+
     private static void VerifyInventoryMergeMoteTemplates()
     {
         var inventory = new InventoryViewModel();
@@ -496,6 +535,9 @@ public sealed class OverlayChromeTests
         var inventoryItem = new QuestInventoryItem { Item = "Sword" };
         inventoryCell.DataContext = inventoryItem;
         Layout(inventoryCell, 250, 30);
+        var inventoryLabel = Assert.IsType<WikiLabel>(inventoryCell.Children[1]);
+        Assert.Equal("Sword", inventoryLabel.Subject);
+        Assert.Null(inventoryLabel.Icon);
         var inventoryQuestLink = Assert.IsType<TextBlock>(inventoryCell.Children[0]);
         Assert.Equal(Visibility.Collapsed, inventoryQuestLink.Visibility);
         inventoryItem.HasQuestReferences = true;
@@ -565,6 +607,29 @@ public sealed class OverlayChromeTests
         return new OverlayFrameMessage(frame, now, new TailProgress(0, 0, 0, true));
     }
 
+    private static void VerifyOverlayAutomationHidesContent()
+    {
+        var panel = new OverlayPanel("dps", "DPS", false);
+        var window = new OverlayWindow(panel);
+        try
+        {
+            window.AttachPanel();
+            window.Show();
+            window.UpdateLayout();
+            foreach (var element in new UIElement[] { window, panel })
+            {
+                var peer = UIElementAutomationPeer.CreatePeerForElement(element);
+                Assert.False(peer.IsControlElement());
+                Assert.False(peer.IsContentElement());
+                Assert.Null(peer.GetChildren());
+            }
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
     private static void VerifyHeaderButtonTheme(Style buttonStyle)
     {
         var panel = new OverlayPanel("dps", "DPS", false);
@@ -615,7 +680,9 @@ public sealed class OverlayChromeTests
 
         slider.Value = 0.3;
         Assert.Equal(0.3, vm.BackgroundOpacity);
-        Assert.Equal((byte)(0.3 * 255), Assert.IsType<SolidColorBrush>(frame.Background).Color.A);
+        Assert.Equal(0.3, Assert.IsType<SolidColorBrush>(frame.Background).Opacity);
+        Assert.Equal(0, panel.Inset.Background.Opacity);
+        Assert.Equal(new Thickness(0), panel.Inset.BorderThickness);
         vm.BackgroundOpacity = 0.8;
         Assert.Equal(0.8, slider.Value);
         Assert.Equal("Background opacity: 80%", slider.ToolTip);
@@ -644,6 +711,12 @@ public sealed class OverlayChromeTests
         Assert.Equal(Visibility.Visible, header.Visibility);
         Assert.Equal(Visibility.Visible, frameContent.Children[1].Visibility);
         Assert.NotEqual(Brushes.Transparent, frame.BorderBrush);
+        Assert.Equal(new Thickness(2), frame.BorderThickness);
+        Assert.Equal(new Thickness(1), panel.Inset.BorderThickness);
+        Assert.Equal(new Thickness(0, 0, 0, 2), header.BorderThickness);
+        Assert.Equal(vm.BackgroundOpacity, panel.Inset.Background.Opacity);
+        Assert.Equal(vm.BackgroundOpacity, header.Background.Opacity);
+        Assert.Equal(new Thickness(10, 5, 10, 5), new Button { Style = (Style)panel.FindResource(typeof(Button)) }.Padding);
 
         var window = new OverlayWindow(panel);
         try
@@ -769,7 +842,7 @@ public sealed class OverlayChromeTests
                 vm.SetDocked(docked);
                 Render();
                 window.UpdateLayout();
-                var shownRows = Named<ItemsControl>(panel, "RowItems");
+                var shownRows = RowsControl(panel);
                 Assert.Equal(3, shownRows.Items.Count);
                 Assert.True(showKnown.IsChecked);
                 Assert.True(OverlayPanel.IsInteractive(showKnown));
@@ -869,6 +942,46 @@ public sealed class OverlayChromeTests
         Assert.Equal(3, tabs.Items.Count);
         search.Text = "sphinx";
         Assert.Equal("sphinx", npcViewModel.SearchText);
+
+        var icons = new CountingIconSource();
+        WikiLabel.SetIconSource(choices, icons);
+        var appResources = new ResourceDictionary
+        {
+            Source = new Uri("/EqLogOverlay;component/AppResources.xaml", UriKind.Relative),
+        };
+        choices.Style = Assert.IsType<Style>(appResources[typeof(ComboBox)]);
+        npcViewModel.Choices.ReplaceAll(Enumerable.Range(0, 300).Select(i => new NpcChoice("a sphinx " + i, "Zone")));
+        var npcWindow = new Window { Content = npcPanel, Width = 620, Height = 720, ShowInTaskbar = false };
+        try
+        {
+            npcWindow.Show();
+            choices.IsDropDownOpen = true;
+            Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.Background, () =>
+            {
+            });
+            var popup = (Popup)choices.Template.FindName("PART_Popup", choices);
+            popup.Child.UpdateLayout();
+            Assert.True(popup.IsOpen);
+            Assert.Contains(new WikiIconKey(WikiIconKind.Mob, "a sphinx 0"), icons.Requested);
+            Assert.InRange(icons.Requested.Count, 1, 60);
+        }
+        finally
+        {
+            choices.IsDropDownOpen = false;
+            npcWindow.Content = null;
+            npcWindow.Close();
+        }
+    }
+
+    private sealed class CountingIconSource : IWikiIconSource
+    {
+        public List<WikiIconKey> Requested { get; } = [];
+
+        public WikiIconViewModel? GetWikiIcon(WikiIconKey key)
+        {
+            Requested.Add(key);
+            return null;
+        }
     }
 
     private static void VerifyBreakdownButtonsUsePressClickMode()
@@ -1009,21 +1122,21 @@ public sealed class OverlayChromeTests
         Assert.True(vm.FullDetails);
         Arrange();
         Assert.Equal(Visibility.Collapsed, attackers.Visibility);
-        var host = Named<AbilityDetailsHost>(oldest, "FightBreakdown");
+        var host = Named<ContentControl>(oldest, "FightBreakdown");
         Assert.Equal(Visibility.Visible, host.Visibility);
-        var tabs = Assert.IsType<TabControl>(host.Content);
+        var tabs = Descendants(host).OfType<TabControl>().First();
         Assert.Equal(20, list.Items.Count);
         Assert.Same(oldest, Fight(19));
         tabs.SelectedIndex = 1;
         vm.UpdateFights(snapshot);
-        Assert.Same(tabs, host.Content);
+        Assert.Same(tabs, Descendants(host).OfType<TabControl>().First());
         Assert.Equal(1, tabs.SelectedIndex);
 
         Click(Named<Button>(first, "FightButton"));
         Arrange();
-        var firstHost = Named<AbilityDetailsHost>(first, "FightBreakdown");
-        var firstTabs = Assert.IsType<TabControl>(firstHost.Content);
-        var abilityTable = Assert.IsType<DataGrid>(((TabItem)firstTabs.Items[0]).Content);
+        var firstHost = Named<ContentControl>(first, "FightBreakdown");
+        var firstTabs = Descendants(firstHost).OfType<TabControl>().First();
+        var abilityTable = Descendants(firstTabs).OfType<DataGrid>().First(grid => grid.Name == "AbilityTable");
         Assert.Equal(100, Assert.Single(abilityTable.Items.Cast<AbilityStats>()).Total);
         Assert.True(firstTabs.ActualHeight > 0);
         var scroll = Named<ScrollViewer>(panel, "FightScroll");
@@ -1035,7 +1148,7 @@ public sealed class OverlayChromeTests
         vm.UpdateFights(updatedSnapshot);
         Arrange();
         Assert.Same(first, Fight(0));
-        Assert.Same(firstTabs, firstHost.Content);
+        Assert.Same(firstTabs, Descendants(firstHost).OfType<TabControl>().First());
         Assert.Equal(300, Assert.Single(abilityTable.Items.Cast<AbilityStats>()).Total);
         firstTabs.SelectedIndex = 1;
 
@@ -1046,7 +1159,7 @@ public sealed class OverlayChromeTests
         Arrange();
         Assert.Equal(20, list.Items.Count);
         Assert.Same(first, Fight(1));
-        Assert.Same(firstTabs, firstHost.Content);
+        Assert.Same(firstTabs, Descendants(firstHost).OfType<TabControl>().First());
         Assert.Equal(1, firstTabs.SelectedIndex);
 
         checkbox.IsChecked = false;
@@ -1082,6 +1195,87 @@ public sealed class OverlayChromeTests
         Assert.Equal(2, list.Items.Count);
         Assert.NotSame(Fight(0), Fight(1));
         Assert.NotSame(vm.Fights[0], vm.Fights[1]);
+    }
+
+    private static void VerifyDockWindowBindings()
+    {
+        var settings = new DockWindowSettings();
+        var first = settings.CreateWorkspace("First");
+        var second = settings.CreateWorkspace("Second");
+        var deleted = settings.CreateWorkspace("Old");
+        Assert.True(settings.DeleteWorkspace(deleted.Id));
+        settings.ActiveWorkspaceId = first.Id;
+        var dock = new DockWindow(settings)
+        {
+            Left = -10000,
+            Top = -10000,
+            ShowActivated = false,
+        };
+        int changes = 0;
+        dock.WorkspaceChanged += (_, _) =>
+        {
+            changes++;
+        };
+        try
+        {
+            dock.Show();
+            dock.UpdateLayout();
+            var tabs = Descendants(Named<ItemsControl>(dock, "WorkspaceTabs")).OfType<Button>().ToArray();
+            Assert.Equal(["First", "Second"], tabs.Select(tab => (string)tab.Content));
+            Assert.Contains(Descendants(dock).OfType<TextBlock>(),
+                text => text.Text.StartsWith("No panels are in this workspace.", StringComparison.Ordinal) && text.IsVisible);
+
+            tabs[1].RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            Assert.Equal(second.Id, settings.ActiveWorkspaceId);
+            Assert.Equal(1, changes);
+            Assert.True(dock.ViewModel.Workspaces.Single(tab => tab.Id == second.Id).IsSelected);
+
+            var restore = Named<Button>(dock, "RestoreWorkspaceButton");
+            Assert.True(restore.IsEnabled);
+            restore.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            var menu = restore.ContextMenu!;
+            Assert.True(menu.IsOpen);
+            menu.UpdateLayout();
+            var item = Assert.IsType<MenuItem>(menu.ItemContainerGenerator.ContainerFromIndex(0));
+            Assert.Equal("Old", Assert.IsType<DockWorkspaceTab>(item.DataContext).Name);
+            item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            menu.IsOpen = false;
+            Assert.False(deleted.Deleted);
+            Assert.Equal(2, changes);
+            dock.UpdateLayout();
+            Assert.False(restore.IsEnabled);
+            Assert.Equal(3, Descendants(Named<ItemsControl>(dock, "WorkspaceTabs")).OfType<Button>().Count());
+
+            int downloads = 0;
+            var download = new EqLog.Overlay.Mvvm.RelayCommand(() =>
+            {
+                downloads++;
+            });
+            dock.SetNotice(UpdateNoticeViewModel.For("1.2.3", downloaded: false, busy: false, download, download));
+            dock.UpdateLayout();
+            var notice = Named<ContentControl>(dock, "Notice");
+            Assert.True(notice.IsVisible);
+            Assert.Contains(Descendants(notice).OfType<TextBlock>(), text => text.Text == "\u2B06 Version 1.2.3 is available");
+            var action = Descendants(notice).OfType<Button>().Single();
+            Assert.Equal("Download update", action.Content);
+            action.Command.Execute(null);
+            Assert.Equal(1, downloads);
+            dock.SetNotice(null);
+            dock.UpdateLayout();
+            Assert.False(notice.IsVisible);
+
+            var loading = Named<ContentControl>(dock, "HistoryLoadingNotice");
+            Assert.False(loading.IsVisible);
+            dock.SetLoadingNotice(new ProgressBar { Tag = "Loading saved data...", IsIndeterminate = true });
+            dock.UpdateLayout();
+            Assert.True(loading.IsVisible);
+            Assert.Contains(Descendants(loading).OfType<TextBlock>(), text => text.Text == "Loading saved data...");
+            Assert.True(Descendants(loading).OfType<ProgressBar>().Single().IsIndeterminate);
+        }
+        finally
+        {
+            dock.Close();
+        }
     }
 
     private static void VerifyFloatingPlacement()
@@ -1300,7 +1494,7 @@ public sealed class OverlayChromeTests
 
     private static byte Alpha(Border frame)
     {
-        return Assert.IsType<SolidColorBrush>(frame.Background).Color.A;
+        return (byte)(Assert.IsType<SolidColorBrush>(frame.Background).Opacity * 255);
     }
 
     private static void VerifyRoundedFrame(OverlayPanel panel, Border frame)
@@ -1377,12 +1571,13 @@ public sealed class OverlayChromeTests
         var panel = new OverlayPanel(vm);
         OverlayRow[] content =
         [
-            new("Tier", "session (all)", Bold: true, ExtraColumn: "Owned", ValueColumn: "Gear/Spell"),
+            new("Tier", "Session (all)", Bold: true, ExtraColumn: "Owned", ValueColumn: "Gear/Spell",
+                Tone: OverlayRowTone.TableHeader),
             new("Infinitesimal", "1  (1)", LootItem: "Mote of Infinitesimal Potential",
-                ExtraColumn: "7", ToolTip: "Tier value details", ValueColumn: "1/1 ≤+0"),
+                ExtraColumn: "7", ToolTip: "Tier value details", ValueColumn: "1/1 ≤+0", Tone: OverlayRowTone.TableRow),
             new("Infinite", "12  (2222)", LootItem: "Mote of Infinite Potential",
-                ExtraColumn: "3", ValueColumn: "10/512 ≤+9"),
-            new("Total", "13  (2223)", Bold: true, ExtraColumn: "10", ValueColumn: ""),
+                ExtraColumn: "3", ValueColumn: "10/512 ≤+9", Tone: OverlayRowTone.TableRowBanded),
+            new("Total", "13  (2223)", Bold: true, ExtraColumn: "10", ValueColumn: "", Tone: OverlayRowTone.TableTotal),
         ];
         vm.Show("Motes", null, content);
         var rows = LayoutMoteRows(panel, 300);
@@ -1392,6 +1587,11 @@ public sealed class OverlayChromeTests
         Assert.Equal("10/512 ≤+9", value.Text);
         AssertTextFits(name);
         AssertTextFits(value);
+        Assert.Null(name.TextDecorations);
+        Assert.Equal(Visibility.Collapsed, Named<Border>(rows[1], "TableStripe").Visibility);
+        Assert.Equal(Visibility.Visible, Named<Border>(rows[2], "TableStripe").Visibility);
+        Assert.Equal(new Thickness(0, 0, 0, 1), Named<Border>(rows[0], "TableStripe").BorderThickness);
+        Assert.Equal(new Thickness(0, 1, 0, 0), Named<Border>(rows[3], "TableStripe").BorderThickness);
         var itemGrid = Named<Grid>(rows[1], "RowRoot");
         var itemButton = Named<Button>(rows[1], "RowButton");
         Assert.Equal("Tier value details", itemGrid.ToolTip);
@@ -1537,6 +1737,62 @@ public sealed class OverlayChromeTests
         }
     }
 
+    private static void VerifyTableLayout()
+    {
+        var table = new OverlayTable(["Item", "Count"], [["Bone", "12"], ["Silk", "-3"], ["Gem", "?"]])
+            .WithLinks([("Bone", "https://example.test/bone")]);
+        var view = new OverlayTableView { Table = table };
+        var window = new Window { Content = view, Width = 300, Height = 200, ShowInTaskbar = false };
+        try
+        {
+            window.Show();
+            window.UpdateLayout();
+            var grid = Assert.Single(Descendants(view).OfType<Grid>(), g => g.IsItemsHost);
+            Assert.Equal([GridUnitType.Star, GridUnitType.Auto], grid.ColumnDefinitions.Select(c => c.Width.GridUnitType));
+            Assert.Equal(4, grid.RowDefinitions.Count);
+
+            var cells = Descendants(view).OfType<TextBlock>().ToDictionary(text => text.Text);
+            Assert.Equal(FontWeights.SemiBold, cells["Count"].FontWeight);
+            Assert.Equal(TextTrimming.CharacterEllipsis, cells["Count"].TextTrimming);
+            Assert.Equal(TextAlignment.Right, cells["Count"].TextAlignment);
+            Assert.Equal(TextAlignment.Right, cells["-3"].TextAlignment);
+            Assert.Equal(TextAlignment.Left, cells["Silk"].TextAlignment);
+            Assert.Equal(TextWrapping.Wrap, cells["Silk"].TextWrapping);
+            Assert.Equal(2, Grid.GetRow(VisualTreeHelper.GetParent(cells["Silk"]) as UIElement));
+            Assert.Null(ClickCommand.GetCommand(cells["Bone"]));
+            Assert.Empty(cells["Bone"].TextDecorations);
+
+            var stripe = Assert.Single(Descendants(view).OfType<Border>(), border => border.Opacity == 0.7);
+            Assert.Equal(2, Grid.GetRow(VisualTreeHelper.GetParent(stripe) as UIElement));
+            Assert.Equal(2, Grid.GetColumnSpan(VisualTreeHelper.GetParent(stripe) as UIElement));
+
+            var opened = new List<string?>();
+            view.LinkCommand = new EqLog.Overlay.Mvvm.RelayCommand<string>(url => opened.Add(url));
+            window.UpdateLayout();
+            var link = Assert.Single(Descendants(view).OfType<TextBlock>(), text => text.Text == "Bone");
+            Assert.NotEmpty(link.TextDecorations);
+            Assert.Equal("Open on EQLWiki", link.ToolTip);
+            Assert.Null(ClickCommand.GetCommand(Assert.Single(Descendants(view).OfType<TextBlock>(), text => text.Text == "Silk")));
+            ClickCommand.GetCommand(link)!.Execute(ClickCommand.GetCommandParameter(link));
+            Assert.Equal("https://example.test/bone", Assert.Single(opened));
+
+            view.Table = OverlayTable.Pairs([("Zone", "Nexus"), ("Level", "50")], pairsPerRow: 2);
+            window.UpdateLayout();
+            grid = Assert.Single(Descendants(view).OfType<Grid>(), g => g.IsItemsHost);
+            Assert.Equal([GridUnitType.Auto, GridUnitType.Star, GridUnitType.Auto, GridUnitType.Star],
+                grid.ColumnDefinitions.Select(c => c.Width.GridUnitType));
+            cells = Descendants(view).OfType<TextBlock>().ToDictionary(text => text.Text);
+            Assert.Equal(TextWrapping.NoWrap, cells["Zone"].TextWrapping);
+            Assert.Equal(FontWeights.SemiBold, cells["50"].FontWeight);
+            Assert.Equal(TextAlignment.Left, cells["50"].TextAlignment);
+            Assert.DoesNotContain(Descendants(view).OfType<Border>(), border => border.Opacity == 0.7);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
     private static readonly string[] MoteColumnNames = ["ExtraColumn", "RightColumn", "ValueColumn"];
 
     private static FrameworkElement[] LayoutMoteRows(OverlayPanel panel, double width)
@@ -1603,15 +1859,25 @@ public sealed class OverlayChromeTests
             var scroll = Named<ScrollViewer>(panel, "RowScroll");
             Assert.True(scroll.ScrollableHeight > 1,
                 $"The {(docked ? "docked" : "floating")} overlay must scroll to show every mote and fragment.");
+            Assert.Equal(Visibility.Visible, scroll.ComputedVerticalScrollBarVisibility);
         }
     }
 
     private static FrameworkElement[] RowContainers(OverlayPanel panel)
     {
-        var items = Named<ItemsControl>(panel, "RowItems");
+        var items = RowsControl(panel);
         return Enumerable.Range(0, items.Items.Count)
             .Select(index => Assert.IsAssignableFrom<FrameworkElement>(items.ItemContainerGenerator.ContainerFromIndex(index)))
             .ToArray();
+    }
+
+    /// <summary>The overlay's row list: the plain <c>RowItems</c> or the virtualized <c>RowList</c>.</summary>
+    private static ItemsControl RowsControl(OverlayPanel panel)
+    {
+        var found = Descendants(panel).OfType<ItemsControl>()
+            .FirstOrDefault(element => element.Name is "RowItems" or "RowList");
+        Assert.True(found is not null, "No overlay row list was found.");
+        return found;
     }
 
     private static void Layout(FrameworkElement element, double width, double height)

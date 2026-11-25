@@ -1,0 +1,24 @@
+{
+  "Name": "Christmas Snowfall",
+  "Colors": {
+    "NightBackground": "#F5F8FB",
+    "NightSurface": "#FFFFFF",
+    "NightRaised": "#E6EEF5",
+    "NightBorder": "#7D8FA3",
+    "NightText": "#1B2430",
+    "NightMuted": "#4A5868",
+    "Pumpkin": "#B0262D",
+    "Hover": "#E3ECF5",
+    "Pressed": "#CBDCEC",
+    "Selection": "#F6D6D8",
+    "Alternate": "#EEF3F8",
+    "GridLine": "#C3CFDB",
+    "ScrollThumb": "#7D8FA3",
+    "AccentText": "#FFFFFF",
+    "OverlayHeader": "#9E1F27",
+    "OverlayDim": "#4A5868",
+    "OverlayGood": "#1F6B3A",
+    "OverlayWarn": "#7A5200",
+    "OverlayBad": "#B0262D"
+  }
+}

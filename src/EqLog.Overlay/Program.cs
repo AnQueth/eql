@@ -6,8 +6,23 @@ internal static class Program
     private static void Main()
     {
         Velopack.VelopackApp.Build().SetAutoApplyOnStartup(false).Run();
-        var app = new App();
-        app.InitializeComponent();
-        app.Run();
+        if (!SingleInstance.TryAcquire())
+        {
+            return;
+        }
+        try
+        {
+            var app = new App();
+            app.InitializeComponent();
+            SingleInstance.ListenForActivation(() =>
+            {
+                app.Dispatcher.BeginInvoke(app.ActivateMainWindow);
+            });
+            app.Run();
+        }
+        finally
+        {
+            SingleInstance.Release();
+        }
     }
 }

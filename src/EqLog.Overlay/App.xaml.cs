@@ -21,7 +21,13 @@ public partial class App : System.Windows.Application
         try
         {
             state = await Overlay.MainWindow.StartupState.LoadShellAsync();
-            UsageTelemetry.SetEnabled(state.Settings.ShareUsageTelemetry);
+            bool shareTelemetry = state.Settings.ShareUsageTelemetry;
+            // Building the telemetry exporter takes a noticeable moment; keep it off the UI thread.
+            _ = Task.Run(() =>
+            {
+                UsageTelemetry.SetEnabled(shareTelemetry);
+                UsageTelemetry.TrackApplicationStarted();
+            });
             if (state.SettingsError is { } settingsError)
             {
                 MessageBox.Show($"Settings could not be loaded: {settingsError.Message}\nTemporary defaults will be used. The existing settings file will not be overwritten; repair it and restart to enable saving.",
@@ -36,7 +42,6 @@ public partial class App : System.Windows.Application
             Shutdown(1);
             return;
         }
-        UsageTelemetry.TrackApplicationStarted();
 
         var fallback = state.Themes.FirstOrDefault(t => t.Name == "Neutral Light");
         try
@@ -77,6 +82,21 @@ public partial class App : System.Windows.Application
     {
         UsageTelemetry.Shutdown();
         base.OnExit(e);
+    }
+
+    /// <summary>Brings the main window forward when the app is launched again.</summary>
+    internal void ActivateMainWindow()
+    {
+        if (MainWindow is not { IsLoaded: true } window)
+        {
+            return;
+        }
+        if (window.WindowState == WindowState.Minimized)
+        {
+            window.WindowState = WindowState.Normal;
+        }
+        window.Show();
+        window.Activate();
     }
 
     private static void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)

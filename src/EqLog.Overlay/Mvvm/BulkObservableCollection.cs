@@ -14,6 +14,9 @@ public class BulkObservableCollection<T> : ObservableCollection<T>
     /// <summary>More changed items than this produce one reset notification.</summary>
     public const int ResetThreshold = 64;
 
+    /// <summary>Bounds the search for moved items so huge rewrites stay linear.</summary>
+    private const long MaxMatchComparisons = 65_536;
+
     /// <summary>Replaces every item and raises one reset notification.</summary>
     public void ReplaceAll(IEnumerable<T> items)
     {
@@ -59,7 +62,15 @@ public class BulkObservableCollection<T> : ObservableCollection<T>
             return false;
         }
 
-        if (Math.Max(remove, insert) > ResetThreshold)
+        // Rows that only shifted (a new entry at the top of a "recent" list, one dropped at the bottom) are moved
+        // rather than recreated, so a busy list doesn't reset and rebuild every container on each refresh.
+        int reused = 0;
+        if ((long)remove * insert <= MaxMatchComparisons)
+        {
+            reused = CountReusable(source, prefix, remove, insert, matches);
+        }
+
+        if (Math.Max(remove, insert) - reused > ResetThreshold)
         {
             var merged = new List<T>(source.Count);
             for (int i = 0; i < prefix; i++)
@@ -78,6 +89,12 @@ public class BulkObservableCollection<T> : ObservableCollection<T>
             return true;
         }
 
+        if (reused > 0)
+        {
+            ReconcileMiddle(source, prefix, suffix, matches, create);
+            return true;
+        }
+
         int replace = Math.Min(remove, insert);
         for (int i = 0; i < replace; i++)
         {
@@ -92,5 +109,63 @@ public class BulkObservableCollection<T> : ObservableCollection<T>
             Insert(prefix + i, create(source[prefix + i]));
         }
         return true;
+    }
+
+    private int CountReusable<TSource>(IReadOnlyList<TSource> source, int prefix, int remove, int insert,
+        Func<T, TSource, bool> matches)
+    {
+        var used = new bool[remove];
+        int reused = 0;
+        for (int i = 0; i < insert; i++)
+        {
+            for (int j = 0; j < remove; j++)
+            {
+                if (!used[j] && matches(this[prefix + j], source[prefix + i]))
+                {
+                    used[j] = true;
+                    reused++;
+                    break;
+                }
+            }
+        }
+        return reused;
+    }
+
+    private void ReconcileMiddle<TSource>(IReadOnlyList<TSource> source, int prefix, int suffix,
+        Func<T, TSource, bool> matches, Func<TSource, T> create)
+    {
+        int end = source.Count - suffix;
+        for (int i = prefix; i < end; i++)
+        {
+            int oldEnd = Count - suffix;
+            if (i < oldEnd && matches(this[i], source[i]))
+            {
+                continue;
+            }
+
+            int found = -1;
+            for (int j = i + 1; j < oldEnd; j++)
+            {
+                if (matches(this[j], source[i]))
+                {
+                    found = j;
+                    break;
+                }
+            }
+
+            if (found >= 0)
+            {
+                Move(found, i);
+            }
+            else
+            {
+                Insert(i, create(source[i]));
+            }
+        }
+
+        while (Count > source.Count)
+        {
+            RemoveAt(end);
+        }
     }
 }

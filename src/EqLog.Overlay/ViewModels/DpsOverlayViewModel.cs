@@ -142,7 +142,7 @@ public sealed class DpsFightViewModel : ObservableObject
     private bool _isExpanded;
     private bool _fullDetails;
     private IReadOnlyList<OverlayRow> _attackerRows = [];
-    private AbilityBreakdown? _breakdown;
+    private AbilityDetailsViewModel? _details;
 
     internal DpsFightViewModel(OverlayViewModel owner, (string Target, DateTime Start, int Occurrence) key,
         FightSnapshot fight, bool fullDetails)
@@ -251,16 +251,16 @@ public sealed class DpsFightViewModel : ObservableObject
         }
     }
 
-    /// <summary>The full ability breakdown, while expanded with full details.</summary>
-    public AbilityBreakdown? Breakdown
+    /// <summary>The full ability details, while expanded with full details; updated in place across refreshes.</summary>
+    public AbilityDetailsViewModel? Details
     {
         get
         {
-            return _breakdown;
+            return _details;
         }
         private set
         {
-            SetProperty(ref _breakdown, value);
+            SetProperty(ref _details, value);
         }
     }
 
@@ -285,11 +285,20 @@ public sealed class DpsFightViewModel : ObservableObject
     {
         if (_fullDetails)
         {
-            Breakdown = OverlayPresenters.FightBreakdown(_fight);
+            var breakdown = OverlayPresenters.FightBreakdown(_fight);
+            if (Details is null)
+            {
+                Details = new AbilityDetailsViewModel(breakdown, compact: true);
+            }
+            else
+            {
+                Details.Update(breakdown);
+            }
+
             return;
         }
 
-        Breakdown = null;
+        Details = null;
         var rows = OverlayPresenters.DpsAttackerRows(_fight);
         if (Attackers.Count == rows.Count && _attackerRows.SequenceEqual(rows))
         {

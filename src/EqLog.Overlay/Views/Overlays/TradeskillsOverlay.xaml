@@ -43,7 +43,9 @@
                       ToolTip="Choose a recipe or crafted item; different ingredient combinations remain separate">
                 <ComboBox.ItemTemplate>
                     <DataTemplate>
-                        <TextBlock Text="{Binding Label}" />
+                        <views:WikiLabel x:Name="TradeskillRecipeLabel" Subject="{Binding Recipe.Name}" Kind="Item">
+                            <TextBlock Text="{Binding Label}" />
+                        </views:WikiLabel>
                     </DataTemplate>
                 </ComboBox.ItemTemplate>
                 <ComboBox.ItemContainerStyle>
@@ -61,7 +63,9 @@
                       ToolTip="Alternate combines listed on the crafted item's wiki page">
                 <ComboBox.ItemTemplate>
                     <DataTemplate>
-                        <TextBlock Text="{Binding Label}" />
+                        <views:WikiLabel x:Name="TradeskillCombineLabel" Subject="{Binding Recipe.Name}" Kind="Item">
+                            <TextBlock Text="{Binding Label}" />
+                        </views:WikiLabel>
                     </DataTemplate>
                 </ComboBox.ItemTemplate>
             </ComboBox>

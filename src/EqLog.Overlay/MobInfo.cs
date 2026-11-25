@@ -17,6 +17,8 @@ public partial class MainWindow
     private readonly HashSet<string> _spawnWikiPending = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _spawnWikiRetry = new(StringComparer.OrdinalIgnoreCase);
     private WikiService _wikiRepository = null!;
+    private WikiIconProvider? _wikiIcons;
+
     private bool _mobShowing;
 
     private void CheckSpawnWiki()
@@ -93,6 +95,11 @@ public partial class MainWindow
             _mobStartupStatus += " Invalid display timeout reset to 5 seconds.";
         }
         _wikiRepository = WikiComposition.CreateService(_session);
+        if (_wikiIcons is null)
+        {
+            _wikiIcons = new WikiIconProvider(LoadWikiIconAsync, () => WikiLookupPaused);
+            Views.WikiLabel.SetIconSource(this, _wikiIcons);
+        }
         _wikiRepository.CacheWriteFailed += (operation, error) =>
         {
             Dispatcher.BeginInvoke(() =>
@@ -113,6 +120,12 @@ public partial class MainWindow
                     "Cached data kept; future observations retry after 5 minutes, or use Refresh wiki.");
             });
         };
+    }
+
+    private async Task<string?> LoadWikiIconAsync(WikiIconKey key, CancellationToken token)
+    {
+        using var lease = BeginWikiLookup(token);
+        return await _wikiRepository.GetIconAsync(key, WikiPriority.Background, lease.Token);
     }
 
     private void PumpMobInfo(DateTime now)

@@ -139,7 +139,8 @@ internal static class UsageTelemetry
             "Neutral Light" or "Neutral Dark" or "High Contrast Dark" or "High Contrast Light" or
             "Enchanted Forest" or "Arctic Frost" or "Midnight Ocean" or "Halloween" or
             "Desert Sand" or "Crimson Ember" or "Royal Amethyst" or
-            "Colorblind Safe (Red-Green)" or "Colorblind Safe (Blue-Yellow)" => theme.Name,
+            "Colorblind Safe (Red-Green)" or "Colorblind Safe (Blue-Yellow)" or
+            "Thanksgiving Harvest" or "Christmas Classic" or "Christmas Snowfall" or "Christmas Eve" => theme.Name,
             _ => "Custom",
         };
         TrackEvent(changed ? "theme_changed" : "theme_state",

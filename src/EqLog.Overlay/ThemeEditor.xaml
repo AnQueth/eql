@@ -1,0 +1,263 @@
+<UserControl x:Class="EqLog.Overlay.ThemeEditor"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:EqLog.Overlay"
+             xmlns:vm="clr-namespace:EqLog.Overlay.ViewModels">
+    <UserControl.DataContext>
+        <vm:ThemeEditorViewModel />
+    </UserControl.DataContext>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="8">
+            <TextBlock Text="THEME STUDIO" FontSize="20" FontWeight="Bold"
+                       Foreground="{DynamicResource Pumpkin}" />
+            <TextBlock Text="Enter #RRGGBB colors or use Pick... to choose a color. Draft changes affect only this preview until Apply &amp; save. Choosing another theme replaces this draft."
+                       TextWrapping="Wrap" Margin="0,8,0,8" />
+            <TextBlock Text="Theme name" Margin="0,0,0,4" />
+            <TextBox Text="{Binding ThemeName, UpdateSourceTrigger=PropertyChanged}" MaxLength="80" />
+            <WrapPanel Margin="0,8,0,0">
+                <Button Content="Apply &amp; save" Command="{Binding ApplyCommand}" />
+                <Button Content="Export JSON..." Click="Export_Click" />
+                <Button Content="Reset draft" Command="{Binding ResetCommand}" />
+            </WrapPanel>
+            <local:FixedLineTextBlock Text="{Binding Status}" Foreground="{DynamicResource Pumpkin}"
+                                      Margin="0,8,0,8" />
+
+            <TextBlock Text="Preview (hover any part to see which color it uses)"
+                       Foreground="{DynamicResource NightMuted}" Margin="0,0,0,4" />
+            <Border Background="{Binding PreviewBrushes[NightBackground]}"
+                    BorderBrush="{Binding PreviewBrushes[NightBorder]}" BorderThickness="1"
+                    CornerRadius="6" Padding="10"
+                    ToolTip="NightBackground (Window background)&#10;NightBorder (Borders)">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <Border Background="{Binding PreviewBrushes[NightRaised]}"
+                                BorderBrush="{Binding PreviewBrushes[Pumpkin]}" BorderThickness="1,1,1,0"
+                                CornerRadius="5,5,0,0" Padding="10,5"
+                                ToolTip="NightRaised (Raised controls)&#10;Pumpkin (Selected tab)">
+                            <TextBlock Text="Spell durations" Foreground="{Binding PreviewBrushes[Pumpkin]}"
+                                       FontWeight="SemiBold" />
+                        </Border>
+                        <Border Background="{Binding PreviewBrushes[Hover]}"
+                                BorderBrush="{Binding PreviewBrushes[NightBorder]}" BorderThickness="1,1,1,0"
+                                CornerRadius="5,5,0,0" Padding="10,5" Margin="3,0"
+                                ToolTip="Hover (Hovered controls)&#10;NightBorder (Borders)">
+                            <TextBlock Text="Spawn timers" Foreground="{Binding PreviewBrushes[NightText]}" />
+                        </Border>
+                        <Border Background="{Binding PreviewBrushes[NightBackground]}"
+                                BorderBrush="{Binding PreviewBrushes[NightBorder]}" BorderThickness="1,1,1,0"
+                                CornerRadius="5,5,0,0" Padding="10,5"
+                                ToolTip="NightBackground (Window background)&#10;NightBorder (Borders)">
+                            <TextBlock Text="Alerts" Foreground="{Binding PreviewBrushes[NightText]}" />
+                        </Border>
+                    </StackPanel>
+                    <Border Background="{Binding PreviewBrushes[NightSurface]}"
+                            BorderBrush="{Binding PreviewBrushes[NightBorder]}" BorderThickness="1"
+                            CornerRadius="0,5,5,5" Padding="8">
+                        <StackPanel>
+                            <TextBlock Text="Learned spell durations" Foreground="{Binding PreviewBrushes[Pumpkin]}"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Text="Learned from your casts. Relearn clears old samples."
+                                       Foreground="{Binding PreviewBrushes[NightMuted]}" Margin="0,2,0,6"
+                                       ToolTip="NightMuted (Secondary text)" />
+                            <Border Background="{Binding PreviewBrushes[NightBackground]}"
+                                    BorderBrush="{Binding PreviewBrushes[Pumpkin]}" BorderThickness="1"
+                                    CornerRadius="4" Padding="6,3" Margin="0,0,0,6"
+                                    ToolTip="Text box: NightText (text), Selection (selected text), Pumpkin (focus)">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Clar" Foreground="{Binding PreviewBrushes[NightText]}" />
+                                    <Border Background="{Binding PreviewBrushes[Selection]}">
+                                        <TextBlock Text="ity" Foreground="{Binding PreviewBrushes[NightText]}" />
+                                    </Border>
+                                    <Border Background="{Binding PreviewBrushes[Pumpkin]}" Width="1.5"
+                                            Margin="1,1,0,1" />
+                                </StackPanel>
+                            </Border>
+                            <Border BorderBrush="{Binding PreviewBrushes[NightBorder]}" BorderThickness="1">
+                                <StackPanel>
+                                    <Border Background="{Binding PreviewBrushes[NightRaised]}"
+                                            BorderBrush="{Binding PreviewBrushes[GridLine]}" BorderThickness="0,0,0,1"
+                                            Padding="6,3" ToolTip="NightRaised (Table header)&#10;Pumpkin (Header text)">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="72" />
+                                                <ColumnDefinition Width="60" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Spell" Foreground="{Binding PreviewBrushes[Pumpkin]}"
+                                                       FontWeight="SemiBold" />
+                                            <TextBlock Grid.Column="1" Text="Duration" Foreground="{Binding PreviewBrushes[Pumpkin]}"
+                                                       FontWeight="SemiBold" />
+                                            <TextBlock Grid.Column="2" Text="Samples" Foreground="{Binding PreviewBrushes[Pumpkin]}"
+                                                       FontWeight="SemiBold" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Background="{Binding PreviewBrushes[NightSurface]}"
+                                            BorderBrush="{Binding PreviewBrushes[GridLine]}" BorderThickness="0,0,0,1"
+                                            Padding="6,3" ToolTip="NightSurface (Table row)&#10;GridLine (Row divider)">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="72" />
+                                                <ColumnDefinition Width="60" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Clarity II" Foreground="{Binding PreviewBrushes[NightText]}" />
+                                            <TextBlock Grid.Column="1" Text="40:00" Foreground="{Binding PreviewBrushes[NightMuted]}" />
+                                            <TextBlock Grid.Column="2" Text="12" Foreground="{Binding PreviewBrushes[NightMuted]}" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Background="{Binding PreviewBrushes[Alternate]}"
+                                            BorderBrush="{Binding PreviewBrushes[GridLine]}" BorderThickness="0,0,0,1"
+                                            Padding="6,3" ToolTip="Alternate (Alternating table rows)&#10;GridLine (Row divider)">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="72" />
+                                                <ColumnDefinition Width="60" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Spirit of Wolf" Foreground="{Binding PreviewBrushes[NightText]}" />
+                                            <TextBlock Grid.Column="1" Text="36:00" Foreground="{Binding PreviewBrushes[NightMuted]}" />
+                                            <TextBlock Grid.Column="2" Text="8" Foreground="{Binding PreviewBrushes[NightMuted]}" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Background="{Binding PreviewBrushes[Selection]}"
+                                            BorderBrush="{Binding PreviewBrushes[GridLine]}" BorderThickness="0,0,0,1"
+                                            Padding="6,3" ToolTip="Selection (Selected row)&#10;GridLine (Row divider)">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="72" />
+                                                <ColumnDefinition Width="60" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Allure (charm)" Foreground="{Binding PreviewBrushes[NightText]}" />
+                                            <TextBlock Grid.Column="1" Text="learning" Foreground="{Binding PreviewBrushes[NightMuted]}" />
+                                            <TextBlock Grid.Column="2" Text="0" Foreground="{Binding PreviewBrushes[NightMuted]}" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Background="{Binding PreviewBrushes[Hover]}" Padding="6,3"
+                                            ToolTip="Hover (Hovered row)">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="72" />
+                                                <ColumnDefinition Width="60" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Visions of Grandeur" Foreground="{Binding PreviewBrushes[NightText]}" />
+                                            <TextBlock Grid.Column="1" Text="42:00" Foreground="{Binding PreviewBrushes[NightMuted]}" />
+                                            <TextBlock Grid.Column="2" Text="5" Foreground="{Binding PreviewBrushes[NightMuted]}" />
+                                        </Grid>
+                                    </Border>
+                                    <Grid Height="50" Background="{Binding PreviewBrushes[NightBackground]}"
+                                          ToolTip="ScrollThumb (Scrollbar thumb)">
+                                        <Border Background="{Binding PreviewBrushes[ScrollThumb]}"
+                                                CornerRadius="4" Margin="2" Height="46"
+                                                VerticalAlignment="Top" HorizontalAlignment="Left" Width="8" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                            <WrapPanel Margin="0,8,0,0">
+                                <Border Background="{Binding PreviewBrushes[NightRaised]}"
+                                        BorderBrush="{Binding PreviewBrushes[NightBorder]}" BorderThickness="1"
+                                        CornerRadius="5" Padding="12,4" Margin="0,0,6,0"
+                                        ToolTip="NightRaised (Button)&#10;NightBorder (Border)">
+                                    <TextBlock Text="Relearn" Foreground="{Binding PreviewBrushes[NightText]}" />
+                                </Border>
+                                <Border Background="{Binding PreviewBrushes[Hover]}"
+                                        BorderBrush="{Binding PreviewBrushes[Pumpkin]}" BorderThickness="1"
+                                        CornerRadius="5" Padding="12,4" Margin="0,0,6,0"
+                                        ToolTip="Hover (Hovered button)&#10;Pumpkin (Border)">
+                                    <TextBlock Text="Remove" Foreground="{Binding PreviewBrushes[NightText]}" />
+                                </Border>
+                                <Border Background="{Binding PreviewBrushes[Pressed]}"
+                                        BorderBrush="{Binding PreviewBrushes[Pumpkin]}" BorderThickness="1"
+                                        CornerRadius="5" Padding="12,4" Margin="0,0,6,0"
+                                        ToolTip="Pressed (Pressed button)&#10;Pumpkin (Border)">
+                                    <TextBlock Text="Save" Foreground="{Binding PreviewBrushes[NightText]}" />
+                                </Border>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                            ToolTip="Pumpkin (Checkbox)&#10;AccentText (Checkmark)">
+                                    <Border Background="{Binding PreviewBrushes[Pumpkin]}"
+                                            BorderBrush="{Binding PreviewBrushes[Pumpkin]}" BorderThickness="1"
+                                            Width="16" Height="16" CornerRadius="3">
+                                        <TextBlock Text="✓" Foreground="{Binding PreviewBrushes[AccentText]}"
+                                                   FontWeight="SemiBold" FontSize="11" HorizontalAlignment="Center" />
+                                    </Border>
+                                    <TextBlock Text="Sound" Foreground="{Binding PreviewBrushes[NightText]}"
+                                               Margin="5,0,0,0" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+            <Border Margin="0,8,0,0" Padding="12" CornerRadius="6"
+                    ToolTip="The game behind a floating overlay">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#2E4634" Offset="0" />
+                        <GradientStop Color="#786846" Offset="1" />
+                    </LinearGradientBrush>
+                </Border.Background>
+                <WrapPanel>
+                    <Border Background="{Binding OverlayBackground}" BorderBrush="{Binding PreviewBrushes[Pumpkin]}"
+                            BorderThickness="1" CornerRadius="4" Padding="8,6" Margin="0,0,10,6" Width="250"
+                            ToolTip="NightBackground at overlay opacity; Pumpkin frame">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <TextBlock Text="Spawn Timers" Foreground="{Binding PreviewBrushes[Pumpkin]}"
+                                           FontWeight="SemiBold" />
+                                <TextBlock Text="  The Overthere" Foreground="{Binding PreviewBrushes[NightMuted]}" />
+                            </StackPanel>
+                            <TextBlock Text="Tracked here    respawn" Foreground="{Binding PreviewBrushes[OverlayHeader]}"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Text="a sarnak courier    up  seen 21:40" Foreground="{Binding PreviewBrushes[OverlayGood]}" />
+                            <TextBlock Text="Ixiblat Fer    DUE +01:12" Foreground="{Binding PreviewBrushes[OverlayWarn]}"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Text="Lord Bergurgle    12:45" Foreground="{Binding PreviewBrushes[NightText]}" />
+                            <TextBlock Text="a goblin scout    dead 03:20 (learning)" Foreground="{Binding PreviewBrushes[OverlayDim]}" />
+                        </StackPanel>
+                    </Border>
+                    <Border Background="{Binding OverlayBackground}" BorderBrush="{Binding PreviewBrushes[Pumpkin]}"
+                            BorderThickness="1" CornerRadius="4" Padding="8,6" Margin="0,0,10,6" Width="250"
+                            ToolTip="NightBackground at overlay opacity; Pumpkin frame">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <TextBlock Text="Experience" Foreground="{Binding PreviewBrushes[Pumpkin]}"
+                                           FontWeight="SemiBold" />
+                                <TextBlock Text="  Level 60" Foreground="{Binding PreviewBrushes[NightMuted]}" />
+                            </StackPanel>
+                            <TextBlock Text="Deaths    2 (last: a froglok)" Foreground="{Binding PreviewBrushes[OverlayWarn]}" />
+                            <TextBlock Text="Coin looted    14p 3g" Foreground="{Binding PreviewBrushes[OverlayGood]}" />
+                            <TextBlock Text="AA POINTS CAPPED - spend AAs!" Foreground="{Binding PreviewBrushes[OverlayBad]}"
+                                       FontWeight="SemiBold" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                </WrapPanel>
+            </Border>
+
+            <ItemsControl ItemsSource="{Binding Colors}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Margin="0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="36" />
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding Label}" ToolTip="{Binding Key}" VerticalAlignment="Center"
+                                       TextWrapping="Wrap" Margin="0,0,8,0" />
+                            <Border Grid.Column="1" Background="{Binding SwatchBrush}" CornerRadius="4"
+                                    Margin="0,3,8,3" BorderBrush="{DynamicResource NightMuted}" BorderThickness="1" />
+                            <TextBox Grid.Column="2" Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
+                                     MaxLength="7" Tag="{Binding Key}"
+                                     ToolTip="{Binding Key, StringFormat={}{0}: #RRGGBB (for example #FFAA57)}" />
+                            <Button Grid.Column="3" Content="Pick..." Tag="{Binding Key}"
+                                    Click="PickColor_Click"
+                                    ToolTip="{Binding Label, StringFormat=Choose {0} color}" />
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

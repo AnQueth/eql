@@ -68,7 +68,15 @@
                 <ComboBox x:Name="PlanInventoryName" ItemsSource="{Binding InventoryNames}"
                           SelectedItem="{Binding SelectedInventoryName, Mode=TwoWay}"
                           IsEnabled="{Binding IsEquipment}" Margin="0,0,0,8"
-                          ToolTip="Pick a matching item from the last inventory export. Selecting an item sets the rank to your best copy." />
+                          ToolTip="Pick a matching item from the last inventory export. Selecting an item sets the rank to your best copy.">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <views:WikiLabel x:Name="PlanInventoryLabel" Subject="{Binding}" Kind="Item">
+                                <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" />
+                            </views:WikiLabel>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
                 <WrapPanel Margin="0,0,0,6">
                     <TextBlock Text="Current" VerticalAlignment="Center" Foreground="{DynamicResource NightMuted}" />
                     <ComboBox x:Name="PlanRank" ItemsSource="{Binding RankOptions}" SelectedItem="{Binding CurrentRank, Mode=TwoWay}"

@@ -10,7 +10,7 @@ namespace EqLog.Overlay.ViewModels;
 /// The state of one overlay panel: header, rows, appearance and placement. Subclasses own per-overlay options and turn
 /// pump frames into content; the shared <c>OverlayPanel</c> view renders the chrome and the rows.
 /// </summary>
-public class OverlayViewModel : ObservableObject, IOverlayFrameReceiver
+public class OverlayViewModel : ObservableObject, IOverlayFrameReceiver, IWikiIconSource
 {
     private static readonly string[] ChromeProperties =
     [
@@ -25,6 +25,7 @@ public class OverlayViewModel : ObservableObject, IOverlayFrameReceiver
     private string _subtitle = "";
     private bool _subtitleReserved;
     private string? _titleLink;
+    private string? _titleMob;
     private bool _isShowing;
     private double _fontSize = 13;
     private double _backgroundOpacity = 0.55;
@@ -96,21 +97,15 @@ public class OverlayViewModel : ObservableObject, IOverlayFrameReceiver
         get;
     }
 
-    /// <summary>Whether the rows are virtualized; long lists (quests, recipes, NPCs) only build visible rows.</summary>
+    /// <summary>
+    /// Whether the rows are virtualized so only the rows on screen are built. The exceptions are chat (follows its end),
+    /// alerts (a few centered rows) and motes (a short table whose columns align across every row).
+    /// </summary>
     public bool UsesVirtualRows
     {
         get
         {
-            return Key is "quests" or "sky" or "npcs" or "exaltations" or "tradeskills" or "leveling";
-        }
-    }
-
-    /// <summary>Whether the row list shows its scroll bar; other overlays scroll with the wheel only.</summary>
-    public bool ShowsRowScrollBar
-    {
-        get
-        {
-            return Key == "dps";
+            return !AutoScrollToEnd && !CentersRows && Key != "motes";
         }
     }
 
@@ -127,6 +122,18 @@ public class OverlayViewModel : ObservableObject, IOverlayFrameReceiver
     protected IOverlayActions Actions
     {
         get;
+    }
+
+    /// <summary>The shared icon a row shows for an item or mob, or null when icons are unavailable.</summary>
+    internal WikiIconViewModel? GetWikiIcon(EqLog.Core.WikiIconKey key)
+    {
+        return Actions.GetWikiIcon(key);
+    }
+
+    /// <inheritdoc />
+    WikiIconViewModel? IWikiIconSource.GetWikiIcon(EqLog.Core.WikiIconKey key)
+    {
+        return GetWikiIcon(key);
     }
 
     /// <summary>The rows, reconciled in place so unchanged rows keep their visuals.</summary>
@@ -212,6 +219,19 @@ public class OverlayViewModel : ObservableObject, IOverlayFrameReceiver
         get
         {
             return _titleLink is not null;
+        }
+    }
+
+    /// <summary>The mob the title names, shown with its portrait, when the content is about one mob.</summary>
+    public string? TitleMob
+    {
+        get
+        {
+            return _titleMob;
+        }
+        private set
+        {
+            SetProperty(ref _titleMob, value);
         }
     }
 
@@ -566,15 +586,17 @@ public class OverlayViewModel : ObservableObject, IOverlayFrameReceiver
     public void Show(OverlayContent content)
     {
         ArgumentNullException.ThrowIfNull(content);
-        Show(content.Title, content.Subtitle, content.Rows, content.TitleLink);
+        Show(content.Title, content.Subtitle, content.Rows, content.TitleLink, content.TitleMob);
     }
 
     /// <summary>Shows new header text and rows, keeping unchanged rows.</summary>
-    public void Show(string title, string? subtitle, IReadOnlyList<OverlayRow> rows, string? titleLink = null)
+    public void Show(string title, string? subtitle, IReadOnlyList<OverlayRow> rows, string? titleLink = null,
+        string? titleMob = null)
     {
         ArgumentNullException.ThrowIfNull(rows);
         Title = title;
         TitleLink = titleLink;
+        TitleMob = titleMob;
         Subtitle = subtitle ?? "";
         Rows.Reconcile(rows, static (existing, row) => existing.Row == row, row => new OverlayRowViewModel(this, row));
     }

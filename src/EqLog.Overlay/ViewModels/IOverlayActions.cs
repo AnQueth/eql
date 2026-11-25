@@ -23,6 +23,12 @@ public interface IOverlayActions
 
     /// <summary>Moves a docked overlay into another workspace.</summary>
     void MoveToWorkspace(OverlayViewModel overlay, string workspaceId);
+
+    /// <summary>The shared icon for an item or mob, or null when icons are unavailable.</summary>
+    WikiIconViewModel? GetWikiIcon(EqLog.Core.WikiIconKey key)
+    {
+        return null;
+    }
 }
 
 /// <summary>An <see cref="IOverlayActions"/> that ignores every request, for previews and tests.</summary>

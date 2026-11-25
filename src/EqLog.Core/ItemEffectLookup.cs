@@ -17,8 +17,9 @@ public sealed record ItemEffect(string Kind, string Name, string? Url, string? D
 /// <param name="Found">Whether a recognizable item page was found.</param>
 /// <param name="Effects">Explicit supported effects only.</param>
 /// <param name="SearchTerms">Item classes and instrument keywords for effect-first searching.</param>
+/// <param name="IconFile">The wiki icon file, empty when the page has none, or null when cached before icons were read.</param>
 public sealed record ItemEffectInfo(string Item, string Url, DateTime CheckedUtc, bool Found,
-    IReadOnlyList<ItemEffect> Effects, string SearchTerms)
+    IReadOnlyList<ItemEffect> Effects, string SearchTerms, string? IconFile = null)
 {
     /// <summary>Successful pages are refreshed weekly; missing pages daily.</summary>
     public bool NeedsRefresh
@@ -62,7 +63,7 @@ public static class ItemEffectLookup
     {
         if (!Regex.IsMatch(text, @"\{\{\s*Itempage\b", RegexOptions.IgnoreCase, MatchTimeout))
         {
-            return new(item, QuestLookup.PageUrl(title), checkedUtc, false, [], "");
+            return new(item, QuestLookup.PageUrl(title), checkedUtc, false, [], "", "");
         }
         var effects = new List<ItemEffect>();
         foreach (var (field, kind) in new[]
@@ -122,7 +123,8 @@ public static class ItemEffectLookup
             terms += " string stringed";
         }
         return new(item, QuestLookup.PageUrl(title), checkedUtc, true,
-            effects.DistinctBy(effect => (effect.Kind, effect.Name)).ToArray(), terms);
+            effects.DistinctBy(effect => (effect.Kind, effect.Name)).ToArray(), terms,
+            WikiImages.ItemIconFile(Field(text, "lucy_img_ID")));
     }
 
     private static void AddEffect(List<ItemEffect> effects, string kind, string raw)

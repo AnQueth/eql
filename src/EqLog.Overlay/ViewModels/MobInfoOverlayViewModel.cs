@@ -667,7 +667,7 @@ public sealed class MobInfoOverlayViewModel : OverlayViewModel,
             rows.Add(new("Persistent mob storage unavailable; this session is NOT being saved. See General.",
                 Wrap: true, Foreground: Brushes.Coral, Scale: 0.85));
         }
-        return new(mob, zone, rows, WikiLinks.SearchUrl(mob));
+        return new(mob, zone, rows, WikiLinks.SearchUrl(mob), mob);
     }
 
     /// <summary>Builds quest-reference rows from cached wiki data.</summary>

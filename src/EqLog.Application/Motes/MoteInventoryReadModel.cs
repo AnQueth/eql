@@ -8,7 +8,7 @@ namespace EqLog.Application.Motes;
 
 public sealed record MoteTierReadModel(
     string Tier, string ItemName, int SessionCount, int AllTimeCount, int? Owned,
-    int? Rank, int? EquipmentPoints, int? SpellPoints, int? MaximumEquipmentRank);
+    int? Rank, int? EquipmentPoints, int? SpellPoints, int? MaximumEquipmentRank, bool IsFragment = false);
 
 public sealed record MoteRecentReadModel(
     string Tier, string Looter, int Quantity, string Source, DateTime Time, string ItemName);
@@ -97,7 +97,7 @@ public sealed class MoteInventoryReadModel
                 allTime.GetValueOrDefault(tier), owned, rank,
                 rank is int gearRank ? MoteValues.Points(UpgradeKind.Equipment, gearRank, isFragment) : null,
                 rank is int spellRank ? MoteValues.Points(UpgradeKind.Spell, spellRank, isFragment) : null,
-                rank is int maxRank ? MoteValues.ItemMaxTier(maxRank) : null));
+                rank is int maxRank ? MoteValues.ItemMaxTier(maxRank) : null, isFragment));
         }
 
         int? total = _exportTime.HasValue || _ownedByTier.Count > 0

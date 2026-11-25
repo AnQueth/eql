@@ -92,7 +92,8 @@ public sealed class LogSessionService : IAsyncDisposable
     }
 
     /// <summary>Starts an already configured engine after the previous source has stopped. Does not perform UI work.</summary>
-    public void Start(LogFileInfo file, LogEngine engine)
+    /// <param name="ignoreLogLinesBefore">Log lines stamped before this local time are skipped, as is everything before them.</param>
+    public void Start(LogFileInfo file, LogEngine engine, DateTime? ignoreLogLinesBefore = null)
     {
         ArgumentNullException.ThrowIfNull(file);
         ArgumentNullException.ThrowIfNull(engine);
@@ -146,6 +147,7 @@ public sealed class LogSessionService : IAsyncDisposable
                 engine.ConsiderAssessment -= considerAssessment;
                 engine.LootObserved -= lootObserved;
             };
+            var cutoff = new LogCutoff(ignoreLogLinesBefore);
             _reader = Task.Run(() => _source.RunAsync(file.Path, true, lines =>
             {
                 lock (_gate)
@@ -154,6 +156,11 @@ public sealed class LogSessionService : IAsyncDisposable
                     {
                         return;
                     }
+                }
+                lines = cutoff.Filter(lines);
+                if (lines.Count == 0)
+                {
+                    return;
                 }
                 engine.ProcessLines(lines);
                 BatchProcessed?.Invoke(new(file.Path, file.CharacterName, lines, IsLive(generation)));

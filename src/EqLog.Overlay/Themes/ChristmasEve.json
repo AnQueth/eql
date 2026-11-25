@@ -1,0 +1,24 @@
+{
+  "Name": "Christmas Eve",
+  "Colors": {
+    "NightBackground": "#0B1024",
+    "NightSurface": "#111834",
+    "NightRaised": "#1A2347",
+    "NightBorder": "#3E4C80",
+    "NightText": "#F3F1E6",
+    "NightMuted": "#BFC5DE",
+    "Pumpkin": "#E9C46A",
+    "Hover": "#1F2A55",
+    "Pressed": "#29366B",
+    "Selection": "#2E3D78",
+    "Alternate": "#0F1630",
+    "GridLine": "#1E2850",
+    "ScrollThumb": "#4A5994",
+    "AccentText": "#0B1024",
+    "OverlayHeader": "#F2D27A",
+    "OverlayDim": "#BFC5DE",
+    "OverlayGood": "#8FD9A8",
+    "OverlayWarn": "#F2C75C",
+    "OverlayBad": "#FF8A80"
+  }
+}

@@ -29,6 +29,8 @@ public sealed partial class GameSession
     }
     private volatile TriggerMatcher _triggers = TriggerMatcher.Empty;
 
+    private readonly DateTime? _ignoreLogLinesBefore;
+
     public GameSession(TrackingStartup startup)
     {
         ArgumentNullException.ThrowIfNull(startup);
@@ -36,6 +38,7 @@ public sealed partial class GameSession
         _spawns = startup.Spawns;
         _motes = startup.Motes;
         _leveling = startup.Leveling ?? new();
+        _ignoreLogLinesBefore = startup.IgnoreLogLinesBefore;
         Mobs = startup.Mobs ?? new();
         Npcs = startup.Npcs ?? new();
         MobsWritable = startup.Mobs is not null;
@@ -73,7 +76,7 @@ public sealed partial class GameSession
             CharacterName = file.CharacterName,
             ResetOnLogin = resetOnLogin,
         };
-        source.Start(file, engine);
+        source.Start(file, engine, _ignoreLogLinesBefore);
         Engine = engine;
         Revision++;
     }

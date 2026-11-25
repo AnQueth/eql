@@ -15,8 +15,16 @@
                          ToolTip="Filter saved NPC names; choose a name/zone below. Unlock floating panels to type." />
             </DockPanel>
             <ComboBox x:Name="NpcChoices" ItemsSource="{Binding Choices}" SelectedItem="{Binding SelectedNpc, Mode=TwoWay}"
-                      DisplayMemberPath="Label" MaxDropDownHeight="320"
-                      ToolTip="Recorded NPCs, separated by the full logged zone name." />
+                      MaxDropDownHeight="320"
+                      ToolTip="Recorded NPCs, separated by the full logged zone name.">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:NpcChoice}">
+                        <views:WikiLabel x:Name="NpcChoiceLabel" Subject="{Binding Mob}" Kind="Mob">
+                            <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" />
+                        </views:WikiLabel>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
             <WrapPanel x:Name="NpcActions" Margin="0,2,0,0">
                 <Button x:Name="NpcRefreshWikiButton" Content="Refresh wiki" FontSize="11"
                         Padding="8,3,8,3" Command="{Binding RefreshWikiCommand}" />

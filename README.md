@@ -95,8 +95,9 @@ Startup history never fires triggers. **Log lines** helps find matching text.
   folder to back up**, including journals and checkpoints. Close it before
   restoring, and do not share the folder with older app versions.
 - **General > Tracking data > Reset tracking data...** backs up tracking and
-  closes the app; reopen to rebuild from available logs and exports.
-  Settings and original game files are preserved.
+  closes the app. Choose whether, after you reopen, existing log lines are
+  ignored (start fresh from the reset) or reloaded (rebuild from the start of
+  the log). Settings and original game files are preserved.
 - **General > Wiki caches > Reset all wiki caches** refreshes reference data
   without clearing learned tracking.
 

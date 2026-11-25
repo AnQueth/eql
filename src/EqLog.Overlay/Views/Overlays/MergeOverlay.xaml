@@ -35,15 +35,17 @@
                 <ListBox.ItemTemplate>
                     <DataTemplate DataType="{x:Type vm:MergeGroupViewModel}">
                         <StackPanel>
-                            <TextBlock x:Name="MergeGroupHeading" FontWeight="SemiBold" Margin="0,12,0,5"
-                                       TextTrimming="CharacterEllipsis" Foreground="{DynamicResource NightText}">
-                                <Hyperlink Tag="{Binding BaseName}" ToolTip="Open item on EQLWiki"
-                                           Foreground="{DynamicResource Pumpkin}"
-                                           views:ClickCommand.Command="{Binding DataContext.OpenMergeItemWikiCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                           views:ClickCommand.CommandParameter="{Binding BaseName}"><Run Text="{Binding BaseName, Mode=OneWay}" /></Hyperlink>
-                                <Run Text="  ·  " />
-                                <Run Text="{Binding Total, Mode=OneWay, StringFormat={}{0:N0} copies}" />
-                            </TextBlock>
+                            <views:WikiLabel x:Name="MergeGroupLabel" Margin="0,12,0,5" Subject="{Binding BaseName}">
+                                <TextBlock x:Name="MergeGroupHeading" FontWeight="SemiBold" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" Foreground="{DynamicResource NightText}">
+                                    <Hyperlink Tag="{Binding BaseName}" ToolTip="Open item on EQLWiki"
+                                               Foreground="{DynamicResource Pumpkin}"
+                                               views:ClickCommand.Command="{Binding DataContext.OpenMergeItemWikiCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                               views:ClickCommand.CommandParameter="{Binding BaseName}"><Run Text="{Binding BaseName, Mode=OneWay}" /></Hyperlink>
+                                    <Run Text="  ·  " />
+                                    <Run Text="{Binding Total, Mode=OneWay, StringFormat={}{0:N0} copies}" />
+                                </TextBlock>
+                            </views:WikiLabel>
                             <TextBlock Margin="0,0,0,3" Foreground="{DynamicResource Pumpkin}"
                                        Visibility="{Binding HasQuestReferences, Converter={StaticResource MergeVisibleWhenTrue}}">
                                 <Hyperlink Tag="{Binding BaseName}"
