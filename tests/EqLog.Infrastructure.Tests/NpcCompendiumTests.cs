@@ -1,8 +1,10 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using EqLog.Core.Parsing;
 using EqLog.Core.Tracking;
 using EqLog.Infrastructure.Persistence;
+using Microsoft.Win32.SafeHandles;
 
 namespace EqLog.Core.Tests;
 
@@ -371,6 +373,38 @@ public sealed class NpcCompendiumTests : IDisposable
     }
 
     [Fact]
+    public async Task Get_ReloadsSameLengthHistoryWhenFileMetadataIsUnchanged()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var repository = new NpcCompendiumRepository();
+        var store = new NpcCompendium();
+        Import(store);
+        await repository.SaveAsync(_path, store);
+        store = await repository.LoadAsync(_path);
+        string history = Assert.Single(Directory.GetFiles(Path.Combine(_path, NpcCompendium.HistoryFolderName)));
+        string original = await File.ReadAllTextAsync(history);
+        Assert.Equal(150, Assert.Single((await repository.GetAsync(store, "A wraith", "Sky Hard"))!.Encounters).YourDamage);
+        long length = new FileInfo(history).Length;
+        FileBasicInfo originalInfo = ReadFileBasicInfo(history);
+
+        await File.WriteAllTextAsync(history, original.Replace("150", "151", StringComparison.Ordinal));
+        using (var stream = File.Open(history, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete))
+        {
+            Assert.True(SetFileInformationByHandle(stream.SafeFileHandle, 0, ref originalInfo, 40));
+        }
+
+        FileBasicInfo restoredInfo = ReadFileBasicInfo(history);
+        Assert.Equal(length, new FileInfo(history).Length);
+        Assert.Equal(originalInfo.LastWriteTime, restoredInfo.LastWriteTime);
+        Assert.Equal(originalInfo.ChangeTime, restoredInfo.ChangeTime);
+        Assert.Equal(151, Assert.Single((await repository.GetAsync(store, "A wraith", "Sky Hard"))!.Encounters).YourDamage);
+    }
+
+    [Fact]
     public async Task Get_ReloadsAfterCoreEvictionAndOwnAppend()
     {
         var repository = new NpcCompendiumRepository();
@@ -411,6 +445,33 @@ public sealed class NpcCompendiumTests : IDisposable
         var histories = Assert.IsAssignableFrom<System.Collections.IDictionary>(field.GetValue(store));
         return histories[key]!;
     }
+
+    private static FileBasicInfo ReadFileBasicInfo(string path)
+    {
+        using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        Assert.True(GetFileInformationByHandleEx(stream.SafeFileHandle, 0, out FileBasicInfo info, 40));
+        return info;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FileBasicInfo
+    {
+        public long CreationTime;
+        public long LastAccessTime;
+        public long LastWriteTime;
+        public long ChangeTime;
+        public uint Attributes;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandleEx(
+        SafeFileHandle handle, int informationClass, out FileBasicInfo information, uint size);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetFileInformationByHandle(
+        SafeFileHandle handle, int informationClass, ref FileBasicInfo information, uint size);
 
     private static void Import(NpcCompendium store)
     {

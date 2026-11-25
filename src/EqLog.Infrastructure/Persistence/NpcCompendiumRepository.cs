@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -178,9 +179,15 @@ public sealed class NpcCompendiumRepository : INpcCompendiumRepository
             {
                 await using var stream = AtomicFile.OpenRead(historyPath);
                 HistoryStamp? stamp = GetHistoryStamp(stream);
+                byte[]? fingerprint = stamp is not null
+                    ? await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false)
+                    : null;
                 if (stamp is not null &&
                     state.Histories.TryGetValue(historyPath, out var cached) &&
                     cached.Stamp == stamp &&
+                    fingerprint is not null &&
+                    fingerprint.AsSpan().SequenceEqual(cached.Fingerprint) &&
+                    stamp == GetHistoryStamp(stream) &&
                     cached.Token.TryGetTarget(out var cachedToken) &&
                     compendium.TryGetCachedHistory(mob, zone, cachedToken, out var snapshot))
                 {
@@ -188,15 +195,21 @@ public sealed class NpcCompendiumRepository : INpcCompendiumRepository
                 }
 
                 state.Histories.Remove(historyPath);
+                stream.Position = 0;
                 var records = await ReadHistoryAsync(stream, cancellationToken).ConfigureAwait(false);
                 object? token = compendium.ImportHistory(mob, zone, records);
-                if (token is not null && stamp is not null && stamp == GetHistoryStamp(stream))
+                if (token is not null && stamp is not null && fingerprint is not null && stamp == GetHistoryStamp(stream))
                 {
-                    if (state.Histories.Count >= 8)
+                    stream.Position = 0;
+                    byte[] afterRead = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
+                    if (fingerprint.AsSpan().SequenceEqual(afterRead) && stamp == GetHistoryStamp(stream))
                     {
-                        state.Histories.Remove(state.Histories.Keys.First());
+                        if (state.Histories.Count >= 8)
+                        {
+                            state.Histories.Remove(state.Histories.Keys.First());
+                        }
+                        state.Histories[historyPath] = new CachedHistory(stamp.Value, fingerprint, new WeakReference<object>(token));
                     }
-                    state.Histories[historyPath] = new CachedHistory(stamp.Value, new WeakReference<object>(token));
                 }
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -306,7 +319,7 @@ public sealed class NpcCompendiumRepository : INpcCompendiumRepository
 
     private readonly record struct HistoryStamp(FileIdentity Identity, long LastWriteTime, long ChangeTime, long Length);
 
-    private sealed record CachedHistory(HistoryStamp Stamp, WeakReference<object> Token);
+    private sealed record CachedHistory(HistoryStamp Stamp, byte[] Fingerprint, WeakReference<object> Token);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

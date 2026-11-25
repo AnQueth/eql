@@ -1,7 +1,23 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.46" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.47" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.47
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released November 24, 2026 at 11:37 PM CT.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            NPC history refresh
+        </Paragraph>
+        <Paragraph>
+            NPC Browser now reloads changed encounter history even when the file's size and
+            timestamps stay the same. Open an NPC in NPC Browser to see its current history.
+            This release also includes the overlay updates described in 1.0.46 below.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.46
     </Paragraph>

@@ -23,6 +23,12 @@ using Xunit;
 
 namespace EqLog.Overlay.Tests;
 
+[CollectionDefinition("WPF application", DisableParallelization = true)]
+public sealed class WpfApplicationCollection
+{
+}
+
+[Collection("WPF application")]
 public sealed class OverlayChromeTests
 {
     [Fact]
