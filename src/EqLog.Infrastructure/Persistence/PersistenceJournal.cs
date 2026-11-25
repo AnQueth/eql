@@ -1,28 +1,29 @@
 using System.Text;
 using System.Text.Json;
+using System.Runtime.CompilerServices;
 
 namespace EqLog.Infrastructure.Persistence;
 
 /// <summary>Appends complete idempotent batches and recovers only an interrupted final record.</summary>
 internal static class PersistenceJournal
 {
-    internal static async Task<IReadOnlyList<T>> ReadAsync<T>(string path, CancellationToken cancellationToken) where T : class
+    internal static async IAsyncEnumerable<T> ReadAsync<T>(string path,
+        [EnumeratorCancellation] CancellationToken cancellationToken) where T : class
     {
         if (!File.Exists(path))
         {
-            return [];
+            yield break;
         }
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
             64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
         if (stream.Length == 0)
         {
-            return [];
+            yield break;
         }
         stream.Seek(-1, SeekOrigin.End);
         bool complete = stream.ReadByte() == '\n';
         stream.Seek(0, SeekOrigin.Begin);
         using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
-        var records = new List<T>();
         string? line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
         while (line is not null)
         {
@@ -36,11 +37,11 @@ internal static class PersistenceJournal
             {
                 throw new JsonException("Persistence journal contains an empty record.");
             }
-            records.Add(JsonSerializer.Deserialize<T>(line, AtomicFile.Json)
-                ?? throw new JsonException("Persistence journal contains an empty batch."));
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return JsonSerializer.Deserialize<T>(line, AtomicFile.Json)
+                ?? throw new JsonException("Persistence journal contains an empty batch.");
             line = next;
         }
-        return records;
     }
 
     internal static async Task AppendAsync<T>(string path, T record, CancellationToken cancellationToken)

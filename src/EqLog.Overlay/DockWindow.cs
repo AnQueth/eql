@@ -25,7 +25,6 @@ public sealed class DockWindow : Window
     private readonly Dictionary<string, Grid> _byKey = [];
     private readonly Dictionary<string, DockPanelSettings> _placements = [];
     private readonly HashSet<string> _temporaryPanels = [];
-    private readonly HashSet<OverlayPanel> _workspaceMoveHandlers = [];
     private readonly HashSet<(string WorkspaceId, string PanelKey)> _appendOnAdd = [];
     private readonly TextBlock _empty;
     private readonly Border _side = new() { Padding = new Thickness(0) };
@@ -46,6 +45,7 @@ public sealed class DockWindow : Window
     private bool _splitterDragging;
     private WhatsNewWindow? _whatsNew;
     private readonly ContentControl _notice = new() { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 0, 10, 0) };
+    private readonly ContentControl _loadingNotice = new() { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 0, 10, 0) };
 
     public DockWindow(DockWindowSettings settings)
     {
@@ -116,9 +116,11 @@ public sealed class DockWindow : Window
         DockPanel.SetDock(_sideToggle, Dock.Left);
         DockPanel.SetDock(autoArrange, Dock.Right);
         DockPanel.SetDock(_notice, Dock.Left);
+        DockPanel.SetDock(_loadingNotice, Dock.Left);
         DockPanel.SetDock(whatsNew, Dock.Right);
         bar.Children.Add(_sideToggle);
         bar.Children.Add(_notice);
+        bar.Children.Add(_loadingNotice);
         bar.Children.Add(autoArrange);
         bar.Children.Add(whatsNew);
         var dragHint = new TextBlock
@@ -530,6 +532,12 @@ public sealed class DockWindow : Window
         _notice.Visibility = notice is null ? Visibility.Collapsed : Visibility.Visible;
     }
 
+    internal void SetLoadingNotice(UIElement? notice)
+    {
+        _loadingNotice.Content = notice;
+        _loadingNotice.Visibility = notice is null ? Visibility.Collapsed : Visibility.Visible;
+    }
+
     /// <summary>Puts the settings UI into the side panel.</summary>
     public void SetSidePanel(FrameworkElement content)
     {
@@ -665,15 +673,7 @@ public sealed class DockWindow : Window
             workspace.Panels[panel.Key] = dockPlacement;
         }
 
-        panel.SetDocked(true, temporary);
-        if (_workspaceMoveHandlers.Add(panel))
-        {
-            panel.WorkspaceMoveRequested += (_, workspaceId) =>
-            {
-                MovePanelToWorkspace(panel.Key, workspaceId);
-            };
-        }
-
+        panel.ViewModel.SetDocked(true, temporary);
         SetWorkspaceMenu(panel);
         var tile = new Grid
         {
@@ -833,7 +833,7 @@ public sealed class DockWindow : Window
 
     private void SetWorkspaceMenu(OverlayPanel panel)
     {
-        panel.SetWorkspaceOptions(
+        panel.ViewModel.SetWorkspaceOptions(
             Settings.Workspaces
                 .Where(workspace => !workspace.Deleted)
                 .Select(workspace => (workspace.Id, workspace.Name)),

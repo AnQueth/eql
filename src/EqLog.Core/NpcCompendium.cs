@@ -66,8 +66,10 @@ public sealed class NpcCompendium
     private long _version = 1;
     private long _savedVersion;
     private readonly Dictionary<string, List<EncounterData>> _active = [];
-    private readonly Dictionary<string, Dictionary<string, EncounterData>> _histories = [];
+    private readonly Dictionary<string, HistoryCacheEntry> _histories = [];
     private readonly LinkedList<string> _historyOrder = new();
+
+    private sealed record HistoryCacheEntry(Dictionary<string, EncounterData> History);
 
     public IReadOnlyList<NpcCatalogEntry> Search(string name)
     {
@@ -125,15 +127,36 @@ public sealed class NpcCompendium
     }
 
     /// <summary>Imports history records loaded by the repository into the bounded in-memory cache.</summary>
-    public void ImportHistory(string mob, string zone, IEnumerable<EncounterRecord> records)
+    public object? ImportHistory(string mob, string zone, IEnumerable<EncounterRecord> records)
     {
         lock (_gate)
         {
             string key = Key(mob, zone);
             if (_data.Entries.ContainsKey(key))
             {
-                CacheHistory(key, ToHistory(records));
+                return CacheHistory(key, ToHistory(records));
             }
+            return null;
+        }
+    }
+
+    /// <summary>Returns a snapshot only while the exact imported history remains cached.</summary>
+    public bool TryGetCachedHistory(string mob, string zone, object token, out NpcEntry? entry)
+    {
+        lock (_gate)
+        {
+            string key = Key(mob, zone);
+            if (_data.Entries.TryGetValue(key, out var data) &&
+                _histories.TryGetValue(key, out var cached) &&
+                ReferenceEquals(cached, token))
+            {
+                TryCachedHistory(key, out var history);
+                entry = Snapshot(data, history);
+                return true;
+            }
+
+            entry = null;
+            return false;
         }
     }
 
@@ -350,18 +373,21 @@ public sealed class NpcCompendium
 
     private bool TryCachedHistory(string key, out Dictionary<string, EncounterData> history)
     {
-        if (!_histories.TryGetValue(key, out history!))
+        if (!_histories.TryGetValue(key, out var cached))
         {
+            history = null!;
             return false;
         }
+        history = cached.History;
         _historyOrder.Remove(key);
         _historyOrder.AddFirst(key);
         return true;
     }
 
-    private void CacheHistory(string key, Dictionary<string, EncounterData> history)
+    private object CacheHistory(string key, Dictionary<string, EncounterData> history)
     {
-        _histories[key] = history;
+        var cached = new HistoryCacheEntry(history);
+        _histories[key] = cached;
         _historyOrder.Remove(key);
         _historyOrder.AddFirst(key);
         while (_historyOrder.Count > CachedHistories)
@@ -369,6 +395,7 @@ public sealed class NpcCompendium
             _histories.Remove(_historyOrder.Last!.Value);
             _historyOrder.RemoveLast();
         }
+        return cached;
     }
 
     /// <summary>Converts history lines to encounters; replays after a crash can repeat one, and the latest copy wins.</summary>
@@ -562,7 +589,7 @@ public sealed class NpcCompendium
             {
                 foreach (var encounter in appended)
                 {
-                    cached[encounter.Id] = encounter;
+                    cached.History[encounter.Id] = encounter;
                 }
             }
         }

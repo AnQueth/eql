@@ -100,7 +100,7 @@ public partial class MainWindow
         ThemeManager.Apply(theme);
         foreach (var overlay in _overlays.Values)
         {
-            overlay.Panel.SetBackgroundOpacity(_settings.Overlays[overlay.Panel.Key].BackgroundOpacity ?? _settings.BackgroundOpacity);
+            overlay.Panel.RefreshChrome();
         }
     }
 

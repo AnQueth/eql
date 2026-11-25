@@ -151,7 +151,24 @@ public sealed record ResistanceWatermark(DateTime Time, long Line);
 public sealed record MobResistancePersistenceSnapshot(
     MobResistanceStore.Data Data,
     IReadOnlyList<SpellResistanceInfo> PendingSpells,
-    long Version);
+    long Version,
+    IMobResistanceHistorySource? HistorySource = null,
+    IReadOnlyList<string>? RemovedMobs = null,
+    bool WikiCachesReset = false,
+    bool IsDelta = false);
+
+/// <summary>Resident history index providing detached entries only when an observation or query needs them.</summary>
+public interface IMobResistanceHistorySource
+{
+    /// <summary>Loads one zone/mob's outcomes, or null when it has no saved history.</summary>
+    Dictionary<string, SpellOutcome>? LoadMob(string key);
+
+    /// <summary>Loads one mob's cached wiki information, or null when absent.</summary>
+    MobWikiInfo? LoadWiki(string mob);
+
+    /// <summary>Reads samples for one spell from mobs not already represented in the mutable store.</summary>
+    IEnumerable<SpellOutcome> SpellOutcomes(string spell, IReadOnlySet<string> excludedMobs);
+}
 
 /// <summary>Thread-safe persistent observations keyed by zone and mob name, not individual NPC instances.</summary>
 public sealed class MobResistanceStore
@@ -164,6 +181,14 @@ public sealed class MobResistanceStore
     private long _version;
     private long _savedVersion;
     private readonly Dictionary<(string Spell, string Character), decimal?> _damageBaselines = [];
+    private IMobResistanceHistorySource? _historySource;
+    private readonly HashSet<string> _loadedMobs = [];
+    private readonly HashSet<string> _loadedWiki = [];
+    private readonly HashSet<string> _removedMobs = [];
+    private readonly Dictionary<string, long> _dirtyMobs = [];
+    private readonly Dictionary<string, long> _dirtyWiki = [];
+    private bool _wikiCachesReset;
+    private long _wikiResetVersion;
 
     /// <summary>Spell metadata set since the last save, waiting to be appended to the spell cache file.</summary>
     private readonly List<SpellResistanceInfo> _pendingSpells = [];
@@ -199,15 +224,30 @@ public sealed class MobResistanceStore
             {
                 source += "\nUNPROFILED";
             }
-            bool counted = Advance(source, time, line);
-            bool dotCounted = damageOverTime && Advance(source + "\nDOT", time, line);
+            bool advance = CanAdvance(source, time, line);
+            bool counted = advance;
+            bool dotCounted = damageOverTime && CanAdvance(source + "\nDOT", time, line);
             if (damageOverTime && !resisted)
             {
                 counted = false;
             }
             if (!counted && !dotCounted)
             {
+                if (advance)
+                {
+                    _data.Watermarks[source] = new(time, line);
+                    _version++;
+                }
                 return;
+            }
+            EnsureMobLoaded(key);
+            if (advance)
+            {
+                _data.Watermarks[source] = new(time, line);
+            }
+            if (dotCounted)
+            {
+                _data.Watermarks[source + "\nDOT"] = new(time, line);
             }
             if (!_data.Mobs.TryGetValue(key, out var spells))
             {
@@ -240,6 +280,7 @@ public sealed class MobResistanceStore
                 _damageBaselines.Remove((spellKey, characterKey));
             }
             _version++;
+            _dirtyMobs[key] = _version;
         }
     }
 
@@ -255,28 +296,60 @@ public sealed class MobResistanceStore
         {
             string key = Key(zone, mob);
             _data.Mobs.Remove(key);
+            _loadedMobs.Add(key);
+            _removedMobs.Add(key);
             _data.ResistanceResetTimes[key] = _data.ResistanceResetTimes.TryGetValue(key, out var previous) &&
                 previous > resetTime ? previous : resetTime;
             _damageBaselines.Clear();
             _version++;
+            _dirtyMobs[key] = _version;
         }
     }
 
-    private bool Advance(string source, DateTime time, long line)
+    private bool CanAdvance(string source, DateTime time, long line)
     {
         var watermark = _data.Watermarks.GetValueOrDefault(source);
         if (watermark is not null && (watermark.Time > time || (watermark.Time == time && watermark.Line >= line)))
         {
             return false;
         }
-        _data.Watermarks[source] = new(time, line);
         return true;
+    }
+
+    private void EnsureMobLoaded(string key)
+    {
+        if (_historySource is null || _loadedMobs.Contains(key))
+        {
+            return;
+        }
+        var spells = _historySource.LoadMob(key);
+        if (spells is not null)
+        {
+            _data.Mobs[key] = spells;
+        }
+        _loadedMobs.Add(key);
+    }
+
+    private void EnsureWikiLoaded(string key)
+    {
+        if (_historySource is null || _wikiCachesReset || _loadedWiki.Contains(key))
+        {
+            return;
+        }
+        var wiki = _historySource.LoadWiki(key);
+        if (wiki is not null)
+        {
+            _data.Wiki[key] = wiki;
+        }
+        _loadedWiki.Add(key);
     }
 
     public MobResistanceInfo Get(string zone, string mob, string? spellName = null)
     {
         lock (_gate)
         {
+            EnsureMobLoaded(Key(zone, mob));
+            EnsureWikiLoaded(MobKey(mob));
             var spells = _data.Mobs.GetValueOrDefault(Key(zone, mob))?.Values.ToArray() ?? [];
             if (spellName is not null)
             {
@@ -328,6 +401,7 @@ public sealed class MobResistanceStore
     {
         lock (_gate)
         {
+            EnsureMobLoaded(Key(zone, mob));
             var outcome = _data.Mobs.GetValueOrDefault(Key(zone, mob))?.GetValueOrDefault(MobKey(spell));
             return new(outcome?.Resisted ?? 0, outcome?.Landed ?? 0,
                 outcome?.DamageSamples?.Values.Sum(h => h.Values.Sum()) ?? 0,
@@ -378,7 +452,12 @@ public sealed class MobResistanceStore
         {
             return cached;
         }
-        var samples = _data.Mobs.Values.SelectMany(m => m.Values)
+        var outcomes = _data.Mobs.Values.SelectMany(m => m.Values);
+        if (_historySource is not null)
+        {
+            outcomes = outcomes.Concat(_historySource.SpellOutcomes(spell, _loadedMobs));
+        }
+        var samples = outcomes
             .Where(s => MobKey(s.Spell) == spell)
             .SelectMany(s => s.DamageSamples ?? [])
             .Where(profile => DamageProfileKey(profile.Key) == character)
@@ -423,7 +502,9 @@ public sealed class MobResistanceStore
         lock (_gate)
         {
             _data.Wiki[MobKey(mob)] = info;
+            _loadedWiki.Add(MobKey(mob));
             _version++;
+            _dirtyWiki[MobKey(mob)] = _version;
         }
     }
 
@@ -443,15 +524,18 @@ public sealed class MobResistanceStore
         lock (_gate)
         {
             _data.Wiki.Clear();
+            _loadedWiki.Clear();
+            _wikiCachesReset = true;
             _data.Spells.Clear();
             _pendingSpells.Clear();
             _damageBaselines.Clear();
             _version++;
+            _wikiResetVersion = _version;
         }
     }
 
     /// <summary>Captures a detached snapshot or null when every current version has been saved.</summary>
-    public MobResistancePersistenceSnapshot? CapturePersistenceSnapshot()
+    public MobResistancePersistenceSnapshot? CapturePersistenceSnapshot(bool onlyChangedEntries = false)
     {
         lock (_gate)
         {
@@ -460,7 +544,12 @@ public sealed class MobResistanceStore
                 return null;
             }
 
-            return new MobResistancePersistenceSnapshot(_data.Snapshot(), [.. _pendingSpells], _version);
+            bool delta = onlyChangedEntries && (_historySource is not null || _savedVersion > 0);
+            return new MobResistancePersistenceSnapshot(
+                _data.Snapshot(delta ? _dirtyMobs.Keys : null, delta ? _dirtyWiki.Keys : null),
+                [.. _pendingSpells], _version, _historySource,
+                delta ? _dirtyMobs.Keys.Where(key => !_data.Mobs.ContainsKey(key)).ToArray() : [.. _removedMobs],
+                delta ? _wikiResetVersion > _savedVersion : _wikiCachesReset, delta);
         }
     }
 
@@ -482,16 +571,35 @@ public sealed class MobResistanceStore
         lock (_gate)
         {
             _savedVersion = Math.Max(_savedVersion, version);
+            foreach (string key in _dirtyMobs.Where(pair => pair.Value <= _savedVersion).Select(pair => pair.Key).ToArray())
+            {
+                _dirtyMobs.Remove(key);
+            }
+            foreach (string key in _dirtyWiki.Where(pair => pair.Value <= _savedVersion).Select(pair => pair.Key).ToArray())
+            {
+                _dirtyWiki.Remove(key);
+            }
         }
     }
 
     /// <summary>Imports validated observation data and the latest spell-cache records.</summary>
-    public void ImportData(Data data, IEnumerable<SpellResistanceInfo>? cachedSpells = null)
+    public void ImportData(Data data, IEnumerable<SpellResistanceInfo>? cachedSpells = null,
+        IMobResistanceHistorySource? historySource = null)
     {
         ArgumentNullException.ThrowIfNull(data);
         lock (_gate)
         {
             _data = data;
+            _historySource = historySource;
+            _loadedMobs.Clear();
+            _loadedMobs.UnionWith(data.Mobs.Keys);
+            _loadedWiki.Clear();
+            _loadedWiki.UnionWith(data.Wiki.Keys);
+            _removedMobs.Clear();
+            _dirtyMobs.Clear();
+            _dirtyWiki.Clear();
+            _wikiCachesReset = false;
+            _wikiResetVersion = 0;
             _pendingSpells.Clear();
             _damageBaselines.Clear();
             _version = 0;
@@ -524,11 +632,15 @@ public sealed class MobResistanceStore
         /// A copy safe to serialize outside the lock: containers are copied, immutable records are shared,
         /// and the damage histograms (mutated in place) are copied.
         /// </summary>
-        internal Data Snapshot()
+        internal Data Snapshot(IEnumerable<string>? mobKeys = null, IEnumerable<string>? wikiKeys = null)
         {
-            var mobs = new Dictionary<string, Dictionary<string, SpellOutcome>>(Mobs.Count, Mobs.Comparer);
-            foreach (var (mob, spells) in Mobs)
+            var mobs = new Dictionary<string, Dictionary<string, SpellOutcome>>(mobKeys is null ? Mobs.Count : 0, Mobs.Comparer);
+            foreach (string mob in mobKeys ?? Mobs.Keys)
             {
+                if (!Mobs.TryGetValue(mob, out var spells))
+                {
+                    continue;
+                }
                 var copy = new Dictionary<string, SpellOutcome>(spells.Count, spells.Comparer);
                 foreach (var (key, outcome) in spells)
                 {
@@ -543,7 +655,8 @@ public sealed class MobResistanceStore
             return new Data
             {
                 Mobs = mobs,
-                Wiki = new(Wiki, Wiki.Comparer),
+                Wiki = wikiKeys is null ? new(Wiki, Wiki.Comparer) :
+                    wikiKeys.Where(Wiki.ContainsKey).ToDictionary(key => key, key => Wiki[key], Wiki.Comparer),
                 // The spell cache lives in its own append-only file.
                 Spells = [],
                 Watermarks = new(Watermarks, Watermarks.Comparer),

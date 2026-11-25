@@ -26,6 +26,30 @@ public static class AlertEffects
         new(AlertEffect.Glow, "Glow"),
     ];
 
+    /// <summary>The effect animating a text block, settable from XAML. It applies once, when first set.</summary>
+    public static readonly DependencyProperty EffectProperty = DependencyProperty.RegisterAttached(
+        "Effect", typeof(AlertEffect), typeof(AlertEffects), new PropertyMetadata(AlertEffect.None, EffectChanged));
+
+    /// <summary>Gets the effect set through <see cref="EffectProperty"/>.</summary>
+    public static AlertEffect GetEffect(DependencyObject element)
+    {
+        return (AlertEffect)element.GetValue(EffectProperty);
+    }
+
+    /// <summary>Sets the effect through <see cref="EffectProperty"/>.</summary>
+    public static void SetEffect(DependencyObject element, AlertEffect value)
+    {
+        element.SetValue(EffectProperty, value);
+    }
+
+    private static void EffectChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is TextBlock target && e.OldValue is AlertEffect.None)
+        {
+            Attach(target, (AlertEffect)e.NewValue);
+        }
+    }
+
     /// <summary>Starts <paramref name="effect"/> on <paramref name="target"/> whenever it is loaded and stops it when unloaded.</summary>
     public static void Attach(TextBlock target, AlertEffect effect)
     {
@@ -42,13 +66,17 @@ public static class AlertEffects
         DropShadowEffect? glow = null;
         if (effect == AlertEffect.Glow)
         {
-            var color = target.Foreground is SolidColorBrush brush ? brush.Color : Colors.White;
-            glow = new DropShadowEffect { Color = color, ShadowDepth = 0, BlurRadius = 4, Opacity = 1 };
+            glow = new DropShadowEffect { ShadowDepth = 0, BlurRadius = 4, Opacity = 1 };
             target.Effect = glow;
         }
 
         void Start()
         {
+            if (glow is not null)
+            {
+                // Read the color when shown: a template may apply the foreground after the effect is attached.
+                glow.Color = target.Foreground is SolidColorBrush brush ? brush.Color : Colors.White;
+            }
             switch (effect)
             {
                 case AlertEffect.Pulse:

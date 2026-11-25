@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using EqLog.Core;
+using EqLog.Overlay.ViewModels;
 
 namespace EqLog.Overlay;
 
@@ -14,7 +15,7 @@ public partial class MainWindow
     {
         get
         {
-            return _wikiCacheResetting || _wikiCts.IsCancellationRequested;
+            return !_dataReady || _wikiCacheResetting || _wikiCts.IsCancellationRequested;
         }
     }
 
@@ -66,23 +67,29 @@ public partial class MainWindow
                 }
                 _questProgress = "Wiki caches reset. Items will be checked again.";
                 QuestLookupStatus.Text = _questProgress;
-                _itemEffects.Clear();
-                _itemEffectsRevision++;
-                _itemEffectErrors.Clear();
-                _itemEffectRetries.Clear();
-                _itemEffectsStorageError = null;
+                if (_overlayViewModels.GetValueOrDefault("exaltations") is ExaltationsOverlayViewModel exaltations)
+                {
+                    exaltations.ResetWikiCache();
+                }
                 _skyCatalog = null;
                 _skyOverlayLoadAttempted = false;
                 _skyStatus = "Wiki cache reset. Reloading when next shown.";
-                ResetTradeskillView();
+                if (_overlayViewModels.GetValueOrDefault("tradeskills") is TradeskillsOverlayViewModel tradeskills)
+                {
+                    tradeskills.ResetWikiCache();
+                }
                 _spawnWikiPending.Clear();
                 _spawnWikiRetry.Clear();
-                _npcWikiSelection = null;
-                _npcSpellSignature = "";
-                _npcContent = null;
-                _npcNextRender = default;
-                _npcWikiStatus = "Wiki cache reset.";
-                _mobWikiStatus = "Wiki cache reset.";
+                if (_overlayViewModels.TryGetValue("npcs", out var npcViewModel) &&
+                    npcViewModel is ViewModels.NpcBrowserOverlayViewModel npcs)
+                {
+                    npcs.ResetWikiState();
+                }
+                if (_overlayViewModels.TryGetValue("mobinfo", out var mobViewModel) &&
+                    mobViewModel is ViewModels.MobInfoOverlayViewModel mobInfo)
+                {
+                    mobInfo.ReportStatus("Wiki cache reset.");
+                }
                 _spawnsSignature = "";
                 _durationsSignature = "";
                 RefreshMergeView();
@@ -98,14 +105,23 @@ public partial class MainWindow
         {
             _wikiCacheResetting = false;
             ResetWikiCacheButton.IsEnabled = true;
+            if (_overlayViewModels.GetValueOrDefault("tradeskills") is TradeskillsOverlayViewModel tradeskills)
+            {
+                tradeskills.NotifyWikiLookupStateChanged();
+            }
+            if (_overlayViewModels.GetValueOrDefault("exaltations") is ExaltationsOverlayViewModel exaltations)
+            {
+                exaltations.NotifyWikiLookupStateChanged();
+            }
         }
-        if (!WikiLookupPaused && _consideredMob is not null)
+        if (!WikiLookupPaused && _overlayViewModels.TryGetValue("mobinfo", out var viewModel) &&
+            viewModel is ViewModels.MobInfoOverlayViewModel mobInfo)
         {
-            StartMobWikiLookup(false, WikiPriority.Interactive);
+            mobInfo.RefreshAfterWikiCacheReset();
         }
     }
 
-    internal sealed class WikiLookupLease : IDisposable
+    internal sealed class WikiLookupLease : IOverlayWikiLookupLease
     {
         private readonly CancellationTokenSource _cancellation;
         private readonly Action<WikiLookupLease> _finished;

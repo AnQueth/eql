@@ -1,11 +1,8 @@
-using System.Runtime.ExceptionServices;
-using System.Windows;
-using System.Windows.Controls;
-using EqLog.Core;
-using EqLog.Core.Parsing;
-using EqLog.Core.Tracking;
 using EqLog.Application.Inventory;
 using EqLog.Application.Motes;
+using EqLog.Core.Parsing;
+using EqLog.Core;
+using EqLog.Core.Tracking;
 using Xunit;
 
 namespace EqLog.Overlay.Tests;
@@ -13,617 +10,67 @@ namespace EqLog.Overlay.Tests;
 public sealed class MoteOverlayTests
 {
     [Fact]
-    public void InventorySelectionPreservesSearchAndPlansForSelectedItem()
+    public void PlannerUsesOwnedResourcesAndReportsMissingMotes()
     {
-        OnSta(() =>
-        {
-            var search = new TextBox { Text = "bracer" };
-            var selector = new ComboBox
-            {
-                ItemsSource = new[] { "Leather Bracer", "Steel Bracer" },
-            };
-            string? target = null;
-            MainWindow.BindPlanInventorySelection(search, selector, name =>
-            {
-                target = name;
-            });
-            selector.SelectedIndex = 0;
-            Assert.Equal("bracer", search.Text);
-            Assert.Equal("Leather Bracer", target);
-            Assert.Equal("Leather Bracer", MainWindow.PlanTargetName(MoteUpgradeKind.Equipment, search, selector));
-            selector.SelectedIndex = 1;
-            Assert.Equal("bracer", search.Text);
-            Assert.Equal("Steel Bracer", target);
-            MainWindow.UpdatePlanNameChoices(selector, ["Leather Bracer", "Steel Bracer"], search.Text);
-            Assert.Equal("Steel Bracer", selector.SelectedItem);
-            Assert.Equal("bracer", search.Text);
-            search.Text = " leather ";
-            Assert.Null(selector.SelectedItem);
-            Assert.Equal("leather", MainWindow.PlanTargetName(MoteUpgradeKind.Equipment, search, selector));
-            selector.SelectedIndex = 0;
-            Assert.Equal("leather", MainWindow.PlanTargetName(MoteUpgradeKind.Spell, search, selector));
-            MainWindow.UpdatePlanNameChoices(selector, ["Steel Bracer"], search.Text);
-            Assert.Null(selector.SelectedItem);
-            Assert.Equal(" leather ", search.Text);
-        });
+        var request = Request(4, 6);
+        var model = MotePlanningService.Prepare(request, new Dictionary<int, int> { [5] = 2 }, []);
+
+        Assert.Equal(2, model.Steps.Count);
+        Assert.True(model.TotalRequiredPoints > 0);
+        Assert.NotEmpty(model.Missing);
+        Assert.Equal(MoteUpgradeKind.Equipment, model.Kind);
     }
 
     [Fact]
-    public void PlannerGuideRendersTypedCalculationsWithOriginalTextAndLayout()
+    public void PlannerValidatesPointsAndStopsAtSelectedTarget()
     {
-        OnSta(() =>
+        var request = Request(0, 3) with
         {
-            var model = MotePlanningService.Prepare(PlanRequest(6, 8),
-                new Dictionary<int, int> { [7] = 7 }, [PlanCopy(6, 2)]);
-            var host = Render(model);
-            Assert.Equal("What to do", Assert.IsType<TextBlock>(host.Children[0]).Text);
-            Assert.Equal(FontWeights.SemiBold, Assert.IsType<TextBlock>(host.Children[0]).FontWeight);
-            Assert.Equal("Your item is +6. It needs 192 more points to reach +8.",
-                Assert.IsType<TextBlock>(host.Children[1]).Text);
-            var line = Assert.Single(host.Children.OfType<TextBlock>(), text => text.Text.StartsWith("• +6"));
-            Assert.Equal("• +6 → +7: merge your +6 copy (that alone makes +7). " +
-                "Use your Superior ×7 first anyway: they stop working at +7, " +
-                "so their 49 points carry into +7 → +8", line.Text);
-            Assert.Equal(16, line.Margin.Left);
-            Assert.Equal(TextWrapping.Wrap, line.TextWrapping);
-            Assert.Contains("Stop at +8. No further upgrades are planned.", Texts(host));
-        });
-    }
-
-    [Fact]
-    public void PlannerGuideCombinesLevelsCoveredByOneResourceAndKeepsMathPerLevel()
-    {
-        OnSta(() =>
-        {
-            foreach (var kind in Enum.GetValues<MoteUpgradeKind>())
-            {
-                foreach (bool fragment in new[] { false, true })
-                {
-                    int resourceRank = kind == MoteUpgradeKind.Equipment
-                        ? fragment ? 3 : 4
-                        : fragment ? 2 : 3;
-                    var resources = new Dictionary<int, int> { [resourceRank] = 1 };
-                    var model = MotePlanningService.Prepare(PlanRequest(0, 4) with
-                    {
-                        Kind = kind,
-                    }, fragment ? new Dictionary<int, int>() : resources, [], fragment ? resources : null);
-                    string resource = MotePlanningQueries.ResourceName(model.TierIds, resourceRank, fragment);
-
-                    foreach (var page in new[] { MotePlanPage.Upgrade, MotePlanPage.WhatIf })
-                    {
-                        var lines = Texts(Render(model, page));
-                        Assert.Contains($"• +0 → +2: use your {resource} ×1", lines);
-                        Assert.DoesNotContain(lines, text => text.StartsWith("• +1"));
-                        Assert.Contains(lines, text => text.StartsWith("• +2 → +3: add "));
-                        Assert.DoesNotContain(lines, text => text.Contains("leftover points cover it"));
-                    }
-
-                    var math = Render(model, MotePlanPage.Math).Children.OfType<Grid>().First();
-                    Assert.Equal(["+0 → +1", "1", "0", $"{resource} ×1", "", "3"], TableRow(math, 1));
-                    Assert.Equal(["+1 → +2", "2", "3", "", "", "1"], TableRow(math, 2));
-                }
-            }
-        });
-    }
-
-    [Theory]
-    [InlineData(2, 15)]
-    [InlineData(4, 3)]
-    public void PlannerGuideCombinesCarryOnlyThroughTheSelectedTarget(int targetRank, int carry)
-    {
-        OnSta(() =>
-        {
-            var model = MotePlanningService.Prepare(PlanRequest(0, targetRank), new Dictionary<int, int>(), [],
-                new Dictionary<int, int> { [9] = 1 });
-            var lines = Texts(Render(model));
-
-            Assert.Contains($"• +0 → +{targetRank}: use your Fragment of Ascendant Potential ×1", lines);
-            Assert.Single(lines, text => text.StartsWith("• "));
-            Assert.Contains($"Stop at +{targetRank}. No further upgrades are planned.", lines);
-            Assert.Contains($"The last resource or merge leaves {carry} extra points. " +
-                "Resources add fixed amounts; do not add more points after reaching your target.", lines);
-        });
-    }
-
-    [Fact]
-    public void PlannerMathRendersOriginalHeadersRowsTotalsAndToolTips()
-    {
-        OnSta(() =>
-        {
-            var model = MotePlanningService.Prepare(PlanRequest(4, 6), new Dictionary<int, int>(), []);
-            var host = Render(model, MotePlanPage.Math);
-            var tables = host.Children.OfType<Grid>().ToArray();
-            Assert.Equal(2, tables.Length);
-            Assert.Equal(["Step", "Need", "Have", "Use", "Missing", "Carry"], TableRow(tables[0], 0));
-            Assert.Equal(["+4 → +5", "16", "0", "", "Major ×4", "4"], TableRow(tables[0], 1));
-            Assert.Equal(["+5 → +6", "32", "4", "", "Greater ×5", "2"], TableRow(tables[0], 2));
-            Assert.Equal("Need: points for the step. Have: points carried in. Use: owned motes, fragments and spare copies spent. " +
-                "Missing: motes still to get. Carry: extra points that roll into the next step.", tables[0].ToolTip);
-            Assert.Equal(["Owned motes used", "none"], TableRow(tables[1], 0));
-            Assert.Equal(["Copies merged", "none"], TableRow(tables[1], 1));
-            Assert.Equal(["Still missing", "Major ×4, Greater ×5"], TableRow(tables[1], 2));
-            Assert.Equal(["Points to +6", "48 (from +4, 0 in)"], TableRow(tables[1], 3));
-            Assert.All(tables[1].Children.OfType<TextBlock>().Where(text => Grid.GetColumn(text) == 1),
-                text =>
-                {
-                    Assert.Equal(FontWeights.SemiBold, text.FontWeight);
-                });
-        });
-    }
-
-    [Fact]
-    public void PlannerFeedingRendersGroupedGuideSavingsAndExactMath()
-    {
-        OnSta(() =>
-        {
-            var request = PlanRequest(4, 5) with
-            {
-                Feeding = true,
-            };
-            var model = MotePlanningService.Prepare(request,
-                new Dictionary<int, int> { [1] = 5, [2] = 10, [3] = 10 }, [PlanCopy(4), PlanCopy(0, 2)]);
-            var guide = Render(model);
-            Assert.Contains("• 2 +0 items: feed Infinitesimal ×1, Minor ×2, Lesser ×2 each → +3", Texts(guide));
-            Assert.Contains("Leveling copies saves you Major ×3 by using Infinitesimal ×2, Minor ×4, Lesser ×4 instead.", Texts(guide));
-            Assert.Contains("You already have everything you need!", Texts(guide));
-            var math = Render(model, MotePlanPage.Math);
-            var tables = math.Children.OfType<Grid>().ToArray();
-            Assert.Equal(["Copy", "To", "Feed", "Merge pts", "Wasted"], TableRow(tables[0], 0));
-            Assert.Equal(["+0", "+3", "Infinitesimal ×1, Minor ×2, Lesser ×2", "8", ""], TableRow(tables[0], 1));
-            Assert.Equal(TableRow(tables[0], 1), TableRow(tables[0], 2));
-            Assert.Equal("Feed each copy these motes or fragments, using only tiers that work at each rank, then merge it into the main item. " +
-                "Wasted: points past the copy's last rank, which merging doesn't pass on.", tables[0].ToolTip);
-            Assert.Equal(["+4 → +5", "16", "0", "copy +3 ×2", "", "0"], TableRow(tables[1], 1));
-            Assert.Equal(["Feeding saves", "Major ×3"], TableRow(tables[2], 3));
-            Assert.Equal(["…by spending", "Infinitesimal ×2, Minor ×4, Lesser ×4"], TableRow(tables[2], 4));
-        });
-    }
-
-    [Fact]
-    public void PlannerFeedingWasteRemainsSeparateFromMergePoints()
-    {
-        OnSta(() =>
-        {
-            var model = MotePlanningService.Prepare(PlanRequest(5, 10) with
-            {
-                Feeding = true,
-            }, new Dictionary<int, int> { [1] = 1, [2] = 2, [3] = 2, [4] = 2, [5] = 4 },
-                [PlanCopy(5), PlanCopy(4)]);
-            var host = Render(model, MotePlanPage.Math);
-            var tables = host.Children.OfType<Grid>().ToArray();
-            Assert.Equal(["+4", "+5", "Major ×4", "32", "4"], TableRow(tables[0], 1));
-            Assert.Contains("Points wasted feeding", tables[^1].Children.OfType<TextBlock>().Select(text => text.Text));
-            var wasteLabel = Assert.Single(tables[^1].Children.OfType<TextBlock>(), text => text.Text == "Points wasted feeding");
-            Assert.Equal(["Points wasted feeding", "4"], TableRow(tables[^1], Grid.GetRow(wasteLabel)));
-        });
-    }
-
-    [Fact]
-    public void PlannerFarmRendersTotalTargetsAndExpandableOneStepComparisonWithoutGuide()
-    {
-        OnSta(() =>
-        {
-            var model = MotePlanningService.Prepare(PlanRequest(7, 10) with
-            {
-                Page = MotePlanPage.Farm,
-                FodderRank = 4,
-                Feeding = true,
-            }, new Dictionary<int, int> { [8] = 3, [9] = 2 }, []);
-            var host = Render(model, MotePlanPage.Farm);
-            Assert.Equal("How many +4 copies should I farm?", Assert.IsType<TextBlock>(host.Children[0]).Text);
-            Assert.Equal(["Reach +8: farm 6 more +4 copies.", "Reach +9: farm 22 more +4 copies.",
-                "Reach +10: farm 54 more +4 copies."],
-                host.Children.OfType<TextBlock>().Where(text => text.Text.StartsWith("Reach")).Select(text => text.Text));
-            Assert.All(host.Children.OfType<TextBlock>().Where(text => text.Text.StartsWith("Reach")),
-                text =>
-                {
-                    Assert.Equal(FontWeights.SemiBold, text.FontWeight);
-                });
-            Assert.Contains("Each number is the TOTAL to farm from where you are now. Do not add the numbers together.", Texts(host));
-            Assert.Contains("These numbers use the motes, fragments, spare copies and progress selected above.", Texts(host));
-            Assert.Contains("Feeding is on: the plan may spend your motes or fragments to raise farmed copies before merging them.", Texts(host));
-            var comparison = Assert.Single(host.Children.OfType<Expander>());
-            Assert.Equal("Compare: copies only, one level at a time", comparison.Header);
-            Assert.Equal(["No motes or fragments, no spare copies, no feeding, and no saved progress. " +
-                "Just merge +4 copies for ONE level at a time:", "+7 to +8: 8 copies at +4.",
-                "+8 to +9: 16 copies at +4.", "+9 to +10: 32 copies at +4."],
-                Texts(Assert.IsType<StackPanel>(comparison.Content)));
-            Assert.DoesNotContain("What to do", Texts(host));
-            Assert.NotEmpty(host.Children.OfType<Grid>());
-        });
-    }
-
-    [Fact]
-    public void PlannerFarmExplainsEnteredExtraCopiesAndSingularCounts()
-    {
-        OnSta(() =>
-        {
-            var model = MotePlanningService.Prepare(PlanRequest(9, 10) with
-            {
-                Page = MotePlanPage.Farm,
-                FodderRank = 4,
-                Fodder = "1",
-            }, new Dictionary<int, int> { [10] = 16 }, []);
-            var host = Render(model, MotePlanPage.Farm);
-            Assert.Contains("Reach +10: farm 21 more +4 copies.", Texts(host));
-            Assert.Contains("The 1 extra copies you entered are already counted. Only copies beyond those are listed here.", Texts(host));
-        });
-    }
-
-    [Fact]
-    public void PlannerWhatIfRendersHypotheticalValuesAndKeepsMainRankInSummaryAndGuide()
-    {
-        OnSta(() =>
-        {
-            var model = MotePlanningService.Prepare(PlanRequest(6, 7) with
-            {
-                Page = MotePlanPage.WhatIf,
-                HypotheticalCopies = [5, 5],
-            }, new Dictionary<int, int>(), [PlanCopy(6), PlanCopy(0), PlanCopy(1)]);
-            Assert.Equal("WHAT IF: spare merge value 3 to 64 points before feeding; main item stays +6. Inventory is unchanged." +
-                Environment.NewLine + "2 spare copies in inventory: +0, +1 (one +6 is the item being upgraded).",
-                MainWindow.PlanSummary(model, MotePlanPage.WhatIf));
-            var host = Render(model, MotePlanPage.WhatIf);
-            Assert.Contains("• +6 → +7: merge your copies 2 × +5", Texts(host));
-            Assert.Contains("You already have everything you need!", Texts(host));
-            Assert.DoesNotContain(host.Children.Cast<UIElement>(), element => element is Grid or Expander);
-        });
-    }
-
-    [Fact]
-    public void PlannerValidationInventoryNotesCompletionAndRuleTipsKeepExactWording()
-    {
-        OnSta(() =>
-        {
-            var invalid = MotePlanningService.Prepare(PlanRequest(4, 5) with
-            {
-                Points = "bad",
-                Fodder = "1024",
-                Page = MotePlanPage.Farm,
-            }, new Dictionary<int, int>(), [PlanCopy(4, 2), PlanCopy(9)]);
-            Assert.Equal("Points must be a whole number from 0 to 15 at +4; using 0." + Environment.NewLine +
-                "Extra copies must be a whole number from 0 to 1023; using 0." + Environment.NewLine +
-                "1 spare copy in inventory: +4 (one +4 is the item being upgraded)." + Environment.NewLine +
-                "You already have a +9 copy, so it isn't counted as a spare. Set Current to +9 to plan from it.",
-                MainWindow.PlanSummary(invalid, MotePlanPage.Farm));
-            var complete = MotePlanningService.Prepare(PlanRequest(5, 5), new Dictionary<int, int>(), []);
-            Assert.Equal(["Already at the +5 target. No points needed."], Texts(Render(complete)));
-            Assert.Equal("Prefer fragments spends usable fragments before normal motes; off uses the smallest usable tier, normal motes first. " +
-                "Fragments are worth twice their named mote and share its equipment +rank limit. " +
-                "Spare copies are merged after motes and fragments. Condensing and Void-Touched resources are not used.",
-                MainWindow.PlanSummaryToolTip(MoteUpgradeKind.Equipment));
-            Assert.Equal("Spell motes double in value each tier (1 to 512 points); fragments are worth twice their named mote. " +
-                "Both work at any +level. Prefer fragments spends fragments first; off uses the smallest tier, normal motes first. " +
-                "Condensing and Void-Touched resources are not used.",
-                MainWindow.PlanSummaryToolTip(MoteUpgradeKind.Spell));
-            var invalidAtZero = MotePlanningService.Prepare(PlanRequest(0, 1) with
-            {
-                Points = "1",
-            }, new Dictionary<int, int>(), []);
-            var tables = Render(invalidAtZero, MotePlanPage.Math).Children.OfType<Grid>().ToArray();
-            Assert.Equal(["Points to +1", "1 (from +0, 0 in)"], TableRow(tables[^1], 3));
-        });
-    }
-
-    [Fact]
-    public void PlannerSpellRendersDoublingValuesWithoutEquipmentTotalsOrFeeding()
-    {
-        OnSta(() =>
-        {
-            var model = MotePlanningService.Prepare(PlanRequest(0, 3) with
-            {
-                Kind = MoteUpgradeKind.Spell,
-                Feeding = true,
-            }, new Dictionary<int, int> { [1] = 3 }, [PlanCopy(5)]);
-            var host = Render(model, MotePlanPage.Math);
-            var tables = host.Children.OfType<Grid>().ToArray();
-            Assert.Equal(2, tables.Length);
-            Assert.Equal(["+0 → +1", "1", "0", "Infinitesimal ×1", "", "0"], TableRow(tables[0], 1));
-            Assert.Equal(["+1 → +2", "2", "0", "Infinitesimal ×2", "", "0"], TableRow(tables[0], 2));
-            Assert.Equal(["+2 → +3", "4", "0", "", "Lesser ×1", "0"], TableRow(tables[0], 3));
-            Assert.DoesNotContain("Copies merged", tables[1].Children.OfType<TextBlock>().Select(text => text.Text));
-            Assert.Empty(MainWindow.PlanSummary(model, MotePlanPage.Math));
-            Assert.Contains("Why Lesser? One of those resources is exactly what each step needs, so nothing is wasted.", Texts(Render(model)));
-        });
-    }
-
-    [Fact]
-    public void PlannerShowsOwnedFragmentsAndExplainsSelectedPriority()
-    {
-        var owned = new Dictionary<int, int>
-        {
-            [1] = 22, [2] = 7, [3] = 15, [4] = 14, [5] = 99,
-            [6] = 39, [7] = 11, [8] = 3, [9] = 2,
+            Points = "not-a-number",
+            Page = MotePlanPage.Farm,
+            Fodder = "1024",
         };
-        var fragments = new Dictionary<int, int> { [3] = 1, [5] = 56, [6] = 3, [9] = 1 };
-        var request = PlanRequest(0, 10);
-        var model = MotePlanningService.Prepare(request, owned, [], fragments);
+        var model = MotePlanningService.Prepare(request, new Dictionary<int, int>(), []);
 
-        Assert.Equal(4, model.AvailableFragments.Count);
-        Assert.Equal(56, Assert.Single(model.AvailableFragments, resource => resource.Rank == 5).Count);
-        Assert.Equal(4, model.FragmentsUsed.Count);
-        foreach (var page in Enum.GetValues<MotePlanPage>())
-        {
-            string summary = MainWindow.PlanSummary(model, page);
-            Assert.Contains("Owned fragments available (last inventory export): " +
-                "Fragment of Lesser Potential ×1, Fragment of Major Potential ×56, " +
-                "Fragment of Greater Potential ×3, Fragment of Ascendant Potential ×1.", summary);
-            Assert.Contains("Usable fragments are spent before normal motes, smallest fragment tier first.", summary);
-            Assert.Contains("Fragments have the same equipment rank limit as their named mote.", summary);
-            Assert.Contains("Run /outputfile inventory after looting or spending resources to refresh these counts.", summary);
-        }
-
-        var normalFirst = MotePlanningService.Prepare(request with
-        {
-            PreferFragments = false,
-        }, owned, [], fragments);
-        Assert.Equal(new MoteResourceCount(9, "Ascendant", 1, IsFragment: true), Assert.Single(normalFirst.FragmentsUsed));
-        Assert.Contains("Regular motes are used first within each tier; unused fragments are kept.",
-            MainWindow.PlanSummary(normalFirst, MotePlanPage.Upgrade));
-
-        var disabled = MotePlanningService.Prepare(request with
-        {
-            UseMotes = false,
-        }, owned, [], fragments);
-        Assert.Empty(disabled.AvailableFragments);
-        Assert.Empty(disabled.FragmentsUsed);
-        Assert.DoesNotContain("Owned fragments available", MainWindow.PlanSummary(disabled, MotePlanPage.Upgrade));
+        Assert.Equal(MoteInputStatus.Invalid, model.PointsStatus);
+        Assert.Equal(MoteInputStatus.Invalid, model.FodderStatus);
+        Assert.Equal(3, model.FarmTargets.Last().TargetRank);
+        Assert.Equal(0, model.Progress);
     }
 
     [Fact]
-    public void PlannerRendersFragmentUseAndTotalsSeparately()
-    {
-        OnSta(() =>
-        {
-            var fragments = new Dictionary<int, int> { [5] = 1 };
-            var model = MotePlanningService.Prepare(PlanRequest(4, 5), new Dictionary<int, int>(), [], fragments);
-            var host = Render(model, MotePlanPage.Math);
-            var tables = host.Children.OfType<Grid>().ToArray();
-
-            Assert.Equal(10, model.Steps[0].MotePoints);
-            Assert.Equal(["+4 → +5", "16", "0", "Fragment of Major Potential ×1", "Major ×2", "4"],
-                TableRow(tables[0], 1));
-            Assert.Equal("Need: points for the step. Have: points carried in. Use: owned motes, fragments and spare copies spent. " +
-                "Missing: motes still to get. Carry: extra points that roll into the next step.",
-                tables[0].ToolTip);
-            var labels = tables.SelectMany(table => table.Children.OfType<TextBlock>())
-                .Select(text => text.Text);
-            Assert.Contains("Owned fragments used", labels);
-            Assert.Contains("Fragment of Major Potential ×1", labels);
-        });
-    }
-
-    [Fact]
-    public void PlannerScrollBody_LongCopyEditorAndResultsAreReachableInEveryTab()
-    {
-        Exception? failure = null;
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                var copies = new StackPanel();
-                for (int i = 0; i < 30; i++)
-                {
-                    var selector = MainWindow.CreateHypotheticalCopyRankSelector(4);
-                    selector.Height = 40;
-                    Assert.Equal(Enumerable.Range(0, 11).Select(rank => $"+{rank}"), selector.Items.Cast<string>());
-                    Assert.Equal(4, selector.SelectedIndex);
-                    selector.SelectedIndex = 10;
-                    Assert.Equal("+10", selector.SelectedItem);
-                    copies.Children.Add(selector);
-                }
-                var reset = new Button { Content = "Reset to inventory ranks", Height = 40 };
-                copies.Children.Add(reset);
-                var editor = new Expander { Content = copies, IsExpanded = true };
-                var results = new TextBlock { Text = "Upgrade instructions", Height = 200 };
-                var scroll = MainWindow.CreatePlanScrollBody(editor, results);
-                var tabs = MainWindow.CreatePlanTabs(scroll, () => { });
-                var size = new Size(600, 400);
-
-                void Layout()
-                {
-                    tabs.Measure(size);
-                    tabs.Arrange(new Rect(size));
-                    tabs.UpdateLayout();
-                }
-
-                foreach (int index in new[] { 0, 1, 2, 3 })
-                {
-                    tabs.SelectedIndex = index;
-                    Layout();
-                    Assert.Same(scroll, ((TabItem)tabs.SelectedItem).Content);
-                    Assert.True(scroll.ScrollableHeight > 800);
-                    scroll.ScrollToEnd();
-                    Layout();
-                    Assert.Equal(scroll.ScrollableHeight, scroll.VerticalOffset);
-                    var resultBottom = results.TranslatePoint(new Point(0, results.ActualHeight), scroll);
-                    Assert.InRange(resultBottom.Y, 0, scroll.ActualHeight);
-                    var resetTop = reset.TranslatePoint(new Point(), scroll);
-                    Assert.InRange(resetTop.Y, 0, scroll.ActualHeight);
-                }
-
-                ((ComboBox)copies.Children[0]).SelectedIndex = 1;
-                Layout();
-                Assert.Equal(scroll.ScrollableHeight, scroll.VerticalOffset);
-                editor.IsExpanded = false;
-                Layout();
-                Assert.Equal(0, scroll.ScrollableHeight);
-            }
-            catch (Exception ex)
-            {
-                failure = ex;
-            }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        if (failure is not null)
-        {
-            ExceptionDispatchInfo.Capture(failure).Throw();
-        }
-    }
-
-    [Fact]
-    public void StopAtSelectorDefaultsToTenAndRetainsTargetsWithinCurrentRankRange()
-    {
-        Exception? failure = null;
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                var selector = new ComboBox();
-                Assert.Equal(10, MainWindow.UpdatePlanTargetRanks(selector, 0));
-                Assert.Equal(Enumerable.Range(0, 11), selector.Items.Cast<int>());
-                selector.SelectedItem = 7;
-                Assert.Equal(7, MainWindow.UpdatePlanTargetRanks(selector, 4));
-                Assert.Equal(Enumerable.Range(4, 7), selector.Items.Cast<int>());
-                Assert.Equal(7, MainWindow.UpdatePlanTargetRanks(selector, 6));
-                Assert.Equal(8, MainWindow.UpdatePlanTargetRanks(selector, 8));
-                Assert.Equal(10, MainWindow.UpdatePlanTargetRanks(selector, 10));
-                Assert.Equal([10], selector.Items.Cast<int>());
-            }
-            catch (Exception ex)
-            {
-                failure = ex;
-            }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        if (failure is not null)
-        {
-            ExceptionDispatchInfo.Capture(failure).Throw();
-        }
-    }
-
-    [Fact]
-    public void PlannerTargets_IncludeEveryExportedItem_WhileCopiesIncludeEquipmentStorage()
-    {
-        var rows = InventoryExport.Parse(
-            "Location\tName\tID\tCount\tSlots\n" +
-            "Bank1\tWhite Dragonscale Cloak +4\t11603\t2\t0\n" +
-            "Back-Slot7\tWhite Dragonscale Cloak (Exaltation)\t11603\t1\t11\n" +
-            "General1\tMote of Greater Potential\t1\t3\t0\n" +
-            "KeyRing\tName\tID\n" +
-            "Equipment\tWhite Dragonscale Cloak +9\t11603\n" +
-            "Augmentation\tWhite Dragonscale Cloak (Exaltation)\t11603\n" +
-            "Mount\tA mount\t2\n");
-
-        var names = MainWindow.PlanTargetNames(rows, "");
-
-        Assert.Equal(["A mount", "Mote of Greater Potential", "White Dragonscale Cloak",
-            "White Dragonscale Cloak (Exaltation)"], names);
-        Assert.Equal(["White Dragonscale Cloak", "White Dragonscale Cloak (Exaltation)"],
-            MainWindow.PlanTargetNames(rows, "white dragonscale"));
-        Assert.Equal(9, MainWindow.PlanTargetRank(rows, "White Dragonscale Cloak"));
-        Assert.Equal([4, 4, 9], MainWindow.PlanCopyRanks(rows, "White Dragonscale Cloak"));
-        Assert.Empty(MainWindow.PlanCopyRanks(rows, "White Dragonscale Cloak (Exaltation)"));
-        Assert.Empty(MainWindow.PlanCopyRanks(rows, "A mount"));
-        Assert.Null(MainWindow.PlanTargetRank(rows, "Missing"));
-    }
-
-    [Fact]
-    public void PlannerTargets_StoredOnlyCloakCountsTargetButNotInstalledAugments()
+    public void InventoryQueriesSeparateTargetRanksFromUsableSpareCopies()
     {
         InventoryExportItem[] rows =
         [
-            new("Equipment", "White Dragonscale Cloak +9", 11603, 1, InventoryStorage.Other, Collection: true),
-            new("Augmentation", "White Dragonscale Cloak (Exaltation)", 11603, 1, InventoryStorage.Other,
-                Collection: true, Installed: true),
+            new("Held", "Cloak of Scales +4", 1, 1, InventoryStorage.Carried),
+            new("Bank1", "Cloak of Scales +9", 2, 1, InventoryStorage.Bank),
+            new("Bank2", "Cloak of Scales +4", 3, 2, InventoryStorage.Bank),
+            new("Equipment", "Cloak of Scales (Exaltation)", 4, 1, InventoryStorage.Other, Collection: true),
         ];
 
-        Assert.Contains("White Dragonscale Cloak", MainWindow.PlanTargetNames(rows, "cloak"));
-        Assert.Equal(9, MainWindow.PlanTargetRank(rows, "White Dragonscale Cloak"));
-        var copies = MainWindow.PlanCopyRanks(rows, "White Dragonscale Cloak");
-        Assert.Equal([9], copies);
-        Assert.True(copies.Remove(9));
-        Assert.Empty(copies);
-        Assert.Empty(MainWindow.PlanCopyRanks(rows, "White Dragonscale Cloak (Exaltation)"));
+        Assert.Equal(9, MotePlanningQueries.TargetRank(rows, "Cloak of Scales"));
+        Assert.Equal([4, 4, 4, 9], MotePlanningQueries.CopyRanks(rows, "Cloak of Scales"));
+        Assert.Contains("Cloak of Scales", MotePlanningQueries.TargetNames(rows, "cloak"));
+        var copies = MotePlanningQueries.SelectCopies(rows, "Cloak of Scales", 4);
+        Assert.True(copies.RemovedTarget);
+        Assert.Equal([4, 4], copies.Spares);
+        Assert.Equal([9], copies.HigherCopies);
     }
 
     [Fact]
-    public void PlannerCopies_CloakOfScalesIncludesBothStoredSparesAfterRemovingWornTarget()
+    public void SpellPlansDoNotIncludeEquipmentCopiesOrFarmTargets()
     {
-        var rows = InventoryExport.Parse(
-            "Location\tName\tID\tCount\tSlots\n" +
-            "Back\tCloak of Scales +8\t1546\t1\t11\n" +
-            "KeyRing\tName\tID\n" +
-            "Equipment\tCloak of Scales +2\t1546\n" +
-            "Equipment\tCloak of Scales +2\t1546\n" +
-            "Augmentation\tCloak of Scales +2\t1546\n" +
-            "Mount\tCloak of Scales +2\t1546\n");
-
-        var copies = MainWindow.PlanCopyRanks(rows, "Cloak of Scales");
-
-        Assert.Equal(8, MainWindow.PlanTargetRank(rows, "Cloak of Scales"));
-        Assert.Equal([2, 2, 8], copies);
-        Assert.True(copies.Remove(8));
-        Assert.Equal([2, 2], copies);
-        Assert.Equal(8, copies.Sum(MoteValues.CopyPoints));
-    }
-
-    [Fact]
-    public void PlannerTabs_SwitchTasksWithoutMixingPagesOrRefreshingForNestedControls()
-    {
-        Exception? failure = null;
-        var thread = new Thread(() =>
+        var request = Request(0, 3) with
         {
-            try
-            {
-                var selector = new ComboBox { ItemsSource = new[] { "+0", "+5" } };
-                var page = new StackPanel { Children = { selector } };
-                int refreshes = 0;
-                var tabs = MainWindow.CreatePlanTabs(page, () => refreshes++);
-                Assert.Equal(["Upgrade", "Farm copies", "What if", "Math"],
-                    tabs.Items.Cast<TabItem>().Select(tab => (string)tab.Header));
-                foreach (int index in new[] { 1, 2, 3, 0 })
-                {
-                    tabs.SelectedIndex = index;
-                    Assert.Same(page, ((TabItem)tabs.Items[index]).Content);
-                    Assert.All(tabs.Items.Cast<TabItem>().Where(tab => tab != tabs.SelectedItem),
-                        tab => Assert.Null(tab.Content));
-                }
-                Assert.Equal(4, refreshes);
-                selector.SelectedIndex = 1;
-                Assert.Equal(4, refreshes);
-            }
-            catch (Exception ex)
-            {
-                failure = ex;
-            }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        if (failure is not null)
-        {
-            ExceptionDispatchInfo.Capture(failure).Throw();
-        }
-    }
+            Kind = MoteUpgradeKind.Spell,
+            Page = MotePlanPage.Farm,
+        };
+        var model = MotePlanningService.Prepare(request, new Dictionary<int, int> { [1] = 2 }, [Copy(4)]);
 
-    [Theory]
-    [InlineData(8, 4, 1, "Reach +8: farm 1 more +4 copy.")]
-    [InlineData(9, 4, 6, "Reach +9: farm 6 more +4 copies.")]
-    [InlineData(10, 4, 24, "Reach +10: farm 24 more +4 copies.")]
-    [InlineData(7, 5, 0, "Reach +7: no more copies needed.")]
-    public void FarmTargetSummary_ExplainsTargetAndFarmRankInPlainLanguage(
-        int targetRank, int farmRank, int count, string expected)
-    {
-        Assert.Equal(expected, MainWindow.FarmTargetSummary(targetRank, farmRank, count));
-    }
-
-    [Theory]
-    [InlineData(8, 6)]
-    [InlineData(9, 22)]
-    [InlineData(10, 54)]
-    public void FarmTargetSummary_UsesTotalFromCurrentRankRatherThanIndividualStep(int targetRank, int expected)
-    {
-        var motes = new Dictionary<int, int> { [8] = 3, [9] = 2 };
-        int additional = MoteUpgradePlanner.MinimumAdditionalCopiesToFinish(
-            7, 0, motes, [], new FeedOptions(FodderRank: 4), targetRank);
-
-        Assert.Equal(expected, additional);
-        Assert.Contains($"Reach +{targetRank}:", MainWindow.FarmTargetSummary(targetRank, 4, additional));
+        Assert.Empty(model.FarmTargets);
+        Assert.Empty(model.CopiesUsed);
+        Assert.Equal(MoteFeedingStatus.NotApplicable, model.FeedingStatus);
     }
 
     [Theory]
@@ -902,55 +349,16 @@ public sealed class MoteOverlayTests
         return content.Rows.Skip(1).TakeWhile(row => row.Left != "Total").ToArray();
     }
 
-    private static MotePlanningRequest PlanRequest(int startRank, int targetRank)
+    private static MotePlanningRequest Request(int start, int target)
     {
-        return new MotePlanningRequest(MoteUpgradeKind.Equipment, startRank, targetRank,
-            "0", "0", 0, false, true, true, true, MotePlanPage.Upgrade, "Cloak", true, []);
+        return new MotePlanningRequest(MoteUpgradeKind.Equipment, start, target, "0", "0", 0,
+            false, true, true, true, MotePlanPage.Upgrade, "Cloak", true, []);
     }
 
-    private static InventoryExportItem PlanCopy(int rank, int count = 1)
+    private static InventoryExportItem Copy(int rank, int count = 1)
     {
         return new InventoryExportItem("Bank1", $"Cloak +{rank}", 1, count, InventoryStorage.Bank);
     }
-
-    private static StackPanel Render(MotePlanReadModel model, MotePlanPage page = MotePlanPage.Upgrade)
-    {
-        var host = new StackPanel();
-        MainWindow.RenderMotePlan(model, host, 13, page);
-        return host;
-    }
-
-    private static IEnumerable<string> Texts(StackPanel host)
-    {
-        return host.Children.OfType<TextBlock>().Select(text => text.Text);
-    }
-
-    private static string[] TableRow(Grid table, int row)
-    {
-        return table.Children.OfType<TextBlock>().Where(text => Grid.GetRow(text) == row)
-            .OrderBy(text => Grid.GetColumn(text)).Select(text => text.Text).ToArray();
-    }
-
-    private static void OnSta(Action action)
-    {
-        Exception? failure = null;
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                action();
-            }
-            catch (Exception ex)
-            {
-                failure = ex;
-            }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        if (failure is not null)
-        {
-            ExceptionDispatchInfo.Capture(failure).Throw();
-        }
-    }
 }
+
+

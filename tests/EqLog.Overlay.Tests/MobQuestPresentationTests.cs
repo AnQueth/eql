@@ -1,3 +1,4 @@
+using EqLog.Overlay.ViewModels;
 using EqLog.Core;
 using Xunit;
 
@@ -11,7 +12,7 @@ public sealed class MobQuestPresentationTests
         var wiki = MobWikiLookup.ParseMob("NPC",
             "{{Namedmobpage\n| related_quests = [[Quest One|Alias]] [[Quest Two]]\n}}", DateTime.UtcNow);
 
-        var rows = MainWindow.MobQuestRows(wiki);
+        var rows = MobInfoOverlayViewModel.MobQuestRows(wiki);
 
         Assert.Equal("Associated quests (wiki)", rows[0].Left);
         Assert.True(rows[0].QuestHeading);
@@ -28,16 +29,16 @@ public sealed class MobQuestPresentationTests
     {
         var wiki = MobWikiLookup.ParseMob("NPC", "{{Namedmobpage}}", DateTime.UtcNow);
 
-        Assert.Contains(MainWindow.MobQuestRows(wiki), row => row.Left.StartsWith("No associated quests"));
-        Assert.Contains(MainWindow.MobQuestRows(wiki with
+        Assert.Contains(MobInfoOverlayViewModel.MobQuestRows(wiki), row => row.Left.StartsWith("No associated quests"));
+        Assert.Contains(MobInfoOverlayViewModel.MobQuestRows(wiki with
         {
             Quests = null
         }),
             row => row.Left.Contains("not been loaded yet"));
-        Assert.Empty(MainWindow.MobQuestRows(wiki with
+        Assert.Empty(MobInfoOverlayViewModel.MobQuestRows(wiki with
         {
             Found = false
         }));
-        Assert.Empty(MainWindow.MobQuestRows(null));
+        Assert.Empty(MobInfoOverlayViewModel.MobQuestRows(null));
     }
 }

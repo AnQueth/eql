@@ -13,9 +13,12 @@ public sealed class SpellCastTracker
     private readonly Dictionary<string, Entry> _spells = new(StringComparer.OrdinalIgnoreCase);
     private (string Spell, DateTime Time)? _lastCast;
     private int _casts, _interrupts, _resists, _fizzles;
+    private SpellCastSnapshot? _snapshot;
+    private int _snapshotTop;
 
     public void OnCast(CastBeginEvent e)
     {
+        _snapshot = null;
         Get(e.Spell).Casts++;
         Get(e.Spell).LastCast = e.Time;
         _lastCast = (e.Spell, e.Time);
@@ -24,6 +27,7 @@ public sealed class SpellCastTracker
 
     public void OnInterrupted(CastInterruptedEvent e)
     {
+        _snapshot = null;
         string? spell = e.Spell ?? Recent(e.Time);
         if (spell is not null)
         {
@@ -35,6 +39,7 @@ public sealed class SpellCastTracker
 
     public void OnFizzle(CastFizzleEvent e)
     {
+        _snapshot = null;
         string? spell = Recent(e.Time);
         if (spell is not null)
         {
@@ -46,6 +51,7 @@ public sealed class SpellCastTracker
 
     public void OnResisted(SpellResistedEvent e)
     {
+        _snapshot = null;
         string spell = _spells.ContainsKey(e.Spell) ? e.Spell : SpellNames.FindByBase(_spells.Keys, e.Spell) ?? e.Spell;
         Get(spell).Resists++;
         _resists++;
@@ -53,6 +59,7 @@ public sealed class SpellCastTracker
 
     public void ResetSession()
     {
+        _snapshot = null;
         _spells.Clear();
         _lastCast = null;
         _casts = _interrupts = _resists = _fizzles = 0;
@@ -60,13 +67,19 @@ public sealed class SpellCastTracker
 
     public SpellCastSnapshot Snapshot(int top)
     {
-        return new(
+        if (_snapshot is not null && _snapshotTop == top)
+        {
+            return _snapshot;
+        }
+        _snapshotTop = top;
+        _snapshot = new(
         _casts,
         _interrupts,
         _resists,
         _fizzles,
         _spells.Values.OrderByDescending(s => s.Casts).Take(top)
             .Select(s => new SpellStats(s.Spell, s.Casts, s.Interrupts, s.Resists, s.LastCast)).ToList());
+        return _snapshot;
     }
 
     private string? Recent(DateTime t)

@@ -56,6 +56,14 @@ public sealed partial class GameSession
         get;
     }
 
+    /// <summary>Selects a log's character for cached-data display without starting its reader.</summary>
+    public void PreviewLog(LogFileInfo file)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        Engine.CharacterName = file.CharacterName;
+        Revision++;
+    }
+
     public void Start(LogSessionService source, LogFileInfo file, bool resetOnLogin)
     {
         ArgumentNullException.ThrowIfNull(source);

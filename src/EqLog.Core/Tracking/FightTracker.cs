@@ -282,6 +282,7 @@ public sealed class FightTracker
         private readonly Dictionary<string, Combatant> _attackers = new(StringComparer.OrdinalIgnoreCase);
         private readonly SortedDictionary<int, long> _timeline = [];
         private readonly List<DamageEvent> _damageEvents = [];
+        private FightSnapshot? _snapshot;
 
         public List<DamageEvent> IncomingDamageEvents { get; } = [];
 
@@ -310,6 +311,7 @@ public sealed class FightTracker
 
         public void Add(DamageEvent e)
         {
+            _snapshot = null;
             _damageEvents.Add(e);
 
             if (!_attackers.TryGetValue(e.Attacker, out var c))
@@ -356,6 +358,12 @@ public sealed class FightTracker
 
         public FightSnapshot ToSnapshot()
         {
+            if (_snapshot is not null && _snapshot.IsActive == IsActive && _snapshot.Killed == Killed &&
+                _snapshot.LastActivity == LastActivity &&
+                _snapshot.IncomingDamageEvents.Count == IncomingDamageEvents.Count)
+            {
+                return _snapshot;
+            }
             double seconds = Math.Max(1, (LastActivity - Start).TotalSeconds + 1);
             var attackers = _attackers.Values
                 .OrderByDescending(a => a.Total)
@@ -366,12 +374,13 @@ public sealed class FightTracker
                     AbilityTimelines = DamageTimeline.Merge(a.AbilityTimelines.Select(t => new AbilityTimeline(t.Key, ToPoints(t.Value)))),
                 })
                 .ToList();
-            return new FightSnapshot(Target, Start, LastActivity, seconds, Total, Total / seconds, IsActive, Killed, attackers)
+            _snapshot = new FightSnapshot(Target, Start, LastActivity, seconds, Total, Total / seconds, IsActive, Killed, attackers)
             {
                 Timeline = ToPoints(_timeline),
                 DamageEvents = _damageEvents.ToArray(),
                 IncomingDamageEvents = IncomingDamageEvents.ToArray(),
             };
+            return _snapshot;
         }
 
         private static void AddToTimeline(SortedDictionary<int, long> timeline, int second, long amount)

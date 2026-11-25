@@ -14,6 +14,8 @@ using EqLog.Application.Sessions;
 using EqLog.Core.Parsing;
 using EqLog.Core.Tracking;
 using EqLog.Core.Triggers;
+using EqLog.Overlay.Messaging;
+using EqLog.Overlay.ViewModels;
 using Microsoft.Win32;
 
 namespace EqLog.Overlay;
@@ -105,26 +107,24 @@ public partial class MainWindow : Window
     private sealed record DockWorkspaceChoice(string? Id, string Name, bool IsMultiple = false);
 
     private const int LockHotkeyId = 0x4C31;
-    private DateTime _alertTestVisibleUntil;
 
+    private DateTime _alertTestVisibleUntil;
     private readonly AppSettings _settings;
     private readonly EqLog.Application.Settings.SettingsService _settingsPersistence;
-    private readonly TrackingService _tracking;
-    private readonly ApplicationPersistenceService _persistence;
+    private TrackingService _tracking;
+    private ApplicationPersistenceService _persistence = null!;
     private readonly Dictionary<string, OverlayWindow> _overlays = [];
     private readonly Dictionary<string, CheckBox> _overlayToggles = [];
     private readonly Dictionary<string, CheckBox> _dockToggles = [];
     private readonly Dictionary<string, ComboBox> _workspaceSelectors = [];
     private readonly Dictionary<string, CheckBox> _lockToggles = [];
+    private readonly Dictionary<string, Slider> _backgroundSliders = [];
     private DockWindow _dock = null!;
     private string? _activeDockWorkspaceId;
     private readonly HashSet<ChatChannel> _chatChannels;
     private readonly ObservableCollection<DurationRow> _durationRows = [];
     private readonly ObservableCollection<SpawnRow> _spawnRows = [];
     private string _spawnsSignature = "";
-    private readonly DispatcherTimer _renderTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
-    private static readonly TimeSpan WikiRenderInterval = TimeSpan.FromSeconds(1);
-    private DateTime _lastWikiRender;
     private readonly HousekeepingService _housekeeping = new();
     private readonly CancellationTokenSource _housekeepingStop = new();
     private Task _housekeepingTask = Task.CompletedTask;
@@ -132,10 +132,6 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _gameTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private bool _gameVisible = true;
     private readonly ObservableCollection<AlertTrigger> _triggers;
-    private readonly ConcurrentQueue<TriggerAlert> _pendingAlerts = new();
-    private readonly List<ActiveAlert> _activeAlerts = [];
-    private readonly Dictionary<string, Brush> _alertBrushes = new(StringComparer.OrdinalIgnoreCase);
-    private const int MaxAlerts = 6;
 
     private string? _characterName;
 
@@ -146,65 +142,36 @@ public partial class MainWindow : Window
     private long _rawVersion;
     private long _rawShownVersion = -1;
 
-    private readonly GameSession _session;
+    private GameSession _session;
     private LogSessionService _logSessions = null!;
     private string? _currentFile;
     private string _durationsSignature = "";
-    private bool _rendering;
+
+    private bool _dataReady;
+    private LogFileInfo? _startupLogPreview;
+    private readonly ContentControl _historyNotice;
 
     public MainWindow(StartupState state)
+        : this(state, null)
     {
+    }
+
+    internal MainWindow(StartupState state, Task<StartupState>? pendingState, Task<StartupState>? availableData = null)
+    {
+        _dataReady = pendingState is null;
         _settings = state.Settings;
         _settingsPersistence = state.SettingsPersistence ?? SettingsComposition.CreateService();
         _tracking = state.Tracking ?? TrackingComposition.CreateService();
         _session = state.Session;
         InitializeComponent();
-        InitializeThemes(state);
-        InitializeLootQuests(state);
-        InitializeQuestInventory(state);
-        _logSessions = LogSessionComposition.Create(_inventoryService);
-        _logSessions.BatchProcessed += batch =>
+        _historyNotice = new ContentControl
         {
-            RememberRawLines(batch.Lines);
-            if (batch.Live)
-            {
-                foreach (var alert in _session.MatchTriggers(batch.Lines))
-                {
-                    _pendingAlerts.Enqueue(alert);
-                }
-            }
+            Name = "HistoryLoadingNotice",
+            Template = (ControlTemplate)FindResource("HistoryLoadingNotice"),
+            DataContext = HistoryProgress,
         };
-        _logSessions.LiveMobConsidered += (consider, zone) => _mobEvents.Enqueue((consider, zone));
-        _logSessions.LiveConsiderAssessment += assessment => _mobEvents.Enqueue((assessment, ""));
-        InitializeMobInfo(state);
-        if (state.WikiWarnings.Count > 0)
-        {
-            ResetWikiCacheStatus.Text = string.Join(" ", state.WikiWarnings);
-        }
-        _skyCatalog = state.SkyCatalog;
-        if (_skyCatalog is not null)
-        {
-            _wikiRepository.SeedSky(_skyCatalog);
-        }
-        if (state.SkyError is { } skyError)
-        {
-            _skyStatus = $"Sky cache could not load: {skyError.Message}. The original cache is protected until reset or repair.";
-        }
-        if (state.TrackingFailures.Count > 0)
-        {
-            ResetTrackingDataStatus.Text = string.Join(" ", state.TrackingFailures.Select(failure =>
-                $"{failure.Store} could not load: {failure.Error.Message}. Existing data is protected."));
-        }
-        if (state.TrackingFailures.FirstOrDefault(failure => failure.Store == "leveling") is { } levelingFailure)
-        {
-            _levelingStorageError = $"Leveling history could not load: {levelingFailure.Error.Message}. " +
-                "The saved file is protected; new observations are temporary until repair and restart.";
-        }
-        _logSessions.SpellObserved += _wikiRepository.ObserveSpell;
-        InitializeExaltations(state);
-        InitializeTradeskills(state);
-        InitializeNpcCompendium(state);
-        _persistence = new(_settingsPersistence, _tracking, _inventoryService, _wikiRepository);
+        InitializeThemes(state);
+        InitializeStartupData(state);
         _chatChannels = [.. _settings.ChatChannels];
         DurationsGrid.ItemsSource = _durationRows;
         SpawnsGrid.ItemsSource = _spawnRows;
@@ -221,13 +188,14 @@ public partial class MainWindow : Window
         _gameVisible = GameWindowWatcher.IsGameVisible();
         ResetOnLoginBox.IsChecked = _settings.ResetOnLogin;
 
+        _overlayServices = new OverlayShellServices(this, state);
         CreateOverlays();
+        CreateMessagePump();
         TrackUsageState();
         UpdateLockState();
         CreateChatToggles();
 
         System.Windows.Application.Current.SessionEnding += (_, _) => SaveAllBlocking();
-        _renderTimer.Tick += async (_, _) => await RenderAsync();
         _gameTimer.Tick += (_, _) => CheckGameVisible();
 
         // This window is never shown: its UI lives in the dock window's side panel, and the dock window is the
@@ -248,8 +216,29 @@ public partial class MainWindow : Window
             EnsureOnScreen(_dock);
         }
 
+        if (pendingState is not null)
+        {
+            SetDataControlsEnabled(false);
+            StatusText.Text = "Saved history is being restored in the background. Workspace layout is ready.";
+            HistoryProgress.Tag = "Loading saved data...";
+            HistoryProgress.IsIndeterminate = true;
+            _dock.SetLoadingNotice(_historyNotice);
+            _pump.Start();
+            StartupCompletion = CompleteStartupAsync(pendingState, availableData);
+        }
+        else
+        {
+            StartupCompletion = Task.CompletedTask;
+            StartRuntime();
+        }
+    }
+
+    internal Task StartupCompletion { get; }
+
+    private void StartRuntime()
+    {
         // Started directly rather than from Loaded: Show() can raise Loaded synchronously, before a handler is attached.
-        _renderTimer.Start();
+        _pump.Start();
         _housekeepingTask = _housekeeping.RunAsync(tick => Dispatcher.InvokeAsync(() =>
         {
             if (!_shuttingDown)
@@ -297,137 +286,17 @@ public partial class MainWindow : Window
             p.BackgroundOpacity ??= _settings.BackgroundOpacity;
             p.HoverBackgroundOpacity ??= p.BackgroundOpacity;
             p.Locked ??= _settings.Locked;
-            var panel = new OverlayPanel(def.Key, def.Caption, def.AutoScroll) { FontSize = p.FontSize.Value };
-            panel.SetBackgroundOpacity(p.BackgroundOpacity.Value);
-            panel.SetHoverBackgroundOpacity(p.HoverBackgroundOpacity.Value);
-            if (def.Key == "quests")
+            var vm = CreateOverlayViewModel(def);
+            vm.FontSize = p.FontSize.Value;
+            vm.BackgroundOpacity = p.BackgroundOpacity.Value;
+            vm.HoverBackgroundOpacity = p.HoverBackgroundOpacity.Value;
+            var panel = new OverlayPanel(vm);
+            if (vm is MobInfoOverlayViewModel mobInfo)
             {
-                ConfigureQuestToolbar(panel);
+                MobTimeoutBox.DataContext = mobInfo;
+                MobInfoStatusText.DataContext = mobInfo;
             }
 
-            if (def.Key == "dps")
-            {
-                var fightList = new DpsFightList(panel, _settings.DpsExpandedView);
-                _dpsFightList = fightList;
-                panel.SetBody(fightList);
-                ConfigureDpsToolbar(panel, _settings.DpsExpandedView, expanded =>
-                {
-                    _settings.DpsExpandedView = expanded;
-                    fightList.SetFullDetails(expanded);
-                    SaveSettingsInBackground();
-                });
-            }
-
-            if (def.Key == "spawns")
-            {
-                panel.SpawnTrackToggleRequested += change =>
-                {
-                    _session.SetSpawnTracked(change.Zone, change.Mob, change.Tracked);
-                    CheckSpawnWiki();
-                    _ = SaveQuietlyAsync(_session.SaveSpawnsAsync(_tracking));
-                };
-            }
-
-            if (def.Key == "timers")
-            {
-                var knownSpells = ConfigureKnownSpellsControl(panel, _settings.SpellTimersShowKnownSpells, show =>
-                {
-                    _settings.SpellTimersShowKnownSpells = show;
-                    SaveSettingsInBackground();
-                });
-                ConfigureKnownSpellsFilter(panel, knownSpells, filter => _itemFilters[def.Key] = filter);
-                panel.SpellTrackToggleRequested += change =>
-                {
-                    _session.SetSpellTracked(change.Spell, change.Tracked);
-                    _ = SaveQuietlyAsync(_session.SaveSpellDurationsAsync(_tracking));
-                };
-            }
-
-            if (def.Key == "sky")
-            {
-                ConfigureSkyToolbar(panel);
-            }
-            if (def.Key == "tradeskills")
-            {
-                ConfigureTradeskillToolbar(panel);
-            }
-            if (def.Key == "mobinfo")
-            {
-                ConfigureMobToolbar(panel);
-            }
-            if (def.Key == "npcs")
-            {
-                ConfigureNpcToolbar(panel);
-            }
-            if (def.Key == "inventory")
-            {
-                ConfigureInventoryOverlay(panel);
-            }
-            if (def.Key == "merge")
-            {
-                ConfigureMergeOverlay(panel);
-            }
-            if (def.Key == "moteplan")
-            {
-                ConfigureMotePlanOverlay(panel);
-            }
-            if (def.Key == "leveling")
-            {
-                ConfigureLevelingOverlay(panel);
-            }
-            if (def.Key == "exaltations")
-            {
-                ConfigureExaltations(panel);
-            }
-
-            if (def.Key == "loot")
-            {
-                var grouping = new ComboBox
-                {
-                    ItemsSource = new[] { "Recent drops", "Grouped: most recent", "Grouped: item name (A-Z)" },
-                    SelectedIndex = Math.Clamp(_settings.LootGrouping, 0, 2),
-                    Margin = new Thickness(0, 5, 0, 5),
-                    ToolTip = "Grouped views count all loot observed this session, separately per looter. Upgrade variants are combined.",
-                };
-                grouping.SelectionChanged += (_, _) => _settings.LootGrouping = grouping.SelectedIndex;
-                ConfigureItemFilterToolbar(panel, filter => _itemFilters[def.Key] = filter, grouping);
-            }
-            else if (def.Key == "forage")
-            {
-                var grouping = new ComboBox
-                {
-                    ItemsSource = new[] { "Recent finds", "Grouped: most recent", "Grouped: item name (A-Z)" },
-                    SelectedIndex = Math.Clamp(_settings.ForageGrouping, 0, 2),
-                    Margin = new Thickness(0, 5, 0, 5),
-                    ToolTip = "Grouped views total all forage finds this session per item, with the zones they came from.",
-                };
-                grouping.SelectionChanged += (_, _) => _settings.ForageGrouping = grouping.SelectedIndex;
-                ConfigureItemFilterToolbar(panel, filter => _itemFilters[def.Key] = filter, grouping);
-            }
-            else if (def.Key == "itemupgrades")
-            {
-                ConfigureItemFilterToolbar(panel, filter => _itemFilters[def.Key] = filter);
-            }
-            panel.LootLookupRequested += async item => await LookupLootItemAsync(item);
-            panel.ItemWikiRequested += item => OpenWiki(WikiLinks.PageUrl(WikiLinks.ItemTitle(item)));
-            panel.LinkRequested += url => OpenWiki(url);
-            panel.BreakdownRequested += breakdown =>
-            {
-                UsageTelemetry.TrackFeature(UsageFeature.AbilityBreakdown);
-                new AbilityBreakdownWindow(breakdown) { Owner = _dock }.Show();
-            };
-            panel.DockToggleRequested += pnl =>
-                Dispatcher.BeginInvoke(() =>
-                {
-                    if (_dock.IsPanelInActiveWorkspace(pnl.Key))
-                    {
-                        FloatPanel(pnl.Key);
-                    }
-                    else
-                    {
-                        SetDocked(pnl.Key, true);
-                    }
-                });
             var w = new OverlayWindow(panel);
             w.Left = p.Left;
             w.Top = p.Top;
@@ -531,7 +400,7 @@ public partial class MainWindow : Window
         AddSlider("Text size", 9, 22, placement.FontSize!.Value, 1, value =>
         {
             placement.FontSize = value;
-            window.Panel.FontSize = value;
+            window.Panel.ViewModel.FontSize = value;
             if (window.Panel.Key == "merge")
             {
                 RefreshMergeView();
@@ -540,17 +409,14 @@ public partial class MainWindow : Window
         var backgroundSlider = AddSlider("Background", 0, 1, placement.BackgroundOpacity!.Value, 0.05, value =>
         {
             placement.BackgroundOpacity = value;
-            window.Panel.SetBackgroundOpacity(value);
+            window.Panel.ViewModel.BackgroundOpacity = value;
         }, value => $"{value:P0}");
-        window.Panel.BackgroundOpacityChanged += value =>
-        {
-            placement.BackgroundOpacity = value;
-            backgroundSlider.Value = value;
-        };
+        _backgroundSliders[window.Panel.Key] = backgroundSlider;
+        TrackBackgroundOpacity(window.Panel.ViewModel, placement, value => backgroundSlider.Value = value);
         AddSlider("Mouse-over background", 0, 1, placement.HoverBackgroundOpacity!.Value, 0.05, value =>
         {
             placement.HoverBackgroundOpacity = value;
-            window.Panel.SetHoverBackgroundOpacity(value);
+            window.Panel.ViewModel.HoverBackgroundOpacity = value;
         }, value => $"{value:P0}");
         return new Expander { Header = window.Panel.Caption, Content = controls };
 
@@ -632,17 +498,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (visible && !floatingAllowed && !alertPreview)
-        {
-            window.Hide();
-            window.DetachPanel();
-            dock.AddTemporaryPanel(window.Panel, placement);
-            return;
-        }
-
         dock.RemovePanel(key);
         window.AttachPanel();
-        if (visible)
+        if (visible && (floatingAllowed || alertPreview))
         {
             window.Show();
             window.SetLocked(placement.Locked == true);
@@ -668,12 +526,14 @@ public partial class MainWindow : Window
             _alertTestVisibleUntil = default;
             ApplyMode("alerts");
         }
+
         bool visible = GameWindowWatcher.IsGameVisible();
         if (visible != _gameVisible)
         {
             _gameVisible = visible;
             ApplyFloating();
         }
+
         foreach (var window in _overlays.Values)
         {
             window.SetHoverOnlyChrome(_settings.HoverOnlyOverlayChrome && _gameVisible);
@@ -689,7 +549,7 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>Re-applies show/hide for every floating overlay.</summary>
+    /// <summary>Re-applies visibility for every floating overlay without changing its placement.</summary>
     private void ApplyFloating()
     {
         foreach (var (key, p) in _settings.Overlays)
@@ -1073,6 +933,11 @@ public partial class MainWindow : Window
         }
 
         _session.Start(_logSessions, info, _settings.ResetOnLogin);
+        if (_overlayViewModels.TryGetValue("npcs", out var npcViewModel) &&
+            npcViewModel is NpcBrowserOverlayViewModel npcs)
+        {
+            npcs.ResetForNewLog();
+        }
         _inventoryView.ImportStatus = "Waiting for this character's inventory export. Create/update it in game with /outputfile inventory.";
         _questSelectionVersion++;
         SynchronizeInventoryView();
@@ -1087,175 +952,6 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             StatusText.Text = $"Log reader stopped: {ex.Message}";
-        }
-    }
-
-    private async Task RenderAsync()
-    {
-        if (_rendering || _shutDown)
-        {
-            return;
-        }
-
-        _rendering = true;
-        try
-        {
-            await RenderFrameAsync();
-        }
-        finally
-        {
-            _rendering = false;
-        }
-    }
-
-    private async Task RenderFrameAsync()
-    {
-        if (_housekeepingTask.IsFaulted && !_housekeepingFailureReported)
-        {
-            _housekeepingFailureReported = true;
-            var error = _housekeepingTask.Exception!.GetBaseException();
-            UsageTelemetry.TrackError(error, UsageErrorSource.StartupData);
-            ResetTrackingDataStatus.Text = $"Application maintenance stopped: {error.Message}. Restart to resume automatic checks.";
-        }
-        PumpMobInfo();
-        var p = _logSessions.Progress;
-        double progress = p.TotalBytes > 0 ? (double)p.BytesRead / p.TotalBytes : 0;
-        if (HistoryProgress.Value != progress)
-        {
-            HistoryProgress.Value = progress;
-        }
-        var progressVisibility = p.CaughtUp ? Visibility.Hidden : Visibility.Visible;
-        if (HistoryProgress.Visibility != progressVisibility)
-        {
-            HistoryProgress.Visibility = progressVisibility;
-        }
-
-        long generation = _session.Revision;
-        var channels = new HashSet<ChatChannel>(_chatChannels);
-        bool includeChat = IsShowing("chat");
-        var frame = await _session.CaptureFrameAsync(_logSessions, includeChat, channels,
-            includeSpawns: IsShowing("spawns"), includeSpellDurations: IsShowing("timers"));
-        if (_shutDown || generation != _session.Revision)
-        {
-            return;
-        }
-
-        var snap = frame.Snapshot;
-        var real = DateTime.Now;
-        var last = snap.LastLogTime;
-        bool replay = frame.Replay;
-        RefreshNpcChoices();
-        string title = $"EverQuest Log Overlay - v{AppVersion}";
-        if (!string.IsNullOrWhiteSpace(snap.CharacterName))
-        {
-            title += $" - {snap.CharacterName}";
-            title += snap.CurrentLoadout is { } current
-                ? $" [{current.Level} {current.Classes}]" : " [classes unknown - use /who]";
-        }
-        if (_dock.Title != title)
-        {
-            _dock.Title = title;
-        }
-        PumpQuestLoot();
-        // Wiki activity only changes on a seconds scale; refreshing it every frame made the whole UI sluggish.
-        bool renderWiki = IsShowing("wiki") && real - _lastWikiRender >= WikiRenderInterval;
-        if (renderWiki)
-        {
-            _lastWikiRender = real;
-        }
-        var view = new OverlayView(
-            _chatChannels,
-            UpdateAlerts(real),
-            _settings.LootGrouping,
-            _questInventory,
-            renderWiki ? _wikiRepository.GetActivity() : null,
-            renderWiki ? GetQuestWikiActivity() : null,
-            frame.Chat,
-            _characterName,
-            MoteInventory: IsShowing("motes") ? _questInventory.Motes(_characterName) : null,
-            ShowKnownSpells: _settings.SpellTimersShowKnownSpells,
-            ForageGrouping: _settings.ForageGrouping);
-        if (LogLinesTab.IsSelected)
-        {
-            RefreshRawLines();
-        }
-
-        var renderBudget = System.Diagnostics.Stopwatch.StartNew();
-        foreach (var def in OverlayPresenters.All)
-        {
-            if (!IsShowing(def.Key))
-            {
-                continue;
-            }
-            if (def.Key == "wiki" && !renderWiki)
-            {
-                continue;
-            }
-
-            var content = def.Key switch
-            {
-                "quests" => QuestOpportunities(),
-                "sky" => SkyOverlayContent(),
-                "tradeskills" => TradeskillContent(snap.Session.Zone),
-                "mobinfo" => MobInfoContent(),
-                "npcs" => NpcCompendiumContent(),
-                "inventory" => new("Inventory & loot quests", _characterName, []),
-                "merge" => new("Ready to merge", _characterName, []),
-                "moteplan" => new("Mote upgrade planner", _characterName, []),
-                "leveling" => LevelingContent(),
-                "exaltations" => ExaltationsContent(),
-                _ => def.Render(snap, frame.Queries, view with { ItemFilter = _itemFilters.GetValueOrDefault(def.Key, "") }),
-            };
-            var rows = def.Key is "loot" or "forage" or "wiki"
-                ? content.Rows.Select(row => row.LootItem is { } item
-                    ? row with
-                    {
-                        HasQuestReferences = HasQuestReferences(item)
-                    }
-                    : row).ToArray()
-                : content.Rows;
-            _overlays[def.Key].Panel.Update(content.Title, content.Subtitle, rows, content.TitleLink);
-            if (def.Key == "dps")
-            {
-                _dpsFightList?.Update(snap);
-            }
-
-            if (!p.CaughtUp && renderBudget.ElapsedMilliseconds >= 8)
-            {
-                await System.Windows.Threading.Dispatcher.Yield(DispatcherPriority.Background);
-                if (_shutDown || generation != _session.Revision)
-                {
-                    return;
-                }
-                renderBudget.Restart();
-            }
-        }
-
-        if (_logSessions.Completion is { IsFaulted: true } t)
-        {
-            string error = $"Log reader error: {t.Exception?.GetBaseException().Message}";
-            if (StatusText.Text != error)
-            {
-                StatusText.Text = error;
-            }
-            return;
-        }
-
-        if (_currentFile is null)
-        {
-            return;
-        }
-
-        string phase = p.CaughtUp ? "Live" : $"Loading history {HistoryProgress.Value:P0}";
-        string zone = snap.Session.Zone is { } z ? $" in {z}" : "";
-        string when = last is DateTime lt ? $"last line {lt:g}" : "no lines yet";
-        string replayNote = replay ? "  (log is not being written; showing it as of the last line)" : "";
-        string loadout = snap.CurrentLoadout is { } profile
-            ? $" [{profile.Level} {profile.Classes}]" : " [classes unknown - use /who]";
-        string status = $"{phase}: {snap.CharacterName}{loadout}{zone} - {snap.LinesProcessed:N0} lines, {when}{replayNote}";
-        if (StatusText.Text != status)
-        {
-            StatusText.Text = status;
         }
     }
 
@@ -1281,7 +977,6 @@ public partial class MainWindow : Window
 
         _ = CheckInventoryAsync();
         CheckSpawnWiki();
-        CheckMotePlan();
 
         if (SpawnsTab.IsSelected)
         {
@@ -1511,9 +1206,22 @@ public partial class MainWindow : Window
     /// <summary>
     /// Captures UI-owned state and delegates independent ordered saves to the application coordinator.
     /// </summary>
-    private Task<PersistenceResult> StartSaves()
+    private async Task<PersistenceResult> StartSaves()
     {
-        return _persistence.SaveAsync(_settings, _session);
+        if (_dataReady)
+        {
+            return await _persistence.SaveAsync(_settings, _session);
+        }
+        try
+        {
+            await _settingsPersistence.SaveAsync(_settings);
+            return new([new(PersistedFeature.Settings, null)]);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or
+            System.Text.Json.JsonException or InvalidOperationException)
+        {
+            return new([new(PersistedFeature.Settings, error)]);
+        }
     }
 
     /// <summary>Saves window layout, settings and everything learned. Runs every few seconds, on close and before updating.</summary>
@@ -1529,7 +1237,7 @@ public partial class MainWindow : Window
             {
                 if (outcome.Feature == PersistedFeature.Npcs && _npcSaveEnabled)
                 {
-                    _npcStorageError = null;
+                    SetNpcStorageError(null);
                 }
                 if (outcome.Feature == PersistedFeature.Leveling)
                 {
@@ -1548,11 +1256,10 @@ public partial class MainWindow : Window
                     ResetWikiCacheStatus.Text = message;
                     break;
                 case PersistedFeature.Npcs:
-                    _npcStorageError = message;
-                    MobInfoStatusText.Text = message;
+                    SetNpcStorageError(message);
                     break;
                 case PersistedFeature.Mobs:
-                    MobInfoStatusText.Text = message;
+                    SetMobInfoStatus(message);
                     break;
                 case PersistedFeature.Leveling:
                     _levelingStorageError = message;
@@ -1677,26 +1384,23 @@ public partial class MainWindow : Window
         _shuttingDown = true;
         await ShutdownAsync();
         _shutDown = true;
-        _dock.Close();
+        _ = Dispatcher.BeginInvoke(() => _dock.Close());
     }
 
     private async Task ShutdownAsync()
     {
-        _questFilterWork?.Dispose();
-        _skyFilterWork?.Dispose();
         _rawFilterWork?.Dispose();
-        _npcFilterWork?.Dispose();
-        _exaltationFilterWork?.Dispose();
-        _planNamesWork?.Dispose();
-        _levelingWork?.Dispose();
         CancelInventoryFilters();
         _updateCheckTimer.Stop();
         // Start disposal first so it abandons wiki work before the callers' tokens cancel it layer by layer.
         var disposingWiki = _wikiRepository.DisposeAsync();
+        foreach (var viewModel in _overlayViewModels.Values.OfType<IDisposable>())
+        {
+            viewModel.Dispose();
+        }
         _wikiCts.Cancel();
-        _npcWikiCts?.Cancel();
         await disposingWiki;
-        _renderTimer.Stop();
+        _pump?.Dispose();
         _housekeepingStop.Cancel();
         try
         {
@@ -1780,47 +1484,6 @@ public partial class MainWindow : Window
             w.Width = p.Width;
             w.Height = p.Height;
         }
-    }
-
-    private IReadOnlyList<ActiveAlert> UpdateAlerts(DateTime now)
-    {
-        bool sound = false;
-        while (_pendingAlerts.TryDequeue(out var a))
-        {
-            double seconds = a.Trigger.Seconds > 0 ? a.Trigger.Seconds : 8;
-            var text = TriggerPresentation.Format(a);
-            if (text.Error is not null)
-            {
-                TriggerStatusText.Text = $"Invalid alert text template: {text.Error.Message}. Showing the template without capture substitutions.";
-            }
-            _activeAlerts.Add(new ActiveAlert(text.Text, AlertBrush(a.Trigger.Color), now.AddSeconds(seconds), a.Trigger.Effect));
-            sound |= a.Trigger.Sound;
-        }
-
-        _activeAlerts.RemoveAll(a => a.Expires <= now);
-        if (_activeAlerts.Count > MaxAlerts)
-        {
-            _activeAlerts.RemoveRange(0, _activeAlerts.Count - MaxAlerts);
-        }
-
-        if (sound)
-        {
-            SystemSounds.Exclamation.Play();
-        }
-
-        return [.. _activeAlerts];
-    }
-
-    private Brush AlertBrush(string? color)
-    {
-        string key = string.IsNullOrWhiteSpace(color) ? AlertColors.Default : color.Trim();
-        if (!_alertBrushes.TryGetValue(key, out var brush))
-        {
-            brush = AlertColors.ToBrush(key);
-            _alertBrushes[key] = brush;
-        }
-
-        return brush;
     }
 
     private void TriggerColorPick_Click(object sender, RoutedEventArgs e)
@@ -2007,8 +1670,7 @@ public partial class MainWindow : Window
         CommitTriggerEdits();
         RebuildTriggers();
         var alerts = _session.MatchTriggers([TestLineBox.Text]);
-        double previewSeconds = alerts.Count == 0 ? 8 :
-            alerts.Max(a => a.Trigger.Seconds > 0 ? a.Trigger.Seconds : 8);
+        double previewSeconds = AlertsOverlayViewModel.DisplaySeconds(alerts);
         _alertTestVisibleUntil = DateTime.Now.AddSeconds(previewSeconds + 1);
         _overlayToggles["alerts"].IsChecked = true;
         SetOverlayVisible("alerts", true);
@@ -2021,9 +1683,9 @@ public partial class MainWindow : Window
             EnsureOnScreen(_overlays["alerts"]);
             _overlays["alerts"].ReassertTopmost();
         }
-        foreach (var a in alerts)
+        if (alerts.Count > 0)
         {
-            _pendingAlerts.Enqueue(a);
+            _pump.Publish(new TriggerAlertsMessage(alerts));
         }
 
         if (alerts.Count == 0)

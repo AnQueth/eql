@@ -1,10 +1,14 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using EqLog.Application.Tracking;
 using EqLog.Core;
+using Microsoft.Win32.SafeHandles;
 
 namespace EqLog.Infrastructure.Persistence;
 
@@ -120,6 +124,7 @@ public sealed class NpcCompendiumRepository : INpcCompendiumRepository
 
             foreach (var append in batch.HistoryAppends)
             {
+                state.Histories.Remove(HistoryPath(folder, append.FileName));
                 await JsonLines.AppendAsync(
                     HistoryPath(folder, append.FileName),
                     append.Records,
@@ -161,10 +166,43 @@ public sealed class NpcCompendiumRepository : INpcCompendiumRepository
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var records = await ReadHistoryAsync(historyPath, cancellationToken).ConfigureAwait(false);
-            if (records is not null)
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!File.Exists(historyPath))
             {
-                compendium.ImportHistory(mob, zone, records);
+                state.Histories.Remove(historyPath);
+                compendium.ImportHistory(mob, zone, []);
+                return compendium.Get(mob, zone);
+            }
+
+            try
+            {
+                await using var stream = AtomicFile.OpenRead(historyPath);
+                HistoryStamp? stamp = GetHistoryStamp(stream);
+                if (stamp is not null &&
+                    state.Histories.TryGetValue(historyPath, out var cached) &&
+                    cached.Stamp == stamp &&
+                    cached.Token.TryGetTarget(out var cachedToken) &&
+                    compendium.TryGetCachedHistory(mob, zone, cachedToken, out var snapshot))
+                {
+                    return snapshot;
+                }
+
+                state.Histories.Remove(historyPath);
+                var records = await ReadHistoryAsync(stream, cancellationToken).ConfigureAwait(false);
+                object? token = compendium.ImportHistory(mob, zone, records);
+                if (token is not null && stamp is not null && stamp == GetHistoryStamp(stream))
+                {
+                    if (state.Histories.Count >= 8)
+                    {
+                        state.Histories.Remove(state.Histories.Keys.First());
+                    }
+                    state.Histories[historyPath] = new CachedHistory(stamp.Value, new WeakReference<object>(token));
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                state.Histories.Remove(historyPath);
+                Trace.TraceWarning("NPC history read or metadata check failed for '{0}': {1}", historyPath, exception);
             }
 
             return compendium.Get(mob, zone);
@@ -188,34 +226,97 @@ public sealed class NpcCompendiumRepository : INpcCompendiumRepository
         try
         {
             await using var stream = AtomicFile.OpenRead(path);
-            using var reader = new StreamReader(stream, Encoding.UTF8);
-            while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is string line)
-            {
-                if (string.IsNullOrWhiteSpace(line))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    if (JsonSerializer.Deserialize<NpcCompendium.EncounterRecord>(line, HistoryJson) is { } record)
-                    {
-                        records.Add(record);
-                    }
-                }
-                catch (JsonException)
-                {
-                    // A partial final line or malformed record does not hide the rest of the history.
-                }
-            }
+            return await ReadHistoryAsync(stream, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             return null;
         }
+    }
+
+    private static async Task<List<NpcCompendium.EncounterRecord>> ReadHistoryAsync(
+        FileStream stream,
+        CancellationToken cancellationToken)
+    {
+        var records = new List<NpcCompendium.EncounterRecord>();
+        using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
+        while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is string line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            try
+            {
+                if (JsonSerializer.Deserialize<NpcCompendium.EncounterRecord>(line, HistoryJson) is { } record)
+                {
+                    records.Add(record);
+                }
+            }
+            catch (JsonException)
+            {
+                // A partial final line or malformed record does not hide the rest of the history.
+            }
+        }
 
         return records;
     }
+
+    private static HistoryStamp? GetHistoryStamp(FileStream stream)
+    {
+        // Without a stable file identity and change time, always read rather than trust timestamps alone.
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        if (!GetFileInformationByHandleEx(stream.SafeFileHandle, 18, out FileIdentity identity, 24))
+        {
+            var exception = new Win32Exception(Marshal.GetLastWin32Error());
+            Trace.TraceWarning("NPC history file identity check failed for '{0}': {1}",
+                stream.Name, exception);
+            return null;
+        }
+
+        if (!GetFileInformationByHandleEx(stream.SafeFileHandle, 0, out FileBasicInfo basic, 40))
+        {
+            var exception = new Win32Exception(Marshal.GetLastWin32Error());
+            Trace.TraceWarning("NPC history file metadata check failed for '{0}': {1}",
+                stream.Name, exception);
+            return null;
+        }
+
+        if ((identity.IdLow == 0 && identity.IdHigh == 0) || basic.ChangeTime == 0)
+        {
+            Trace.TraceWarning("NPC history file metadata is incomplete for '{0}'; history will be reread.",
+                stream.Name);
+            return null;
+        }
+
+        return new HistoryStamp(identity, basic.LastWriteTime, basic.ChangeTime, stream.Length);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly record struct FileIdentity(ulong Volume, ulong IdLow, ulong IdHigh);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly record struct FileBasicInfo(
+        long CreationTime, long LastAccessTime, long LastWriteTime, long ChangeTime, uint Attributes);
+
+    private readonly record struct HistoryStamp(FileIdentity Identity, long LastWriteTime, long ChangeTime, long Length);
+
+    private sealed record CachedHistory(HistoryStamp Stamp, WeakReference<object> Token);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandleEx(
+        SafeFileHandle handle, int informationClass, out FileIdentity information, uint size);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandleEx(
+        SafeFileHandle handle, int informationClass, out FileBasicInfo information, uint size);
 
     private static JsonSerializerOptions CreateIndexOptions()
     {
@@ -285,6 +386,8 @@ public sealed class NpcCompendiumRepository : INpcCompendiumRepository
 
     private sealed record RepositoryState(string Folder)
     {
+        public Dictionary<string, CachedHistory> Histories { get; } = new(StringComparer.OrdinalIgnoreCase);
+
         public JsonDeltaJournal? Journal
         {
             get; set;

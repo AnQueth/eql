@@ -16,7 +16,6 @@ public partial class MainWindow
     private readonly Dictionary<string, QuestLookupResult> _questCache = new(StringComparer.OrdinalIgnoreCase);
     private long _questSelectionVersion;
     private long _questCacheRevision;
-    private AsyncTextFilter<OverlayContent>? _questFilterWork;
     private readonly CancellationTokenSource _wikiCts = new();
     private InventoryService _inventoryService = null!;
     private readonly InventoryViewModel _inventoryView = new();
@@ -34,10 +33,6 @@ public partial class MainWindow
     private string _questProgress = "Waiting for loot.";
     private string? _questActiveItem;
     private readonly HashSet<string> _questFailed = new(StringComparer.OrdinalIgnoreCase);
-    private ProgressBar? _questProgressBar;
-    private ContentControl? _questProgressText;
-    private OverlayTable? _questProgressTable;
-    private TextBlock? _questCurrentText;
     private System.Collections.ObjectModel.ObservableCollection<QuestInventoryItem> _ownedQuestItems
     {
         get
@@ -181,163 +176,22 @@ public partial class MainWindow
         }
     }
 
-    private OverlayContent QuestOpportunities()
-    {
-        _questFilterWork ??= new(Dispatcher, error => QuestLookupStatus.Text = $"Quest filtering failed: {error.Message}");
-        var inventory = _questInventory;
-        string character = _characterName ?? "";
-        string filter = _settings.QuestFilter;
-        bool recentFirst = _settings.QuestRecentFirst;
-        var key = (inventory, character, filter, recentFirst, _questCacheRevision, _session.Revision);
-        if (!_questFilterWork.Matches(key))
-        {
-            var cache = new Dictionary<string, QuestLookupResult>(_questCache, StringComparer.OrdinalIgnoreCase);
-            _questFilterWork.Request(key, token => BuildQuestOpportunities(inventory, character, cache, filter, recentFirst, token),
-                context: (character, _session.Revision));
-        }
-        return _questFilterWork.Result ?? new("Quest opportunities", character, [new("Filtering quest opportunities...", Wrap: true)]);
-    }
-
-    internal static OverlayContent BuildQuestOpportunities(InventoryReadModel inventory, string character,
-        IReadOnlyDictionary<string, QuestLookupResult> cache, string filter, bool recentFirst, CancellationToken token)
-    {
-        token.ThrowIfCancellationRequested();
-        var rows = new List<OverlayRow>();
-        var quests = inventory.Opportunities(character, cache, filter, recentFirst);
-        foreach (var quest in quests)
-        {
-            token.ThrowIfCancellationRequested();
-            rows.Add(new(quest.Title, Bold: true, QuestHeading: true, Wrap: true,
-                Link: WikiLinks.PageUrl(quest.Title), ToolTip: $"Open {quest.Title} on EQLWiki"));
-            var items = recentFirst
-                ? quest.Items.OrderByDescending(i => i.LastLootUtc).ThenBy(i => i.Item, StringComparer.OrdinalIgnoreCase)
-                : quest.Items.OrderBy(i => i.Item, StringComparer.OrdinalIgnoreCase);
-            foreach (var item in items)
-            {
-                rows.Add(new(item.Item, Wrap: true, LootItem: item.Item,
-                    Table: OverlayTable.Columns(
-                    [
-                        ("Owned", $"{item.Owned}"),
-                        ("Carried", $"{item.Carried}"),
-                        ("Bank", $"{item.Bank}"),
-                        ("Hoard", $"{item.Hoard}"),
-                        ("Depot", $"{item.Depot}"),
-                        ("Other", $"{item.OtherStorage}"),
-                        ("Collection", $"{item.Collection}"),
-                        ("Installed", $"{item.Installed}"),
-                        ("Looted*", $"{item.Historical}"),
-                    ]),
-                    Details: item.Historical > 0 ? "* Looted is from log history and unconfirmed." : null));
-            }
-        }
-        if (rows.Count == 0)
-        {
-            rows.Add(new(string.IsNullOrWhiteSpace(filter)
-            ? "No quest opportunities found yet." : "No quests or items match your filter.", Wrap: true));
-        }
-
-        return new("Quest opportunities", character, rows);
-    }
-
-    private void ConfigureQuestToolbar(OverlayPanel panel)
-    {
-        var toolbar = new System.Windows.Controls.StackPanel { Margin = new Thickness(0, 3, 0, 3) };
-        var controls = new Grid();
-        controls.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        controls.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var sort = new System.Windows.Controls.ComboBox
-        {
-            ItemsSource = new[] { "Recent items", "Quest name (A-Z)" },
-            SelectedIndex = _settings.QuestRecentFirst ? 0 : 1,
-            Width = 155,
-            Margin = new Thickness(0, 0, 10, 0),
-            ToolTip = "Sort quests by latest looted item (inventory-only items last), or alphabetically.",
-        };
-        sort.SelectionChanged += (_, _) => _settings.QuestRecentFirst = sort.SelectedIndex == 0;
-        var search = new System.Windows.Controls.TextBox
-        {
-            Text = _settings.QuestFilter,
-            ToolTip = "Filter by item or quest name (case-insensitive). Clear to show all.",
-        };
-        search.TextChanged += (_, _) => _settings.QuestFilter = search.Text;
-        controls.Children.Add(sort);
-        Grid.SetColumn(search, 1);
-        controls.Children.Add(search);
-        toolbar.Children.Add(controls);
-        _questProgressBar = new ProgressBar
-        {
-            Height = 8,
-            Minimum = 0,
-            Maximum = 1,
-            Margin = new Thickness(0, 5, 0, 3),
-            ToolTip = "Completed checks, including failed attempts. Failed items can be retried from the Inventory & loot quests overlay.",
-        };
-        toolbar.Children.Add(_questProgressBar);
-        _questProgressText = new ContentControl();
-        toolbar.Children.Add(_questProgressText);
-        _questCurrentText = new TextBlock
-        {
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            Margin = new Thickness(0, 2, 0, 3),
-        };
-        _questCurrentText.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
-        toolbar.Children.Add(_questCurrentText);
-        var caveat = new TextBlock
-        {
-            Text = "Matches are wiki mentions, not a ready-to-turn-in checklist.",
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 11,
-            ToolTip = "An item may be an ingredient, a reward, or a walkthrough mention. " +
-                "This list does not analyze required quantities, other ingredients, faction, or prerequisites. " +
-                "Use the dedicated Sky tracker for parsed Plane of Sky ingredient counts.",
-        };
-        caveat.SetResourceReference(TextBlock.ForegroundProperty, "NightMuted");
-        toolbar.Children.Add(caveat);
-        panel.SetToolbar(toolbar);
-    }
-
     private void UpdateQuestProgress()
     {
         _questWikiActivity = null;
-        if (_questProgressBar is null || _questProgressText is null || _questCurrentText is null)
+        QuestWorkProgress activity = GetQuestWorkProgress();
+        if (_overlayViewModels.TryGetValue("quests", out OverlayViewModel? overlay) &&
+            overlay is QuestsOverlayViewModel quests)
         {
-            return;
+            quests.UpdateProgress(activity.Total, activity.Completed, activity.Cached, activity.QueuedCount,
+                activity.Failed, activity.Summary, _questProgress);
         }
+    }
 
-        var activity = GetQuestWorkProgress();
-        double maximum = Math.Max(1, activity.Total);
-        if (_questProgressBar.Maximum != maximum)
-        {
-            _questProgressBar.Maximum = maximum;
-        }
-        if (_questProgressBar.Value != activity.Completed)
-        {
-            _questProgressBar.Value = activity.Completed;
-        }
-        // Always show the same table shape so the quest list below never shifts as work starts.
-        var table = OverlayTable.Columns(
-        [
-            ("Checked", $"{activity.Completed:N0} / {activity.Total:N0}"),
-            ("Done", activity.Total == 0 ? "-" : $"{100.0 * activity.Completed / activity.Total:0}%"),
-            ("Cached", $"{activity.Cached:N0}"),
-            ("Queued", $"{activity.QueuedCount:N0}"),
-            ("Failed", $"{activity.Failed:N0}"),
-        ]);
-        if (table != _questProgressTable)
-        {
-            var element = OverlayPanel.BuildTable(table, 12);
-            element.Margin = new Thickness(0);
-            _questProgressText.Content = element;
-            _questProgressTable = table;
-        }
-        string current = activity.Total == 0 && string.IsNullOrEmpty(_questProgress)
-            ? activity.Summary
-            : _questProgress;
-        if (_questCurrentText.Text != current)
-        {
-            _questCurrentText.Text = current;
-            _questCurrentText.ToolTip = string.IsNullOrEmpty(current) ? null : current;
-        }
+    private QuestsOverlayState GetQuestsOverlayState()
+    {
+        return new QuestsOverlayState(_questInventory, _characterName ?? "", _questCache,
+            _questCacheRevision, _session.Revision);
     }
 
     private QuestWorkProgress GetQuestWorkProgress()

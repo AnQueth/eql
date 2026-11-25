@@ -129,7 +129,7 @@ public sealed class OverlayWindow : Window
     {
         if (Content != Panel)
         {
-            Panel.SetDocked(false);
+            Panel.ViewModel.SetDocked(false);
             Content = Panel;
         }
     }
@@ -149,13 +149,13 @@ public sealed class OverlayWindow : Window
     {
         if (Content != Panel)
         {
-            Panel.SetChromeHidden(false);
+            Panel.ViewModel.IsChromeHidden = false;
             return;
         }
         if (!IsVisible)
         {
-            Panel.SetBackgroundHovered(false);
-            Panel.SetChromeHidden(false);
+            Panel.ViewModel.IsBackgroundHovered = false;
+            Panel.ViewModel.IsChromeHidden = false;
             return;
         }
 
@@ -166,8 +166,8 @@ public sealed class OverlayWindow : Window
         }
         var position = PointFromScreen(new Point(cursor.X, cursor.Y));
         bool hovered = new Rect(0, 0, ActualWidth, ActualHeight).Contains(position);
-        Panel.SetBackgroundHovered(hovered);
-        Panel.SetChromeHidden(_hoverOnlyChrome && !hovered);
+        Panel.ViewModel.IsBackgroundHovered = hovered;
+        Panel.ViewModel.IsChromeHidden = _hoverOnlyChrome && !hovered;
     }
 
     public void SetLocked(bool locked)
@@ -180,7 +180,7 @@ public sealed class OverlayWindow : Window
             EndSliderInteraction();
             EndTextInteraction();
         }
-        Panel.SetLocked(locked);
+        Panel.ViewModel.IsLocked = locked;
         WindowChrome.GetWindowChrome(this).ResizeBorderThickness = new Thickness(locked ? 0 : 6);
         ApplyExStyle();
     }

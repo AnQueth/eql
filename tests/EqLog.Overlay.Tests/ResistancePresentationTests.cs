@@ -1,3 +1,4 @@
+using EqLog.Overlay.ViewModels;
 using EqLog.Application.Sessions;
 using EqLog.Core;
 using Xunit;
@@ -90,6 +91,6 @@ public sealed class ResistancePresentationTests
     {
         var encounter = new NpcEncounterDetails("one", DateTime.UtcNow, "Que", null, null, outcome, 0, 0, 0, 1, 0, [],
             UnrecognizedOutcome: "future outcome");
-        Assert.Equal(expected, MainWindow.NpcOutcomeText(encounter));
+        Assert.Equal(expected, NpcBrowserOverlayViewModel.NpcOutcomeText(encounter));
     }
 }

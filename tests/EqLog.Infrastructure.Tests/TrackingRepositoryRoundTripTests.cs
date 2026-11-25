@@ -145,6 +145,46 @@ public sealed class TrackingRepositoryRoundTripTests
         }
     }
 
+    [Fact]
+    public async Task LazyResistanceDamageBaseline_UpdatesAndResetsWithoutDoubleCountingCachedHistory()
+    {
+        string path = TemporaryFilePath();
+        try
+        {
+            var repository = new MobResistanceRepository();
+            var store = new MobResistanceStore();
+            store.SetSpell(new("Rend", ResistanceType.Fire, "Fire", T0, SingleTargetDirectDamage: true));
+            for (int line = 1; line <= 3; line++)
+            {
+                store.Record("training", line, "Sky", "Training", "Rend", false, T0, "Tester", 1000);
+            }
+            store.Record("target", 1, "Sky", "Target", "Rend", false, T0, "Tester", 400);
+            await repository.SaveAsync(path, store);
+            var loaded = await repository.LoadAsync(path);
+            Assert.Equal(1, loaded.Get("Sky", "Target").Observations
+                .Single(observation => observation.Type == ResistanceType.Fire).EstimatedPartial);
+
+            for (int line = 4; line <= 6; line++)
+            {
+                loaded.Record("training", line, "Sky", "Training", "Rend", false, T0, "Tester", 400);
+            }
+            Assert.Equal(0, loaded.Get("Sky", "Target").Observations
+                .Single(observation => observation.Type == ResistanceType.Fire).EstimatedPartial);
+            loaded.ResetResistances("Sky", "Training", T0.AddDays(1));
+            Assert.Equal(1, loaded.Get("Sky", "Target").Observations
+                .Single(observation => observation.Type == ResistanceType.Fire).UnassessedDamage);
+
+            await repository.SaveAsync(path, loaded);
+            var reloaded = await repository.LoadAsync(path);
+            Assert.Equal(0, reloaded.GetRawSpellCounts("Sky", "Training", "Rend").DamageHits);
+            Assert.Equal(1, reloaded.GetRawSpellCounts("Sky", "Target", "Rend").DamageHits);
+        }
+        finally
+        {
+            DeleteTemporaryFile(path);
+        }
+    }
+
     private static string TemporaryFilePath()
     {
         return Path.Combine(Path.GetTempPath(), $"eql-tracking-{Guid.NewGuid():N}.json");

@@ -1,3 +1,4 @@
+using EqLog.Overlay.ViewModels;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -110,7 +111,7 @@ public sealed class NpcDpsHistoryWindow : Window
     private void SelectLoadout()
     {
         Encounters.ItemsSource = (Loadouts.SelectedItem as NpcLoadoutDps)?.History
-            .Select(item => new EncounterRow(item.Encounter.Start, MainWindow.NpcOutcomeText(item.Encounter),
+            .Select(item => new EncounterRow(item.Encounter.Start, NpcBrowserOverlayViewModel.NpcOutcomeText(item.Encounter),
                 item.Encounter.YourDamage, item.Encounter.Seconds, item.Encounter.YourDps,
                 item.Encounter.OtherDamage, item.Encounter.IncomingDamage, item)).ToArray();
         Encounters.SelectedIndex = Encounters.Items.Count > 0 ? 0 : -1;

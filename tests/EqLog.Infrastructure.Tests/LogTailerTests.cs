@@ -54,6 +54,51 @@ public class LogTailerTests
         }
     }
 
+    [Fact]
+    public async Task TrimsTrailingCarriageReturnsAcrossBufferBoundaryAndPreservesOtherContent()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"eqlog_Test_{Guid.NewGuid():N}.txt");
+        byte[] initial = new byte[1 << 16];
+        Array.Fill(initial, (byte)'x');
+        initial[^1] = (byte)'\r';
+        await File.WriteAllBytesAsync(path, initial);
+
+        var received = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var gotCompleteLines = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = new LogTailer(path) { PollInterval = TimeSpan.FromHours(1) }.RunAsync(true, lines =>
+        {
+            foreach (string line in lines)
+            {
+                received.Enqueue(line);
+            }
+
+            if (received.Count >= 2)
+            {
+                gotCompleteLines.TrySetResult();
+            }
+        }, null, cts.Token);
+
+        try
+        {
+            await using (var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+            {
+                byte[] appended = System.Text.Encoding.Latin1.GetBytes("\r\n\r\r\nmiddle\rcode\r\r\npartial");
+                await stream.WriteAsync(appended);
+            }
+
+            await gotCompleteLines.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            await run.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
+            File.Delete(path);
+        }
+
+        Assert.Equal([new string('x', (1 << 16) - 1), "middle\rcode"], received);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -428,7 +428,7 @@ public sealed class AppSettings
         get; set;
     }
 
-    /// <summary>Hide floating overlays while the EverQuest window isn't visible (not running, minimized or covered).</summary>
+    /// <summary>Hide floating overlays while EverQuest is inactive without changing their dock placement.</summary>
     public bool OnlyWhenGameVisible { get; set; } = true;
 
     public bool HoverOnlyOverlayChrome

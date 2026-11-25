@@ -4,8 +4,10 @@ using System.Text.Json.Nodes;
 namespace EqLog.Infrastructure.Persistence;
 
 /// <summary>Persists object-property changes as idempotent batches over an atomic JSON baseline.</summary>
-internal sealed class JsonDeltaJournal(string path, JsonObject saved, JsonSerializerOptions options)
+internal sealed class JsonDeltaJournal(string path, JsonObject saved, JsonSerializerOptions options,
+    Action<JsonObject>? validateSaved = null)
 {
+    private const long CheckpointThreshold = 1024 * 1024;
     private JsonObject _saved = saved;
 
     internal sealed record Change(string[] Path, bool Remove, JsonNode? Value);
@@ -22,7 +24,8 @@ internal sealed class JsonDeltaJournal(string path, JsonObject saved, JsonSerial
     }
 
     internal static async Task<(JsonDeltaJournal Journal, T Data)> OpenAsync<T>(
-        string path, T empty, JsonSerializerOptions options, Action<T> validate, CancellationToken cancellationToken)
+        string path, T empty, JsonSerializerOptions options, Action<T> validate, CancellationToken cancellationToken,
+        Action<JsonObject, Batch>? validateChanges = null, Action<T>? validateCheckpoint = null)
         where T : class
     {
         string checkpoint = path + ".checkpoint";
@@ -30,7 +33,7 @@ internal sealed class JsonDeltaJournal(string path, JsonObject saved, JsonSerial
         {
             var pending = await AtomicFile.ReadJsonAsync<T>(checkpoint, options, cancellationToken).ConfigureAwait(false)
                 ?? throw new JsonException("Persistence checkpoint is empty.");
-            validate(pending);
+            (validateCheckpoint ?? validate)(pending);
             await FinishCheckpointAsync(path, options, cancellationToken).ConfigureAwait(false);
         }
         T data = empty;
@@ -43,19 +46,33 @@ internal sealed class JsonDeltaJournal(string path, JsonObject saved, JsonSerial
         var current = JsonSerializer.SerializeToNode(data, options) as JsonObject
             ?? throw new JsonException("Persistence baseline must be an object.");
         string journalPath = JournalPath(path);
-        var batches = await PersistenceJournal.ReadAsync<Batch>(journalPath, cancellationToken).ConfigureAwait(false);
-        foreach (var batch in batches)
+        await foreach (var batch in PersistenceJournal.ReadAsync<Batch>(journalPath, cancellationToken).ConfigureAwait(false))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             Apply(current, batch);
+            if (validateChanges is null)
+            {
+                data = current.Deserialize<T>(options) ?? throw new JsonException("Persistence journal produced empty data.");
+                validate(data);
+            }
+            else
+            {
+                validateChanges(current, batch);
+            }
+        }
+        if (validateChanges is not null)
+        {
             data = current.Deserialize<T>(options) ?? throw new JsonException("Persistence journal produced empty data.");
             validate(data);
         }
-        if (File.Exists(journalPath) && new FileInfo(journalPath).Length >= 1024 * 1024)
+        var journal = new JsonDeltaJournal(path, current, options, document =>
         {
-            var journal = new JsonDeltaJournal(path, current, options);
-            await journal.CheckpointAsync(cancellationToken).ConfigureAwait(false);
-        }
-        return (new JsonDeltaJournal(path, current, options), data);
+            var checkpointData = document.Deserialize<T>(options)
+                ?? throw new JsonException("Persistence checkpoint is empty.");
+            (validateCheckpoint ?? validate)(checkpointData);
+        });
+        await journal.CheckpointIfNeededAsync(cancellationToken).ConfigureAwait(false);
+        return (journal, data);
     }
 
     internal async Task SaveAsync<T>(T data, CancellationToken cancellationToken)
@@ -76,16 +93,97 @@ internal sealed class JsonDeltaJournal(string path, JsonObject saved, JsonSerial
         Compare(_saved, current, [], changes);
         if (changes.Count == 0)
         {
+            await CheckpointIfNeededAsync(cancellationToken).ConfigureAwait(false);
             return;
         }
         await PersistenceJournal.AppendAsync(JournalPath(path), new Batch(changes), cancellationToken).ConfigureAwait(false);
         _saved = current;
+        await CheckpointIfNeededAsync(cancellationToken).ConfigureAwait(false);
     }
 
     internal async Task CheckpointAsync(CancellationToken cancellationToken)
     {
-        await AtomicFile.WriteJsonAsync(path + ".checkpoint", _saved, options, cancellationToken).ConfigureAwait(false);
+        JsonObject checkpoint;
+        lock (_saved)
+        {
+            validateSaved?.Invoke(_saved);
+            checkpoint = (JsonObject)_saved.DeepClone();
+        }
+        await AtomicFile.WriteJsonAsync(path + ".checkpoint", checkpoint, options, cancellationToken).ConfigureAwait(false);
         await FinishCheckpointAsync(path, options, cancellationToken).ConfigureAwait(false);
+    }
+
+    private Task CheckpointIfNeededAsync(CancellationToken cancellationToken)
+    {
+        string journalPath = JournalPath(path);
+        return File.Exists(journalPath) && new FileInfo(journalPath).Length >= CheckpointThreshold
+            ? CheckpointAsync(cancellationToken) : Task.CompletedTask;
+    }
+
+    internal async Task SavePartialAsync<T>(T data, IReadOnlyCollection<string> entryProperties,
+        IReadOnlyList<Change> removals, CancellationToken cancellationToken)
+    {
+        if (File.Exists(path + ".checkpoint"))
+        {
+            await FinishCheckpointAsync(path, options, cancellationToken).ConfigureAwait(false);
+        }
+        var updates = JsonSerializer.SerializeToNode(data, options) as JsonObject
+            ?? throw new JsonException("Persistence snapshot must be an object.");
+        var changes = new List<Change>();
+        lock (_saved)
+        {
+            foreach (var (property, value) in updates)
+            {
+                if (entryProperties.Contains(property) && _saved[property] is JsonObject previous && value is JsonObject entries)
+                {
+                    foreach (var (key, entry) in entries)
+                    {
+                        if (!previous.TryGetPropertyValue(key, out var oldEntry) || !JsonNode.DeepEquals(oldEntry, entry))
+                        {
+                            changes.Add(new Change([property, key], false, entry?.DeepClone()));
+                        }
+                    }
+                }
+                else if (!_saved.TryGetPropertyValue(property, out var oldValue) || !JsonNode.DeepEquals(oldValue, value))
+                {
+                    changes.Add(new Change([property], false, value?.DeepClone()));
+                }
+            }
+            foreach (var removal in removals)
+            {
+                if (removal.Path.Length != 2 || !removal.Remove || removal.Value is not null)
+                {
+                    throw new ArgumentException("Partial snapshots require entry removals.", nameof(removals));
+                }
+                if (_saved[removal.Path[0]] is JsonObject entries && entries.ContainsKey(removal.Path[1]))
+                {
+                    changes.Add(removal);
+                }
+            }
+        }
+        if (changes.Count == 0 && (File.Exists(path) || File.Exists(JournalPath(path))))
+        {
+            await CheckpointIfNeededAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+        var batch = new Batch(changes);
+        if (!File.Exists(path) && !File.Exists(JournalPath(path)))
+        {
+            JsonObject initial;
+            lock (_saved)
+            {
+                initial = (JsonObject)_saved.DeepClone();
+            }
+            Apply(initial, batch);
+            await AtomicFile.WriteJsonAsync(path, initial, options, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await PersistenceJournal.AppendAsync(JournalPath(path), batch, cancellationToken).ConfigureAwait(false);
+        }
+        // Keep the lazy history document alive and update it only after the write succeeds.
+        Apply(_saved, batch);
+        await CheckpointIfNeededAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task FinishCheckpointAsync(
@@ -127,6 +225,14 @@ internal sealed class JsonDeltaJournal(string path, JsonObject saved, JsonSerial
     }
 
     private static void Apply(JsonObject root, Batch batch)
+    {
+        lock (root)
+        {
+            ApplyCore(root, batch);
+        }
+    }
+
+    private static void ApplyCore(JsonObject root, Batch batch)
     {
         if (batch.Changes is null)
         {

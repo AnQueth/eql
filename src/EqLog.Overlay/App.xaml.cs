@@ -14,26 +14,19 @@ public partial class App : System.Windows.Application
     }
 
     // MainWindow is the controller; it shows the dock window, which holds the settings and is the visible main window.
-    // ShutdownMode is OnExplicitShutdown, so the app keeps running while startup data loads without a window.
+    // The real workspace is built from settings; saved history arrives later.
     private async void OnStartup(object sender, StartupEventArgs e)
     {
         Overlay.MainWindow.StartupState state;
         try
         {
-            string? resetBackup = await Task.Run(() => TrackingComposition.CreateService().ApplyPendingResetAsync());
-            if (resetBackup is not null)
-            {
-                MessageBox.Show($"Tracking data was reset. A backup was saved to:\n{resetBackup}\n\nThe selected log will be reprocessed. Only history present in available logs can be rebuilt.",
-                    "Tracking data reset", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-            var settings = await SettingsComposition.LoadAsync();
-            UsageTelemetry.SetEnabled(settings.State.ShareUsageTelemetry);
-            if (settings.Error is { } settingsError)
+            state = await Overlay.MainWindow.StartupState.LoadShellAsync();
+            UsageTelemetry.SetEnabled(state.Settings.ShareUsageTelemetry);
+            if (state.SettingsError is { } settingsError)
             {
                 MessageBox.Show($"Settings could not be loaded: {settingsError.Message}\nTemporary defaults will be used. The existing settings file will not be overwritten; repair it and restart to enable saving.",
                     "Settings error", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
-            state = await Overlay.MainWindow.StartupState.LoadAsync(settings);
         }
         catch (Exception ex)
         {
@@ -65,7 +58,19 @@ public partial class App : System.Windows.Application
                 ThemeManager.Apply(fallback);
             }
         }
-        _ = new Overlay.MainWindow(state);
+        try
+        {
+            var availableData = new TaskCompletionSource<Overlay.MainWindow.StartupState>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var pendingData = Overlay.MainWindow.StartupState.LoadDataAsync(state, availableData);
+            _ = new Overlay.MainWindow(state, pendingData, availableData.Task);
+        }
+        catch (Exception ex)
+        {
+            UsageTelemetry.TrackError(ex, UsageErrorSource.Startup);
+            MessageBox.Show($"EqLogOverlay could not open your workspace: {ex.Message}",
+                "Startup error", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown(1);
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)

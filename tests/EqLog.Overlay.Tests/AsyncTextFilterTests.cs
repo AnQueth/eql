@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
+using EqLog.Overlay.ViewModels;
 using Xunit;
 
 namespace EqLog.Overlay.Tests;
@@ -86,7 +87,7 @@ public sealed class AsyncTextFilterTests
             {
                 started.SetResult();
                 Assert.True(release.Wait(TimeSpan.FromSeconds(5)));
-                return MainWindow.BuildQuestOpportunities(
+                return QuestsOverlayViewModel.BuildQuestOpportunities(
                     EqLog.Application.Inventory.InventoryReadModel.Empty, "Old",
                     new Dictionary<string, EqLog.Core.QuestLookupResult>(), "", true, token);
             }, applied.Add, delayMilliseconds: 0);
@@ -101,7 +102,7 @@ public sealed class AsyncTextFilterTests
                 }
                 else
                 {
-                    work.Request("new", token => MainWindow.BuildQuestOpportunities(
+                    work.Request("new", token => QuestsOverlayViewModel.BuildQuestOpportunities(
                         EqLog.Application.Inventory.InventoryReadModel.Empty, "New",
                         new Dictionary<string, EqLog.Core.QuestLookupResult>(), "", true, token),
                         applied.Add, delayMilliseconds: 0);
@@ -251,7 +252,7 @@ public sealed class AsyncTextFilterTests
     {
         var panel = new OverlayPanel("quests", "Quests", false);
         var rows = Enumerable.Range(0, 5000).Select(i => new OverlayRow($"Item {i}")).ToArray();
-        panel.Update("Quests", null, rows);
+        panel.ViewModel.Show("Quests", null, rows);
         Layout(panel);
         var list = FindList(panel);
         Assert.NotNull(list);
@@ -264,9 +265,9 @@ public sealed class AsyncTextFilterTests
         int resets = 0;
         var collection = Assert.IsAssignableFrom<INotifyCollectionChanged>(list.ItemsSource);
         collection.CollectionChanged += (_, _) => resets++;
-        panel.Update("Quests", null, rows);
+        panel.ViewModel.Show("Quests", null, rows);
         Assert.Equal(0, resets);
-        panel.Update("Quests", null, rows.Take(100).ToArray());
+        panel.ViewModel.Show("Quests", null, rows.Take(100).ToArray());
         Layout(panel);
         Assert.Equal(1, resets);
         Assert.Equal(100, list.Items.Count);

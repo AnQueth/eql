@@ -108,6 +108,8 @@
         <Style TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type Control}}">
             <Setter Property="Background" Value="{DynamicResource NightSurface}" />
             <Setter Property="Padding" Value="8,6" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="VerticalContentAlignment" Value="Top" />
             <Style.Triggers>
                 <Trigger Property="IsHighlighted" Value="True">
                     <Setter Property="Background" Value="{DynamicResource Hover}" />
@@ -436,6 +438,8 @@
             </Setter>
         </Style>
         <Style TargetType="MenuItem">
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="VerticalContentAlignment" Value="Top" />
             <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="Foreground" Value="{DynamicResource NightText}" />
             <Setter Property="Background" Value="Transparent" />

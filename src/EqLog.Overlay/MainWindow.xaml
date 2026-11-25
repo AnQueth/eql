@@ -6,6 +6,15 @@
         Background="{DynamicResource NightBackground}" Foreground="{DynamicResource NightText}" FontSize="13">
     <Window.Resources>
         <local:AlertColorBrushConverter x:Key="AlertColorBrush" />
+        <ControlTemplate x:Key="HistoryLoadingNotice" TargetType="ContentControl">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Tag}" Margin="0,0,8,0" MaxWidth="220"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                           Foreground="{DynamicResource NightText}" />
+                <ProgressBar Value="{Binding Value}" IsIndeterminate="{Binding IsIndeterminate}"
+                             Maximum="1" Width="70" Height="6" VerticalAlignment="Center" />
+            </StackPanel>
+        </ControlTemplate>
     </Window.Resources>
     <DockPanel x:Name="SettingsRoot" Margin="10">
         <TabControl x:Name="Tabs" TabStripPlacement="Top">
@@ -36,7 +45,7 @@
         <GroupBox Header="Log file" DockPanel.Dock="Top">
             <StackPanel>
                 <DockPanel>
-                    <Button Content="Browse..." DockPanel.Dock="Right" Margin="6,0,0,0" Click="Browse_Click" local:UsageTracking.Action="BrowseLog" ToolTip="Pick a single eqlog file" />
+                    <Button x:Name="BrowseLogButton" Content="Browse..." DockPanel.Dock="Right" Margin="6,0,0,0" Click="Browse_Click" local:UsageTracking.Action="BrowseLog" ToolTip="Pick a single eqlog file" />
                     <Button x:Name="ChooseFolderButton" Content="Choose folder..." DockPanel.Dock="Right" Margin="6,0,0,0" Click="ChooseFolder_Click" local:UsageTracking.Action="ChooseLogFolder"
                             ToolTip="Pick your EverQuest Logs folder (or the EverQuest install folder); the newest eqlog file in it is used" />
                     <TextBox x:Name="LogPathBox" IsReadOnly="True" VerticalContentAlignment="Center" />
@@ -53,7 +62,7 @@
                 <CheckBox x:Name="LockBox" Content="Lock all overlays (click-through)    Ctrl+Shift+L" Margin="0,6,0,0" FontWeight="Bold" Click="Lock_Click"
                           ToolTip="Checked: all locked. Dash: mixed locks. Click or use the hotkey to lock all; when all are locked, unlock all." />
                 <CheckBox x:Name="GameVisibleBox" Content="Only show floating overlays while EverQuest (eqgame.exe) is active" Margin="0,6,0,0" Click="GameVisible_Click"
-                          ToolTip="When the game is inactive, floating overlays appear temporarily in the dock. An unlocked floating overlay can keep focus for interaction." />
+                          ToolTip="When the game is inactive, floating overlays hide without moving into the dock. An unlocked floating overlay can keep focus for interaction." />
                 <CheckBox x:Name="HoverChromeBox" Content="Hide floating overlay titles and borders in game unless hovered" Margin="0,6,0,0" Click="HoverChrome_Click"
                           ToolTip="Hide titles, borders and decorations until the mouse is over a floating overlay while EverQuest is active. Docked panels are unchanged. Locked overlays remain click-through." />
                 <Expander Header="Individual overlay appearance and locks" Margin="0,8,0,0">
@@ -95,10 +104,10 @@
                 <TextBlock Text="Use /consider in game to show Mob info. Resistance observations are saved by zone and mob name." TextWrapping="Wrap" />
                 <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                     <TextBlock Text="Show for (seconds):" VerticalAlignment="Center" Margin="0,0,8,0" />
-                    <TextBox x:Name="MobTimeoutBox" Width="65" LostFocus="MobTimeout_Changed" />
+                    <TextBox x:Name="MobTimeoutBox" Width="65" Text="{Binding TimeoutText, UpdateSourceTrigger=LostFocus}" />
                     <TextBlock Text="0 = until next consider" VerticalAlignment="Center" Margin="8,0,0,0" />
                 </StackPanel>
-                <local:FixedLineTextBlock x:Name="MobInfoStatusText" Margin="0,6,0,0" Foreground="{DynamicResource NightMuted}" />
+                <local:FixedLineTextBlock x:Name="MobInfoStatusText" Margin="0,6,0,0" Foreground="{DynamicResource NightMuted}" Text="{Binding StatusText}" />
             </StackPanel>
         </GroupBox>
                     </StackPanel>
@@ -416,7 +425,7 @@
                     </Grid>
                 </DockPanel>
             </TabItem>
-            <TabItem Header="Spell durations">
+            <TabItem x:Name="DurationsTab" Header="Spell durations">
             <DockPanel Margin="4">
                 <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                     <TextBlock Text="Add a spell and its duration in seconds" Margin="0,0,0,4" />

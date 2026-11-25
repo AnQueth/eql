@@ -151,9 +151,103 @@ public class MobResistanceTests
             {
                 await Assert.ThrowsAsync<IOException>(() => repository.SaveAsync(path, store));
             }
+
             await repository.SaveAsync(path, store);
             var loaded = await repository.LoadAsync(path);
             Assert.Equal(3, loaded.Get("Sky", "Mob").Observations.Single(o => o.Type == ResistanceType.Fire).Resisted);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Save_DirtyEntries_ExcludesReadOnlyMobsAndRetainsNewerChanges()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(folder, "mob-resistances.json");
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var repository = new MobResistanceRepository();
+            var store = new MobResistanceStore();
+            for (int i = 1; i <= 500; i++)
+            {
+                store.Record("log", i, "Sky", $"Mob {i}", "Rend", true);
+            }
+            await repository.SaveAsync(path, store);
+            store = await repository.LoadAsync(path);
+            for (int i = 1; i <= 500; i++)
+            {
+                store.GetRawSpellCounts("Sky", $"Mob {i}", "Rend");
+            }
+            store.Record("log", 501, "Sky", "Mob 500", "Rend", true);
+
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            var partial = store.CapturePersistenceSnapshot(onlyChangedEntries: true)!;
+            long partialBytes = GC.GetAllocatedBytesForCurrentThread() - before;
+            before = GC.GetAllocatedBytesForCurrentThread();
+            var complete = store.CapturePersistenceSnapshot()!;
+            long completeBytes = GC.GetAllocatedBytesForCurrentThread() - before;
+            Assert.True(partialBytes < completeBytes / 10,
+                $"Partial snapshot allocated {partialBytes:N0} bytes; full snapshot allocated {completeBytes:N0}.");
+            Assert.Equal("SKY\nMOB 500", Assert.Single(partial.Data.Mobs).Key);
+
+            store.Record("log", 502, "Sky", "Mob 500", "Rend", true);
+            store.CompletePersistence(partial.Version);
+            var newer = store.CapturePersistenceSnapshot(onlyChangedEntries: true)!;
+            Assert.Equal(3, Assert.Single(Assert.Single(newer.Data.Mobs).Value).Value.Resisted);
+            await repository.SaveAsync(path, store);
+            store.SetSpell(new("Rend", ResistanceType.Fire, "Fire", T0));
+            Assert.Empty(store.CapturePersistenceSnapshot(onlyChangedEntries: true)!.Data.Mobs);
+            await repository.SaveAsync(path, store);
+
+            var loaded = await repository.LoadAsync(path);
+            Assert.Equal(3, loaded.GetRawSpellCounts("Sky", "Mob 500", "Rend").FullResists);
+            Assert.Equal(1, loaded.GetRawSpellCounts("Sky", "Mob 1", "Rend").FullResists);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Save_ConcurrentLazyReads_PreservesUntouchedAndUpdatedEntries()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(folder, "mob-resistances.json");
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var repository = new MobResistanceRepository();
+            var original = new MobResistanceStore();
+            for (int i = 1; i <= 200; i++)
+            {
+                original.Record("log", i, "Sky", $"Mob {i}", "Rend", true);
+            }
+            await repository.SaveAsync(path, original);
+            var loaded = await repository.LoadAsync(path);
+            await Task.WhenAll(
+                Task.Run(async () =>
+                {
+                    for (int i = 201; i <= 220; i++)
+                    {
+                        loaded.Record("log", i, "Sky", "Mob 200", "Rend", true);
+                        await repository.SaveAsync(path, loaded);
+                    }
+                }),
+                Task.Run(() =>
+                {
+                    for (int i = 1; i <= 199; i++)
+                    {
+                        Assert.Equal(1, loaded.GetRawSpellCounts("Sky", $"Mob {i}", "Rend").FullResists);
+                    }
+                }));
+            var reloaded = await repository.LoadAsync(path);
+            Assert.Equal(21, reloaded.GetRawSpellCounts("Sky", "Mob 200", "Rend").FullResists);
+            Assert.Equal(1, reloaded.GetRawSpellCounts("Sky", "Mob 1", "Rend").FullResists);
         }
         finally
         {

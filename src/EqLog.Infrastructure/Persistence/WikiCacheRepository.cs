@@ -82,8 +82,10 @@ public sealed class WikiCacheRepository(string folder, bool mobWritesAllowed = t
                 ? await AtomicFile.ReadJsonAsync<List<ItemEffectInfo>>(EffectPath, ct: cancellationToken).ConfigureAwait(false)
                     ?? throw new JsonException("Empty item-effect cache.")
                 : [];
-            var appended = await PersistenceJournal.ReadAsync<ItemEffectInfo>(EffectJournalPath, cancellationToken).ConfigureAwait(false);
-            loaded.AddRange(appended);
+            await foreach (var result in PersistenceJournal.ReadAsync<ItemEffectInfo>(EffectJournalPath, cancellationToken).ConfigureAwait(false))
+            {
+                loaded.Add(result);
+            }
             if (loaded.Any(result => result is null || string.IsNullOrWhiteSpace(result.Item) ||
                 result.Effects is null || result.Effects.Any(effect => effect is null)))
             {
@@ -158,7 +160,10 @@ public sealed class WikiCacheRepository(string folder, bool mobWritesAllowed = t
                 ? await AtomicFile.ReadJsonAsync<List<TradeskillWikiPage>>(TradeskillPath, ct: cancellationToken).ConfigureAwait(false)
                     ?? throw new JsonException("Empty tradeskill cache.")
                 : [];
-            pages.AddRange(await PersistenceJournal.ReadAsync<TradeskillWikiPage>(TradeskillJournalPath, cancellationToken).ConfigureAwait(false));
+            await foreach (var page in PersistenceJournal.ReadAsync<TradeskillWikiPage>(TradeskillJournalPath, cancellationToken).ConfigureAwait(false))
+            {
+                pages.Add(page);
+            }
             if (pages.Any(page => page is null || !Enum.IsDefined(page.Kind) || string.IsNullOrWhiteSpace(page.Title) ||
                 page.Recipes is null || page.Merchants is null ||
                 page.Kind == TradeskillPageKind.Skill && page.Recipes.Count == 0 ||

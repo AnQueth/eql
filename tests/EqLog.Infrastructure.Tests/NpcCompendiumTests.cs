@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using EqLog.Core.Parsing;
 using EqLog.Core.Tracking;
@@ -295,6 +296,120 @@ public sealed class NpcCompendiumTests : IDisposable
         await store.SaveAsync(_path);
         var loadedStore = await TrackingTestPersistence.LoadNpcCompendiumAsync(_path);
         Assert.Equal(2, (await TrackingTestPersistence.GetNpcAsync(loadedStore, "A wraith", "Sky Hard"))!.Encounters.Count);
+    }
+
+    [Fact]
+    public async Task Get_ReusesCachedHistoryUntilFileChangesOrReadFails()
+    {
+        var repository = new NpcCompendiumRepository();
+        var store = new NpcCompendium();
+        Import(store);
+        await repository.SaveAsync(_path, store);
+        store = await repository.LoadAsync(_path);
+        string history = Assert.Single(Directory.GetFiles(Path.Combine(_path, NpcCompendium.HistoryFolderName)));
+        string original = await File.ReadAllTextAsync(history);
+        var first = await repository.GetAsync(store, "A wraith", "Sky Hard");
+        object cached = CachedHistory(store, "SKY HARD\nA WRAITH");
+
+        Assert.Single(first!.Encounters);
+        Assert.Single((await repository.GetAsync(store, "a WRAITH", "sky hard"))!.Encounters);
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Same(cached, CachedHistory(store, "SKY HARD\nA WRAITH"));
+        }
+
+        var additional = new NpcCompendium.EncounterRecord
+        {
+            Id = "external",
+            Start = T0.AddMinutes(1),
+            LastActivity = T0.AddMinutes(1),
+            Outcome = "NPC died",
+        };
+        await File.AppendAllTextAsync(history, JsonSerializer.Serialize(additional) + Environment.NewLine);
+        Assert.Equal(2, (await repository.GetAsync(store, "A wraith", "Sky Hard"))!.Encounters.Count);
+        await File.WriteAllTextAsync(history, original);
+        Assert.Single((await repository.GetAsync(store, "A wraith", "Sky Hard"))!.Encounters);
+
+        DateTime previousWriteTime = File.GetLastWriteTimeUtc(history);
+        string replacement = history + ".replacement";
+        await File.WriteAllTextAsync(replacement, original.Replace("150", "151", StringComparison.Ordinal));
+        File.SetLastWriteTimeUtc(replacement, previousWriteTime);
+        File.Move(replacement, history, overwrite: true);
+        Assert.Equal(151, Assert.Single((await repository.GetAsync(store, "A wraith", "Sky Hard"))!.Encounters).YourDamage);
+
+        previousWriteTime = File.GetLastWriteTimeUtc(history);
+        await File.WriteAllTextAsync(history, original.Replace("150", "152", StringComparison.Ordinal));
+        File.SetLastWriteTimeUtc(history, previousWriteTime);
+        Assert.Equal(152, Assert.Single((await repository.GetAsync(store, "A wraith", "Sky Hard"))!.Encounters).YourDamage);
+
+        cached = CachedHistory(store, "SKY HARD\nA WRAITH");
+        using var output = new StringWriter();
+        using var listener = new TextWriterTraceListener(output);
+        Trace.Listeners.Add(listener);
+        try
+        {
+            using (var locked = new FileStream(history, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                Assert.Single((await repository.GetAsync(store, "A wraith", "Sky Hard"))!.Encounters);
+            }
+            Trace.Flush();
+            Assert.Contains("NPC history read or metadata check failed", output.ToString());
+            Assert.Contains(history, output.ToString());
+            Assert.Contains(nameof(IOException), output.ToString());
+        }
+        finally
+        {
+            Trace.Listeners.Remove(listener);
+        }
+        await repository.GetAsync(store, "A wraith", "Sky Hard");
+        Assert.NotSame(cached, CachedHistory(store, "SKY HARD\nA WRAITH"));
+
+        File.Delete(history);
+        Assert.Empty((await repository.GetAsync(store, "A wraith", "Sky Hard"))!.Encounters);
+        await File.WriteAllTextAsync(history, original);
+        Assert.Single((await repository.GetAsync(store, "A wraith", "Sky Hard"))!.Encounters);
+    }
+
+    [Fact]
+    public async Task Get_ReloadsAfterCoreEvictionAndOwnAppend()
+    {
+        var repository = new NpcCompendiumRepository();
+        var store = new NpcCompendium();
+        var engine = Engine(store);
+        Lines(engine, (0, "You have entered Sky Hard."));
+        for (int i = 0; i < 9; i++)
+        {
+            Lines(engine, (i * 3 + 1, $"You slash A wraith {i} for 10 points of damage."),
+                (i * 3 + 2, $"You have slain A wraith {i}!"));
+        }
+        await repository.SaveAsync(_path, store);
+        store = await repository.LoadAsync(_path);
+
+        Assert.Single((await repository.GetAsync(store, "A wraith 0", "Sky Hard"))!.Encounters);
+        object cached = CachedHistory(store, "SKY HARD\nA WRAITH 0");
+        for (int i = 1; i < 9; i++)
+        {
+            store.ImportHistory($"A wraith {i}", "Sky Hard", []);
+        }
+        Assert.Single((await repository.GetAsync(store, "A wraith 0", "Sky Hard"))!.Encounters);
+        Assert.NotSame(cached, CachedHistory(store, "SKY HARD\nA WRAITH 0"));
+        cached = CachedHistory(store, "SKY HARD\nA WRAITH 0");
+
+        engine = Engine(store);
+        Lines(engine, (30, "You have entered Sky Hard."),
+            (31, "You slash A wraith 0 for 20 points of damage."),
+            (32, "You have slain A wraith 0!"));
+        await repository.SaveAsync(_path, store);
+        Assert.Equal(2, (await repository.GetAsync(store, "A wraith 0", "Sky Hard"))!.Encounters.Count);
+        Assert.NotSame(cached, CachedHistory(store, "SKY HARD\nA WRAITH 0"));
+    }
+
+    private static object CachedHistory(NpcCompendium store, string key)
+    {
+        var field = typeof(NpcCompendium).GetField("_histories",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var histories = Assert.IsAssignableFrom<System.Collections.IDictionary>(field.GetValue(store));
+        return histories[key]!;
     }
 
     private static void Import(NpcCompendium store)

@@ -1,34 +1,23 @@
-using System.Collections.Concurrent;
-using System.ComponentModel;
+using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
-using System.Net.Http;
 using System.Text.Json;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
+using EqLog.Application.Wiki;
 using EqLog.Core;
 using EqLog.Core.Parsing;
-using EqLog.Core.Tracking;
+using EqLog.Overlay.ViewModels;
 
 namespace EqLog.Overlay;
 
 public partial class MainWindow
 {
     private bool _mobSaveEnabled = true;
-    private readonly ConcurrentQueue<(LogEvent Event, string Zone)> _mobEvents = new();
-    private ConsiderEvent? _consideredMob;
-    private string _consideredZone = "";
-    private string? _considerAssessment;
-    private readonly MobInfoVisibility _mobVisibility = new();
-    private CancellationTokenSource? _mobLookupCts;
-    private string _mobWikiStatus = "";
-    private bool _mobShowing;
-    private bool _mobResetPending;
-    private WikiService _wikiRepository = null!;
+    private string _mobStartupStatus = "";
     private readonly HashSet<string> _spawnWikiPending = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _spawnWikiRetry = new(StringComparer.OrdinalIgnoreCase);
+    private WikiService _wikiRepository = null!;
+    private bool _mobShowing;
 
     private void CheckSpawnWiki()
     {
@@ -63,11 +52,11 @@ public partial class MainWindow
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
         }
-        catch (Exception ex) when (ex is WikiTransportException or IOException or UnauthorizedAccessException or
+        catch (Exception error) when (error is WikiTransportException or IOException or UnauthorizedAccessException or
             JsonException or InvalidOperationException or OperationCanceledException)
         {
             _spawnWikiRetry[mob] = DateTime.UtcNow.AddMinutes(5);
-            MobInfoStatusText.Text = $"Spawn wiki lookup failed for {mob}: {ex.Message}. Retrying after 5 minutes.";
+            SetMobInfoStatus($"Spawn wiki lookup failed for {mob}: {error.Message}. Retrying after 5 minutes.");
         }
         finally
         {
@@ -79,7 +68,8 @@ public partial class MainWindow
     {
         get
         {
-            return _consideredMob is not null && (_mobResetPending || _mobVisibility.IsActive(DateTime.Now));
+            return _overlayViewModels.TryGetValue("mobinfo", out var viewModel) &&
+                viewModel is MobInfoOverlayViewModel mobInfo && mobInfo.IsActive;
         }
     }
 
@@ -87,20 +77,21 @@ public partial class MainWindow
     {
         if (_session.MobsWritable)
         {
-            MobInfoStatusText.Text = "Only mob and spell names are sent to EQLWiki; no log files are uploaded.";
+            _mobStartupStatus = "Only mob and spell names are sent to EQLWiki; no log files are uploaded.";
         }
         else
         {
             _mobSaveEnabled = false;
-            MobInfoStatusText.Text = $"Could not load mob data: {state.MobResistancesError?.Message}. Tracking this session only; the existing file will not be overwritten.";
+            _mobStartupStatus = !_dataReady && state.MobResistancesError is null
+                ? "Restoring saved resistance history..."
+                : $"Could not load mob data: {state.MobResistancesError?.Message}. Tracking this session only; the existing file will not be overwritten.";
         }
         if (!double.IsFinite(_settings.MobInfoTimeoutSeconds) || _settings.MobInfoTimeoutSeconds < 0 ||
             _settings.MobInfoTimeoutSeconds > 120)
         {
             _settings.MobInfoTimeoutSeconds = 5;
-            MobInfoStatusText.Text += " Invalid display timeout reset to 5 seconds.";
+            _mobStartupStatus += " Invalid display timeout reset to 5 seconds.";
         }
-        MobTimeoutBox.Text = _settings.MobInfoTimeoutSeconds.ToString(CultureInfo.CurrentCulture);
         _wikiRepository = WikiComposition.CreateService(_session);
         _wikiRepository.CacheWriteFailed += (operation, error) =>
         {
@@ -118,197 +109,22 @@ public partial class MainWindow
         {
             Dispatcher.BeginInvoke(() =>
             {
-                MobInfoStatusText.Text = $"Background spell lookup/save failed for {spell}: {error.Message}. " +
-                    "Cached data kept; future observations retry after 5 minutes, or use Refresh wiki.";
+                SetMobInfoStatus($"Background spell lookup/save failed for {spell}: {error.Message}. " +
+                    "Cached data kept; future observations retry after 5 minutes, or use Refresh wiki.");
             });
         };
     }
 
-    private void MobTimeout_Changed(object sender, RoutedEventArgs e)
+    private void PumpMobInfo(DateTime now)
     {
-        if (!double.TryParse(MobTimeoutBox.Text, out double seconds) || !double.IsFinite(seconds) ||
-            seconds < 0 || seconds > 120)
+        if (!_overlayViewModels.TryGetValue("mobinfo", out var viewModel) ||
+            viewModel is not MobInfoOverlayViewModel mobInfo)
         {
-            MobInfoStatusText.Text = "Enter a display timeout from 0 to 120 seconds (0 keeps the panel until the next consider).";
             return;
         }
-        _settings.MobInfoTimeoutSeconds = seconds;
-        if (_mobSaveEnabled)
-        {
-            MobInfoStatusText.Text = seconds == 0 ? "Mob info stays visible until the next consider."
-                : $"Mob info will show for {seconds:g} seconds after each new consider.";
-        }
-        if (MobInfoActive)
-        {
-            _mobVisibility.Show(DateTime.Now, seconds);
-        }
-    }
-
-    private void ConfigureMobToolbar(OverlayPanel panel)
-    {
-        panel.BackgroundHoverChanged += hovered =>
-        {
-            _mobVisibility.SetHovered(hovered, DateTime.Now, _settings.MobInfoTimeoutSeconds);
-        };
-        var bar = new StackPanel { Orientation = Orientation.Horizontal };
-        var refresh = new Button { Content = "Refresh wiki", FontSize = 11 };
-        refresh.Click += (_, _) =>
-        {
-            if (_consideredMob is not null)
-            {
-                StartMobWikiLookup(force: true, WikiPriority.Interactive);
-            }
-        };
-        var wiki = new Button { Content = "Wiki", FontSize = 11 };
-        wiki.Click += (_, _) =>
-        {
-            if (_consideredMob is null)
-            {
-                return;
-            }
-            OpenMobWiki(_consideredMob.Mob, _consideredZone, message => _mobWikiStatus = message);
-        };
-        bar.Children.Add(refresh);
-        bar.Children.Add(wiki);
-        var reset = new Button
-        {
-            Content = "Reset resistances",
-            FontSize = 11,
-            IsEnabled = _mobSaveEnabled,
-            ToolTip = "Clear this mob's observed resistances in this zone only. Wiki data and other mobs are kept.",
-        };
-        ConsiderEvent? resetTarget = null;
-        string resetZone = "";
-        var confirmationText = new TextBlock { TextWrapping = TextWrapping.Wrap };
-        var confirm = new Button { Content = "Confirm reset", FontSize = 11 };
-        var cancel = new Button { Content = "Cancel", FontSize = 11 };
-        var confirmation = new StackPanel
-        {
-            Visibility = Visibility.Collapsed,
-            Margin = new Thickness(0, 6, 0, 0),
-            Children =
-            {
-                confirmationText,
-                new StackPanel { Orientation = Orientation.Horizontal, Children = { confirm, cancel } },
-            },
-        };
-        var result = new TextBlock
-        {
-            TextWrapping = TextWrapping.Wrap,
-            Visibility = Visibility.Collapsed,
-            Margin = new Thickness(0, 6, 0, 0),
-        };
-        reset.Click += (_, _) =>
-        {
-            if (_consideredMob is not { } considered)
-            {
-                return;
-            }
-            resetTarget = considered;
-            resetZone = _consideredZone;
-            confirmationText.Text = $"Reset resistance observations for {considered.Mob} in {resetZone}?\n" +
-                "Spell outcomes and damage samples will be cleared. Wiki data, NPC encounters, and other mobs " +
-                "are kept. Old log events stay excluded; new events resume learning.";
-            confirmation.Visibility = Visibility.Visible;
-            result.Visibility = Visibility.Collapsed;
-            _mobResetPending = true;
-            reset.IsEnabled = false;
-        };
-        cancel.Click += (_, _) => FinishReset();
-        confirm.Click += async (_, _) =>
-        {
-            if (resetTarget is not { } considered)
-            {
-                return;
-            }
-            string mob = considered.Mob;
-            string zone = resetZone;
-            confirm.IsEnabled = false;
-            cancel.IsEnabled = false;
-            result.Text = $"Resetting resistances for {mob} in {zone}...";
-            result.Visibility = Visibility.Visible;
-            try
-            {
-                _session.ResetResistances(zone, mob, DateTime.Now);
-                await _session.SaveMobsAsync(_tracking);
-                result.Text = $"Resistance history reset for {mob} in {zone}. Learning from new events only.";
-                MobInfoStatusText.Text = result.Text;
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
-            {
-                UsageTelemetry.TrackError(ex, UsageErrorSource.ResistanceReset);
-                MobInfoStatusText.Text = $"Resistances cleared in memory for {mob} in {zone}, but saving failed: " +
-                    $"{ex.Message}. Use Reset resistances to retry.";
-                result.Text = MobInfoStatusText.Text;
-            }
-            finally
-            {
-                FinishReset();
-            }
-        };
-        bar.Children.Add(reset);
-        panel.SetToolbar(new StackPanel { Children = { bar, confirmation, result } });
-
-        void FinishReset()
-        {
-            _mobResetPending = false;
-            if (_consideredMob == resetTarget && _consideredZone == resetZone)
-            {
-                _mobVisibility.Show(DateTime.Now, _settings.MobInfoTimeoutSeconds);
-            }
-            resetTarget = null;
-            confirmation.Visibility = Visibility.Collapsed;
-            confirm.IsEnabled = true;
-            cancel.IsEnabled = true;
-            reset.IsEnabled = _mobSaveEnabled;
-        }
-    }
-
-    private void OpenMobWiki(string mob, string zone, Action<string> report)
-    {
-        string url = _session.GetMob(zone, mob).Wiki?.Url ?? WikiLinks.PageUrl(mob);
-        try
-        {
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-        }
-        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
-        {
-            report($"Could not open wiki: {ex.Message}");
-        }
-    }
-
-    private void PumpMobInfo()
-    {
-        bool newConsider = false;
-        while (_mobEvents.TryDequeue(out var entry))
-        {
-            if (entry.Event is ConsiderEvent con)
-            {
-                _consideredMob = con;
-                _consideredZone = entry.Zone;
-                _considerAssessment = null;
-                _mobVisibility.Show(DateTime.Now, _settings.MobInfoTimeoutSeconds);
-                newConsider = true;
-            }
-            else if (entry.Event is ConsiderAssessmentEvent assessment && _consideredMob is not null &&
-                assessment.Time >= _consideredMob.Time && assessment.Time - _consideredMob.Time <= TimeSpan.FromSeconds(2))
-            {
-                _considerAssessment = assessment.Text;
-            }
-        }
-        if (newConsider)
-        {
-            if (_settings.Overlays["mobinfo"].Visible)
-            {
-                StartMobWikiLookup(force: false, WikiPriority.RealTime);
-            }
-            else
-            {
-                _mobLookupCts?.Cancel();
-                _mobWikiStatus = "";
-            }
-        }
-        bool showing = MobInfoActive;
+        mobInfo.UpdateVisibility(now);
+        bool newConsider = mobInfo.ConsumeNewConsider();
+        bool showing = mobInfo.IsActive;
         if (newConsider || _mobShowing != showing)
         {
             _mobShowing = showing;
@@ -330,32 +146,19 @@ public partial class MainWindow
 
     private void ResetMobInfo()
     {
-        _mobLookupCts?.Cancel();
-        _mobEvents.Clear();
-        _consideredMob = null;
-        _mobVisibility.Reset();
+        if (_overlayViewModels.TryGetValue("mobinfo", out var viewModel) &&
+            viewModel is MobInfoOverlayViewModel mobInfo)
+        {
+            mobInfo.Reset();
+        }
         _mobShowing = false;
         ApplyMode("mobinfo");
     }
 
-    private void StartMobWikiLookup(bool force, WikiPriority priority)
+    private async Task LookupMobInfoAsync(string mob, string zone, bool force, CancellationToken token,
+        WikiPriority priority, Action<string> report)
     {
-        if (WikiLookupPaused)
-        {
-            return;
-        }
-        _mobLookupCts?.Cancel();
-        _mobLookupCts?.Dispose();
-        _mobLookupCts = CancellationTokenSource.CreateLinkedTokenSource(_wikiCts.Token);
-        if (_consideredMob is not null)
-        {
-            _ = LookupMobInfoAsync(_consideredMob.Mob, _consideredZone, force, _mobLookupCts.Token, priority);
-        }
-    }
-
-    private async Task LookupMobInfoAsync(string mob, string zone, bool force, CancellationToken token, WikiPriority priority,
-        Action<string>? report = null)
-    {
+        ArgumentNullException.ThrowIfNull(report);
         if (WikiLookupPaused)
         {
             return;
@@ -364,23 +167,14 @@ public partial class MainWindow
         token = lookup.Token;
         void Report(string message)
         {
-            if (token.IsCancellationRequested)
-            {
-                return;
-            }
-            if (report is not null)
+            if (!token.IsCancellationRequested)
             {
                 report(message);
-            }
-            else
-            {
-                _mobWikiStatus = message;
             }
         }
         Report("Checking EQLWiki...");
         try
         {
-            // Debounce rapidly repeated considers and keep parsing/serialization off the dispatcher.
             await Task.Delay(250, token);
             string status = await Task.Run(async () =>
             {
@@ -408,162 +202,45 @@ public partial class MainWindow
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
         }
-        catch (Exception ex) when (ex is WikiTransportException or IOException or UnauthorizedAccessException or
+        catch (Exception error) when (error is WikiTransportException or IOException or UnauthorizedAccessException or
             JsonException or InvalidOperationException or OperationCanceledException)
         {
             if (!token.IsCancellationRequested)
             {
-                string message = $"Mob wiki/save failed: {ex.Message}. Cached data kept; use Refresh wiki to retry.";
+                string message = $"Mob wiki/save failed: {error.Message}. Cached data kept; use Refresh wiki to retry.";
                 Report(message);
-                MobInfoStatusText.Text = message;
+                SetMobInfoStatus(message);
             }
         }
     }
 
-    private OverlayContent MobInfoContent()
+    private void OpenMobWiki(string mob, string zone, Action<string> report)
     {
-        if (_consideredMob is not { } con)
+        string url = _session.GetMob(zone, mob).Wiki?.Url ?? WikiLinks.PageUrl(mob);
+        try
         {
-            return new("Mob info", "Use /consider in game", []);
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
         }
-        return BuildMobInfoContent(con.Mob, _consideredZone, con, _considerAssessment, _mobWikiStatus);
+        catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            report($"Could not open wiki: {error.Message}");
+        }
     }
 
-    private OverlayContent BuildMobInfoContent(string mob, string zone, ConsiderEvent? con, string? assessment, string wikiStatus,
-        bool compact = false)
+    private async Task ResetMobResistancesAsync(string zone, string mob)
     {
-        var info = _session.GetMob(zone, mob);
-        var rows = new List<OverlayRow>();
-        if (con is not null)
-        {
-            rows.Add(new($"Level {con.Level}" + (con.Rare ? "  RARE" : ""), Bold: true, Scale: 1.3));
-            rows.Add(new(con.Faction, Wrap: true, Bold: true));
-            rows.Add(new(con.Difficulty, Wrap: true));
-        }
-        if (assessment is not null)
-        {
-            rows.Add(new(assessment, Wrap: true));
-        }
-        if (info.Wiki is { Found: true } summary)
-        {
-            var wikiStats = new List<(string Label, string Value)>
-            {
-                ("Race", summary.Stats?.Race ?? "?"),
-                ("Class", summary.Class ?? "?"),
-                ("Level", summary.Level ?? "?"),
-                ("HP", summary.HitPoints ?? "?"),
-                ("AC", summary.Stats?.ArmorClass ?? "?"),
-            };
-            if (summary.Stats is { } combat)
-            {
-                wikiStats.Add(("Damage/hit", combat.DamagePerHit ?? "?"));
-                wikiStats.Add(("Attacks/round", combat.AttacksPerRound ?? "?"));
-                wikiStats.Add(("Attack speed", combat.AttackSpeed ?? "?"));
-                wikiStats.Add(("HP regen", combat.HpRegen ?? "?"));
-                wikiStats.Add(("Mana regen", combat.ManaRegen ?? "?"));
-            }
-            rows.Add(new("Wiki stats", Bold: true, Table: OverlayTable.Pairs(wikiStats, pairsPerRow: 2)));
-        }
-        if (info.Wiki is { Found: true, Special: not null } traits)
-        {
-            rows.Add(new($"Special (wiki): {traits.Special}", Wrap: true, Bold: true));
-        }
-        rows.AddRange(MobQuestRows(info.Wiki));
-        rows.Add(new("Resistance", "Observed result", Bold: true));
-        foreach (var observation in info.Observations)
-        {
-            Brush color = observation.Type switch
-            {
-                ResistanceType.Magic => Brushes.Plum,
-                ResistanceType.Fire => Brushes.Coral,
-                ResistanceType.Cold => Brushes.LightSkyBlue,
-                ResistanceType.Poison => Brushes.LightGreen,
-                ResistanceType.Disease => Brushes.Khaki,
-                _ => Brushes.White,
-            };
-            rows.Add(new(observation.Type.ToString(), ResistancePresentation.Describe(observation), Bold: true, Foreground: color));
-        }
-        var wikiResists = info.Wiki?.Resistances;
-        if (wikiResists is { Count: > 0 })
-        {
-            rows.Add(new("Wiki resistance stats", Scale: 0.9, Table: OverlayTable.Columns(
-                Enum.GetValues<ResistanceType>().Where(wikiResists.ContainsKey)
-                    .Select(type => (type.ToString(), $"{wikiResists[type]}")))));
-        }
-        foreach (var observation in info.Observations.Where(o => o.OtherResisted > 0))
-        {
-            rows.Add(new($"{observation.Type}: {observation.OtherResisted} other-spell resists (overall resistance unknown)",
-                Wrap: true, Scale: 0.8));
-        }
-        foreach (var observation in info.Observations.Where(o => o.EstimatedPartial > 0 || o.UnassessedDamage > 0))
-        {
-            rows.Add(new($"{observation.Type}: {observation.EstimatedPartial} reduced-damage hits (cause unknown); " +
-                $"{observation.UnassessedDamage} hits awaiting a typical-damage baseline. " +
-                "These hits count as landed, not resisted.", Wrap: true, Scale: 0.8));
-        }
-        if (info.Unclassified > 0)
-        {
-            rows.Add(new($"{info.Unclassified} outcomes with unclassified/other spell resistance type", Wrap: true, Scale: 0.85));
-        }
-        if (info.Wiki is { Found: true } stats)
-        {
-            if (stats.Stats is { } details)
-            {
-                rows.Add(new("Wiki details", Scale: 0.9, Table: OverlayTable.Pairs(
-                [
-                    ("Aggro radius", details.AggroRadius ?? "?"),
-                    ("Run speed", details.RunSpeed ?? "?"),
-                    ("Respawn", details.RespawnTime ?? "?"),
-                    ("Location", details.Location ?? "?"),
-                ], pairsPerRow: 2)));
-            }
-            rows.Add(new($"Wiki checked {stats.CheckedUtc.ToLocalTime():d}; stats may differ for zone/rank variants.",
-                Wrap: true, Scale: 0.8));
-        }
-        if (!compact)
-        {
-            rows.Add(new("Labels describe observed single-target direct spells and DoT casts (first tick = landed), not guaranteed immunity. " +
-                "Only explicit resists enter the resist percentage. Hits below 90% of the sample-weighted median damage " +
-                "are shown separately as reduced damage, not proof of resistance. The baseline requires at least 3 hits per character/loadout/rank. " +
-                "Critical/modified hits and hits followed by a logged death within 3 seconds are excluded. " +
-                "Buffs and other mitigation can affect estimates. Same-name mobs in this zone are combined.",
-                Wrap: true, Scale: 0.8));
-        }
-        rows.Add(new(wikiStatus, Wrap: true, Scale: 0.8));
-        if (!_mobSaveEnabled)
-        {
-            rows.Add(new("Persistent mob storage unavailable; this session is NOT being saved. See General.",
-                Wrap: true, Foreground: Brushes.Coral, Scale: 0.85));
-        }
-        return new(mob, zone, rows, WikiLinks.SearchUrl(mob));
+        _session.ResetResistances(zone, mob, DateTime.Now);
+        await _session.SaveMobsAsync(_tracking);
     }
 
-    internal static IReadOnlyList<OverlayRow> MobQuestRows(MobWikiInfo? wiki)
+    private void SetMobInfoStatus(string message)
     {
-        if (wiki is not { Found: true })
+        _mobStartupStatus = message;
+        if (_overlayViewModels.TryGetValue("mobinfo", out var viewModel) &&
+            viewModel is MobInfoOverlayViewModel mobInfo)
         {
-            return [];
+            mobInfo.ReportStatus(message);
         }
-        var rows = new List<OverlayRow>
-        {
-            new("Associated quests (wiki)", Bold: true, QuestHeading: true),
-        };
-        if (wiki.Quests is null)
-        {
-            rows.Add(new("Quest references have not been loaded yet. Use Refresh wiki.", Wrap: true, Scale: 0.85));
-        }
-        else if (wiki.Quests.Count == 0)
-        {
-            rows.Add(new("No associated quests found in the cached wiki references.", Wrap: true, Scale: 0.85));
-        }
-        else
-        {
-            rows.AddRange(wiki.Quests.Select(quest => new OverlayRow(quest.Title, Link: quest.Url,
-                ToolTip: "Open quest on EQLWiki", Wrap: true)));
-            rows.Add(new("Wiki associations may identify quest givers, enemies, or other mentions; not a turn-in checklist.",
-                Wrap: true, Scale: 0.8));
-        }
-        return rows;
     }
 }
 
@@ -591,7 +268,6 @@ internal sealed class MobInfoVisibility
         {
             return;
         }
-
         bool active = IsActive(now);
         _hovered = hovered;
         if (hovered)

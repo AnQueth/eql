@@ -1,0 +1,177 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:views="clr-namespace:EqLog.Overlay.Views"
+                    xmlns:vm="clr-namespace:EqLog.Overlay.ViewModels">
+    <views:BoolToVisibilityConverter x:Key="MotePlanVisibleWhenTrue" />
+
+    <DataTemplate x:Key="MotePlanRankTemplate">
+        <TextBlock Text="{Binding StringFormat=+{0}}" />
+    </DataTemplate>
+
+    <DataTemplate x:Key="MotePlanBlockTemplate" DataType="{x:Type vm:MotePlanBlock}">
+        <StackPanel>
+            <TextBlock x:Name="PlanBlockText" Text="{Binding Text}" ToolTip="{Binding ToolTip}"
+                       TextWrapping="Wrap" Margin="2,5,0,5" Foreground="{DynamicResource NightText}" />
+            <views:OverlayTableView x:Name="PlanBlockTable" Table="{Binding Table}" ToolTip="{Binding ToolTip}"
+                                    Visibility="Collapsed" />
+            <Expander x:Name="PlanBlockComparison" Header="{Binding Text}" Visibility="Collapsed" Margin="2,8,0,6">
+                <ItemsControl ItemsSource="{Binding Lines}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="2,4,0,4" /></DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Expander>
+        </StackPanel>
+        <DataTemplate.Triggers>
+            <DataTrigger Binding="{Binding Kind}" Value="Table">
+                <Setter TargetName="PlanBlockText" Property="Visibility" Value="Collapsed" />
+                <Setter TargetName="PlanBlockTable" Property="Visibility" Value="Visible" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Kind}" Value="Comparison">
+                <Setter TargetName="PlanBlockText" Property="Visibility" Value="Collapsed" />
+                <Setter TargetName="PlanBlockComparison" Property="Visibility" Value="Visible" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Kind}" Value="Heading">
+                <Setter TargetName="PlanBlockText" Property="FontWeight" Value="SemiBold" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Kind}" Value="Complete">
+                <Setter TargetName="PlanBlockText" Property="Margin" Value="2,10,0,2" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Detail}" Value="True">
+                <Setter TargetName="PlanBlockText" Property="Margin" Value="2,10,0,2" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Subsequent}" Value="True">
+                <Setter TargetName="PlanBlockText" Property="Margin" Value="2,12,0,2" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Muted}" Value="True">
+                <Setter TargetName="PlanBlockText" Property="Foreground" Value="{DynamicResource NightMuted}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Bold}" Value="True">
+                <Setter TargetName="PlanBlockText" Property="FontWeight" Value="SemiBold" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Indent}" Value="True">
+                <Setter TargetName="PlanBlockText" Property="Margin" Value="16,4,0,4" />
+            </DataTrigger>
+        </DataTemplate.Triggers>
+    </DataTemplate>
+
+    <DataTemplate x:Key="MotePlanOverlayViewModel.Body" DataType="{x:Type vm:MotePlanOverlayViewModel}">
+        <DockPanel Margin="2">
+            <StackPanel DockPanel.Dock="Top">
+                <DockPanel Margin="0,2,0,6">
+                    <ComboBox x:Name="PlanKind" DockPanel.Dock="Left" ItemsSource="{Binding KindOptions}"
+                              SelectedItem="{Binding Kind, Mode=TwoWay}" MinWidth="100" Margin="0,0,6,0"
+                              ToolTip="Fragments are worth twice their named mote. Motes and fragments work on spells at any rank." />
+                    <TextBox x:Name="PlanName" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged, Delay=180}"
+                             VerticalContentAlignment="Center" ToolTip="Type an item or spell name to plan an upgrade." />
+                </DockPanel>
+                <ComboBox x:Name="PlanInventoryName" ItemsSource="{Binding InventoryNames}"
+                          SelectedItem="{Binding SelectedInventoryName, Mode=TwoWay}"
+                          IsEnabled="{Binding IsEquipment}" Margin="0,0,0,8"
+                          ToolTip="Pick a matching item from the last inventory export. Selecting an item sets the rank to your best copy." />
+                <WrapPanel Margin="0,0,0,6">
+                    <TextBlock Text="Current" VerticalAlignment="Center" Foreground="{DynamicResource NightMuted}" />
+                    <ComboBox x:Name="PlanRank" ItemsSource="{Binding RankOptions}" SelectedItem="{Binding CurrentRank, Mode=TwoWay}"
+                              ItemTemplate="{StaticResource MotePlanRankTemplate}"
+                              MinWidth="56" Margin="4,0,10,0" ToolTip="The rank it is at now." />
+                    <TextBlock Text="Points" VerticalAlignment="Center" Foreground="{DynamicResource NightMuted}" />
+                    <TextBox x:Name="PlanPoints" Text="{Binding Points, UpdateSourceTrigger=PropertyChanged, Delay=180}"
+                             Width="52" Margin="4,0,10,0" VerticalContentAlignment="Center"
+                             IsEnabled="{Binding CanAddProgress}"
+                             ToolTip="Points already put toward the next rank. Going from +N to +N+1 takes 2^N points." />
+                    <TextBlock Text="Stop at" VerticalAlignment="Center" Foreground="{DynamicResource NightMuted}" />
+                    <ComboBox x:Name="PlanTargetRank" ItemsSource="{Binding TargetRanks}" SelectedItem="{Binding TargetRank, Mode=TwoWay}"
+                              ItemTemplate="{StaticResource MotePlanRankTemplate}"
+                              MinWidth="56" Margin="4,0,10,0"
+                              ToolTip="Stop planning at this rank. Applies to every page and spare-copy feeding." />
+                </WrapPanel>
+                <WrapPanel Margin="0,4,0,6">
+                    <CheckBox x:Name="PlanUseMotes" Content="Use owned motes and fragments" IsChecked="{Binding UseMotes}"
+                              Command="{Binding SetUseMotesCommand}" CommandParameter="{Binding IsChecked, RelativeSource={RelativeSource Self}}"
+                              VerticalAlignment="Center" Margin="0,4,12,4"
+                              ToolTip="Spend motes and fragments confirmed by the last inventory export before listing missing resources." />
+                    <CheckBox x:Name="PlanPreferFragments" Content="Prefer fragments" IsChecked="{Binding PreferFragments}"
+                              Command="{Binding SetPreferFragmentsCommand}" CommandParameter="{Binding IsChecked, RelativeSource={RelativeSource Self}}"
+                              IsEnabled="{Binding CanPreferFragments}" VerticalAlignment="Center" Margin="0,4,12,4"
+                              ToolTip="Spend usable fragments before normal motes, smallest fragment tier first." />
+                    <CheckBox x:Name="PlanUseCopies" Content="Use inventory copies" IsChecked="{Binding UseCopies}"
+                              Command="{Binding SetUseCopiesCommand}" CommandParameter="{Binding IsChecked, RelativeSource={RelativeSource Self}}"
+                              IsEnabled="{Binding IsEquipment}" VerticalAlignment="Center"
+                              ToolTip="Merge spare copies from the last inventory export. A +N copy counts as exactly +N." />
+                </WrapPanel>
+                <WrapPanel Margin="0,0,0,6">
+                    <CheckBox x:Name="PlanFeed" Content="Feed copies with motes/fragments first" IsChecked="{Binding Feeding}"
+                              Command="{Binding SetFeedingCommand}" CommandParameter="{Binding IsChecked, RelativeSource={RelativeSource Self}}"
+                              IsEnabled="{Binding IsEquipment}" VerticalAlignment="Center" Margin="0,4,12,4"
+                              ToolTip="Raise spare copies before merging them when feeding can save resources." />
+                    <CheckBox x:Name="PlanFeedUsable" Content="Include motes/fragments the item can still use" IsChecked="{Binding FeedUsableMotes}"
+                              Command="{Binding SetFeedUsableMotesCommand}" CommandParameter="{Binding IsChecked, RelativeSource={RelativeSource Self}}"
+                              IsEnabled="{Binding CanFeedUsableMotes}" VerticalAlignment="Center"
+                              ToolTip="Also feed copies with resources the main item could take now." />
+                </WrapPanel>
+            </StackPanel>
+            <TextBlock x:Name="PlanSummary" DockPanel.Dock="Top" Text="{Binding Summary}" ToolTip="{Binding PlanSummaryToolTip}"
+                       TextWrapping="Wrap" Foreground="{DynamicResource NightMuted}" Margin="2,6,0,10" />
+            <TabControl x:Name="PlanTabs" SelectedIndex="{Binding SelectedPageIndex, Mode=TwoWay}" Margin="0,6,0,0">
+                <TabItem Header="Upgrade">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel>
+                            <ItemsControl ItemsSource="{Binding PlanBlocks}" ItemTemplate="{StaticResource MotePlanBlockTemplate}" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+                <TabItem Header="Farm copies" Visibility="{Binding IsEquipment, Converter={StaticResource MotePlanVisibleWhenTrue}}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Margin="2">
+                            <WrapPanel>
+                                <TextBlock Text="Copy level to farm" VerticalAlignment="Center" Foreground="{DynamicResource NightMuted}" />
+                                <ComboBox x:Name="PlanFodderRank" ItemsSource="{Binding FodderRanks}"
+                                          SelectedItem="{Binding FodderRank, Mode=TwoWay}"
+                                          ItemTemplate="{StaticResource MotePlanRankTemplate}" MinWidth="56" Margin="4,0,10,0" />
+                                <TextBlock Text="Extra copies already planned" VerticalAlignment="Center" Foreground="{DynamicResource NightMuted}" />
+                                <TextBox x:Name="PlanFodder" Text="{Binding Fodder, UpdateSourceTrigger=PropertyChanged, Delay=180}"
+                                         Width="52" Margin="4,0,10,0" VerticalContentAlignment="Center"
+                                         ToolTip="Extra copies you could farm (0-1023)." />
+                            </WrapPanel>
+                            <ItemsControl ItemsSource="{Binding PlanBlocks}" ItemTemplate="{StaticResource MotePlanBlockTemplate}" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+                <TabItem Header="What if" Visibility="{Binding IsEquipment, Converter={StaticResource MotePlanVisibleWhenTrue}}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Margin="2">
+                            <TextBlock Text="Only changes this plan. Inventory and recorded item upgrades are never changed."
+                                       TextWrapping="Wrap" Foreground="{DynamicResource NightMuted}" Margin="0,2,0,4" />
+                            <Expander x:Name="PlanCopyEditor" Header="What if: change spare copy ranks" IsExpanded="True" Margin="0,0,0,4">
+                                <StackPanel>
+                                    <Button Content="Reset to inventory ranks" Command="{Binding ResetCopyRanksCommand}"
+                                            HorizontalAlignment="Left" Margin="0,0,0,4" />
+                                    <ItemsControl x:Name="PlanCopyControls" ItemsSource="{Binding CopyRanks}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <DockPanel Margin="0,2">
+                                                    <ComboBox DockPanel.Dock="Right" ItemsSource="{Binding DataContext.RankOptions, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                              SelectedItem="{Binding Rank, Mode=TwoWay}"
+                                                              ItemTemplate="{StaticResource MotePlanRankTemplate}" MinWidth="60" />
+                                                    <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
+                                                </DockPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Expander>
+                            <ItemsControl ItemsSource="{Binding PlanBlocks}" ItemTemplate="{StaticResource MotePlanBlockTemplate}" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+                <TabItem Header="Math">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Margin="2">
+                            <ItemsControl ItemsSource="{Binding PlanBlocks}" ItemTemplate="{StaticResource MotePlanBlockTemplate}" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+            </TabControl>
+        </DockPanel>
+    </DataTemplate>
+</ResourceDictionary>

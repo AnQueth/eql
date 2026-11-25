@@ -1,7 +1,29 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.45" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.46" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.46
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released November 24, 2026 at 10:21 PM CT.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Overlays rebuilt for steadier behavior
+        </Paragraph>
+        <Paragraph>
+            Overlay panels, including DPS, Alerts, Exaltations, Inventory, Leveling, Mob Info,
+            Mote Plan, NPC Browser, Quests, Sky, and Tradeskills, now use a cleaner internal
+            structure. Your layouts, settings, and saved data carry over. This is mainly an
+            under-the-hood change, so overlays should feel the same while being more reliable
+            to update.
+        </Paragraph>
+        <Paragraph>
+            Tracking, log reading, and saved-data handling also received maintenance updates.
+            If you notice an overlay that looks different from before, please report it.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.45
     </Paragraph>

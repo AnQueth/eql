@@ -34,9 +34,12 @@ public sealed class LootTracker
     private Coin _coin;
     private Coin _sold;
     private int _items;
+    private LootSnapshot? _snapshot;
+    private (int Recent, int TopItems) _snapshotLimits;
 
     public void OnLoot(LootEvent e)
     {
+        _snapshot = null;
         if (!_groups.TryGetValue(e.Looter, out var items))
         {
             _groups[e.Looter] = items = new Dictionary<string, LootGroup>(ItemNames.Comparer);
@@ -67,11 +70,13 @@ public sealed class LootTracker
 
     public void OnCoin(CoinEvent e)
     {
+        _snapshot = null;
         _coin += e.Amount;
     }
 
     public void ResetSession()
     {
+        _snapshot = null;
         _itemCounts.Clear();
         _groups.Clear();
         _coin = Coin.Zero;
@@ -81,7 +86,12 @@ public sealed class LootTracker
 
     public LootSnapshot Snapshot(int recent, int topItems)
     {
-        return new(
+        if (_snapshot is not null && _snapshotLimits == (recent, topItems))
+        {
+            return _snapshot;
+        }
+        _snapshotLimits = (recent, topItems);
+        _snapshot = new(
         _coin,
         _sold,
         _items,
@@ -90,5 +100,6 @@ public sealed class LootTracker
         {
             Groups = _groups.Values.SelectMany(items => items.Values).ToArray(),
         };
+        return _snapshot;
     }
 }

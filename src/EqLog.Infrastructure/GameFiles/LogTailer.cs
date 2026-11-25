@@ -123,16 +123,28 @@ public sealed class LogTailer(string path)
                     if (pending.Count > 0)
                     {
                         pending.AddRange(buffer.AsSpan(start, i - start));
-                        line = LogEncoding.GetString(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(pending));
+                        ReadOnlySpan<byte> lineBytes = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(pending);
+                        int lineLength = lineBytes.Length;
+                        while (lineLength > 0 && lineBytes[lineLength - 1] == (byte)'\r')
+                        {
+                            lineLength--;
+                        }
+
+                        line = LogEncoding.GetString(lineBytes[..lineLength]);
                         pending.Clear();
                     }
                     else
                     {
-                        line = LogEncoding.GetString(buffer, start, i - start);
+                        int lineLength = i - start;
+                        while (lineLength > 0 && buffer[start + lineLength - 1] == (byte)'\r')
+                        {
+                            lineLength--;
+                        }
+
+                        line = LogEncoding.GetString(buffer, start, lineLength);
                     }
 
                     start = i + 1;
-                    line = line.TrimEnd('\r');
                     if (line.Length == 0)
                     {
                         continue;

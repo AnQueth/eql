@@ -8,7 +8,7 @@ using EqLog.Core;
 namespace EqLog.Overlay.ViewModels;
 
 /// <summary>Detached inventory presentation state. Changing filters/selection does not call any adapter.</summary>
-internal sealed class InventoryViewModel : INotifyPropertyChanged
+public sealed class InventoryViewModel : INotifyPropertyChanged
 {
     private string _filter = "";
     private QuestInventoryItem? _selected;
@@ -19,8 +19,10 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
     private bool _filtersSuspended;
     private bool _refreshingFilter;
 
+    /// <inheritdoc />
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    /// <summary>Creates detached inventory state on the current dispatcher.</summary>
     public InventoryViewModel()
     {
         _filterWork = new InventoryFilterWork(_dispatcher);
@@ -29,6 +31,7 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
             (_matches is null || _matches.Contains(row));
     }
 
+    /// <summary>The latest inventory filtering task, exposed for deterministic tests.</summary>
     public Task PendingFilter
     {
         get
@@ -37,6 +40,7 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Stops filter work while the inventory overlay is not in use.</summary>
     public void SuspendFilters()
     {
         _dispatcher.VerifyAccess();
@@ -44,6 +48,7 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
         _filterWork.Cancel();
     }
 
+    /// <summary>Resumes filtering after the inventory overlay becomes available.</summary>
     public void ResumeFilters()
     {
         _dispatcher.VerifyAccess();
@@ -87,20 +92,28 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
             debounce);
     }
 
+    /// <summary>Inventory rows currently visible in the overlay.</summary>
     public ObservableCollection<QuestInventoryItem> Items { get; } = [];
+    /// <summary>Filtered view over <see cref="Items"/> for WPF data grids.</summary>
     public ICollectionView ItemsView
     {
         get;
     }
+    /// <summary>Revision of the detached inventory state.</summary>
     public long Revision { get; private set; } = -1;
+    /// <summary>Read model with ownership and historical loot counts.</summary>
     public InventoryReadModel State { get; private set; } = InventoryReadModel.Empty;
+    /// <summary>Latest inventory export, when one is available.</summary>
     public InventoryExportSnapshot? Export
     {
         get; private set;
     }
+    /// <summary>All exported copy locations for the selected item.</summary>
     public IReadOnlyList<InventoryItemLocation> Copies { get; private set; } = [];
+    /// <summary>Status text for the selected item copy locations.</summary>
     public string CopyStatus { get; private set; } = "Select an inventory item to see every exported copy and its location.";
 
+    /// <summary>Status text for inventory import and filtering.</summary>
     public string ImportStatus
     {
         get
@@ -118,6 +131,7 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Case-insensitive item-name filter.</summary>
     public string Filter
     {
         get
@@ -137,6 +151,7 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>The selected inventory row.</summary>
     public QuestInventoryItem? SelectedItem
     {
         get
@@ -163,6 +178,7 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Applies a detached inventory snapshot for the selected character.</summary>
     public void Apply(InventorySnapshot snapshot, string? character)
     {
         _dispatcher.VerifyAccess();
@@ -220,6 +236,7 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
         RefreshCopies();
     }
 
+    /// <summary>Recalculates the selected item copy locations and status text.</summary>
     public void RefreshCopies()
     {
         _dispatcher.VerifyAccess();
@@ -268,3 +285,4 @@ internal sealed class InventoryViewModel : INotifyPropertyChanged
         };
     }
 }
+

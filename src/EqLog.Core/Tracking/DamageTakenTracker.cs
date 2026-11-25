@@ -26,6 +26,8 @@ public sealed class DamageTakenTracker
     private long _sessionTotal;
     private long _sessionMax;
     private string? _sessionMaxFrom;
+    private DamageTakenSnapshot? _snapshot;
+    private int _snapshotTop;
 
     public TimeSpan EncounterTimeout { get; set; } = TimeSpan.FromSeconds(20);
 
@@ -35,6 +37,7 @@ public sealed class DamageTakenTracker
         {
             return;
         }
+        _snapshot = null;
 
         if (_encounterStart is null || e.Time - _encounterLast > EncounterTimeout)
         {
@@ -66,6 +69,7 @@ public sealed class DamageTakenTracker
 
     public void ResetSession()
     {
+        _snapshot = null;
         _encounter.Clear();
         _session.Clear();
         _encounterStart = null;
@@ -77,8 +81,13 @@ public sealed class DamageTakenTracker
 
     public DamageTakenSnapshot Snapshot(int top)
     {
+        if (_snapshot is not null && _snapshotTop == top)
+        {
+            return _snapshot;
+        }
+        _snapshotTop = top;
         double seconds = _encounterStart is null ? 0 : Math.Max(1, (_encounterLast - _encounterStart.Value).TotalSeconds + 1);
-        return new DamageTakenSnapshot(
+        _snapshot = new DamageTakenSnapshot(
             _encounterStart,
             seconds,
             _encounterTotal,
@@ -88,6 +97,7 @@ public sealed class DamageTakenTracker
             _sessionMax,
             _sessionMaxFrom,
             Top(_session, _sessionTotal, top));
+        return _snapshot;
     }
 
     private static void Add(Dictionary<string, (long Total, int Count)> d, string key, long amount)

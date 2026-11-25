@@ -1,5 +1,7 @@
 using EqLog.Application.Wiki;
 using EqLog.Core;
+using EqLog.Overlay;
+using EqLog.Overlay.ViewModels;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -7,65 +9,63 @@ using Xunit;
 
 namespace EqLog.Overlay.Tests;
 
+/// <summary>Exercises the tradeskills overlay's XAML and view-model presentation.</summary>
 public sealed class TradeskillOverlayTests
 {
+    /// <summary>Checks compact bound controls and recipe loading on an STA thread.</summary>
     internal static void VerifyCompactToolbarAndRecipeLoading()
     {
-        var skills = new ComboBox { ItemsSource = new[] { "Blacksmithing" }, SelectedIndex = 0 };
-        var search = new TextBox { Text = "magic" };
-        var sort = new ComboBox { ItemsSource = new[] { "Trivial, then name" }, SelectedIndex = 0 };
-        var wiki = new Button { Content = "Wiki" };
-        var refresh = new Button { Content = "Refresh" };
-        var row = MainWindow.BuildTradeskillFilterRow(skills, search, sort, wiki, refresh);
+        var recipe = new TradeskillRecipe("selected", "Practice Potion", "Practice Potion", "Practice Potion",
+            "Alchemy", "25", "", 1, []);
+        var catalog = new TradeskillWikiPage(TradeskillPageKind.Skill, "Alchemy", DateTime.UtcNow, [recipe], []);
+        var details = new TradeskillWikiPage(TradeskillPageKind.Recipe, "Practice Potion", DateTime.UtcNow, [recipe], []);
+        var services = new FakeTradeskillServices([catalog, details]);
+        var vm = CreateViewModel(services, recipe.Key);
+        var panel = new OverlayPanel(vm);
+        Layout(panel, 520, 580);
+
+        var row = Named<Grid>(panel, "TradeskillFilterRow");
+        var controls = new FrameworkElement[]
+        {
+            Named<ComboBox>(panel, "TradeskillSkills"),
+            Named<TextBox>(panel, "TradeskillSearch"),
+            Named<ComboBox>(panel, "TradeskillSort"),
+            Named<Button>(panel, "TradeskillWiki"),
+            Named<Button>(panel, "TradeskillRefresh"),
+        };
         foreach (double width in new[] { 520.0, 840.0 })
         {
             row.Measure(new Size(width, double.PositiveInfinity));
             row.Arrange(new Rect(0, 0, width, row.DesiredSize.Height));
             row.UpdateLayout();
-            foreach (var control in new FrameworkElement[] { skills, search, sort, wiki, refresh })
+            foreach (var control in controls)
             {
                 var position = control.TranslatePoint(new Point(), row);
                 Assert.Equal(0, position.Y);
                 Assert.True(control.ActualWidth > 0);
                 Assert.True(position.X + control.ActualWidth <= width + 0.1);
             }
-            Assert.True(search.TranslatePoint(new Point(), row).X > skills.TranslatePoint(new Point(), row).X);
-            Assert.True(sort.TranslatePoint(new Point(), row).X > search.TranslatePoint(new Point(), row).X);
+            Assert.True(controls[1].TranslatePoint(new Point(), row).X > controls[0].TranslatePoint(new Point(), row).X);
+            Assert.True(controls[2].TranslatePoint(new Point(), row).X > controls[1].TranslatePoint(new Point(), row).X);
         }
 
-        var picker = new ComboBox { DisplayMemberPath = nameof(MainWindow.TradeskillChoice.Label) };
-        var recipe = new TradeskillRecipe("selected", "Practice Potion", "Practice Potion", "Practice Potion",
-            "Alchemy", "25", "", 1, []);
-        var other = recipe with { Key = "other", Name = "Other Potion", Outcome = "Other Potion" };
-        MainWindow.UpdateTradeskillRecipePicker(picker, [], recipe.Key, "Loading Alchemy recipes...", true);
-        Assert.False(picker.IsEnabled);
-        Assert.Equal("Loading Alchemy recipes...", Assert.IsType<ComboBoxItem>(picker.SelectedItem).Content);
-        foreach (string status in new[] { "Loading Practice Potion combine details...", "Loading merchants 1/2: Test Leaf" })
-        {
-            MainWindow.UpdateTradeskillRecipePicker(picker, [recipe, other], recipe.Key, status, false);
-            var selected = Assert.IsType<MainWindow.TradeskillChoice>(picker.SelectedItem);
-            Assert.Same(recipe, selected.Recipe);
-            Assert.StartsWith(status, selected.Label);
-            Assert.True(picker.IsEnabled);
-            Assert.DoesNotContain(status, Assert.Single(picker.Items.OfType<MainWindow.TradeskillChoice>(),
-                choice => choice.Recipe.Key == other.Key).Label);
-        }
-        MainWindow.UpdateTradeskillRecipePicker(picker, [other], recipe.Key, "Loading combine details...", false);
-        Assert.Equal("Loading combine details...", Assert.IsType<ComboBoxItem>(picker.SelectedItem).Content);
-        Assert.Same(other, Assert.Single(picker.Items.OfType<MainWindow.TradeskillChoice>()).Recipe);
-        MainWindow.UpdateTradeskillRecipePicker(picker, [recipe, other], recipe.Key, "", false);
-        Assert.Equal("Practice Potion (trivial 25)", Assert.IsType<MainWindow.TradeskillChoice>(picker.SelectedItem).Label);
+        vm.RefreshCommand.Execute(null);
+        vm.RefreshCommand.Completion.GetAwaiter().GetResult();
+        Assert.Equal(recipe.Key, vm.SelectedRecipeItem?.Recipe?.Key);
+        Assert.Equal("Practice Potion (trivial 25)", vm.SelectedRecipeItem?.Label);
+        Assert.Single(vm.CombineChoices);
+        Assert.Contains((TradeskillPageKind.Skill, "Alchemy"), services.LoadedPages);
+        Assert.Contains((TradeskillPageKind.Recipe, "Practice Potion"), services.LoadedPages);
     }
 
+    /// <summary>Checks that merchant rows remain virtualized and scroll to the final entry.</summary>
     internal static void VerifyMerchantListScrolling()
     {
-        var panel = new OverlayPanel("tradeskills", "Tradeskills", false);
+        var panel = new OverlayPanel(CreateViewModel(new FakeTradeskillServices([]), ""));
         var rows = Enumerable.Range(0, 170).Select(index => new OverlayRow(
             $"Merchant {index} - Test Zone", Details: $"Shop {index}", Wrap: true)).ToArray();
-        panel.Update("Tradeskills", "Alchemy", rows);
-        panel.Measure(new Size(520, 580));
-        panel.Arrange(new Rect(0, 0, 520, 580));
-        panel.UpdateLayout();
+        panel.ViewModel.Show("Tradeskills", "Alchemy", rows);
+        Layout(panel, 520, 580);
         var list = Assert.Single(Visuals(panel).OfType<ListBox>());
         Assert.Equal(170, list.Items.Count);
         Assert.True(VirtualizingPanel.GetIsVirtualizing(list));
@@ -75,6 +75,7 @@ public sealed class TradeskillOverlayTests
         Assert.Contains(Visuals(last).OfType<TextBlock>(), text => text.Text == "Shop 169");
     }
 
+    /// <summary>Recipe filtering preserves ingredient quantities, zone-specific merchants, and wiki links.</summary>
     [Fact]
     public void ZoneFilteredDisplayKeepsQuantitiesAndEveryIngredientWithMerchantLinks()
     {
@@ -83,7 +84,7 @@ public sealed class TradeskillOverlayTests
         var recipe = new TradeskillRecipe("key", "Practice Combine", "Practice Potion", "Practice Potion",
             "Alchemy", "25", "Test Bag", 2, [leaf, water]);
         var merchant = new TradeskillMerchant("Local Merchant", "Local Merchant", "Halas", "Halas", "Shop", "(12, -34)");
-        var content = MainWindow.BuildTradeskillContent("Alchemy", recipe,
+        var content = TradeskillsOverlayViewModel.BuildTradeskillContent("Alchemy", recipe,
             [new(leaf, [merchant], TradeskillMerchantStatus.Available, null),
                 new(water, [], TradeskillMerchantStatus.NoneInZone, null)], "", true, "Halas", true);
 
@@ -96,6 +97,25 @@ public sealed class TradeskillOverlayTests
         Assert.Contains("Halas", content.Subtitle);
     }
 
+    private static TradeskillsOverlayViewModel CreateViewModel(FakeTradeskillServices services, string recipeKey)
+    {
+        return new TradeskillsOverlayViewModel(OverlayPresenters.All.Single(definition => definition.Key == "tradeskills"),
+            NullOverlayActions.Instance, services, "Alchemy", "", recipeKey, false, false,
+            _ => { }, _ => { }, _ => { }, _ => { }, _ => { });
+    }
+
+    private static void Layout(FrameworkElement element, double width, double height)
+    {
+        element.Measure(new Size(width, height));
+        element.Arrange(new Rect(0, 0, width, height));
+        element.UpdateLayout();
+    }
+
+    private static T Named<T>(DependencyObject root, string name) where T : FrameworkElement
+    {
+        return Assert.Single(Visuals(root).OfType<T>(), element => element.Name == name);
+    }
+
     private static IEnumerable<DependencyObject> Visuals(DependencyObject parent)
     {
         for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
@@ -106,6 +126,82 @@ public sealed class TradeskillOverlayTests
             {
                 yield return descendant;
             }
+        }
+    }
+
+    private sealed class FakeTradeskillServices(IReadOnlyList<TradeskillWikiPage> pages) : ITradeskillsOverlayServices
+    {
+        public IReadOnlyList<TradeskillWikiPage> InitialPages { get; } = [];
+
+        public Exception? InitialError
+        {
+            get;
+        }
+
+        public bool WikiLookupPaused
+        {
+            get
+            {
+                return false;
+            }
+        }
+
+        public List<(TradeskillPageKind Kind, string Title)> LoadedPages { get; } = [];
+
+        public IOverlayWikiLookupLease BeginLookup()
+        {
+            return new FakeLookupLease();
+        }
+
+        public Task<TradeskillWikiPage> GetTradeskillAsync(TradeskillPageKind kind, string title, bool force,
+            CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            LoadedPages.Add((kind, title));
+            var page = pages.FirstOrDefault(candidate => candidate.Kind == kind &&
+                candidate.Title.Equals(title, StringComparison.OrdinalIgnoreCase));
+            return page is null ? throw new KeyNotFoundException($"No test page for {kind} {title}.") : Task.FromResult(page);
+        }
+
+        public string? GetCacheError(string operation)
+        {
+            return null;
+        }
+
+        public void TrackWikiError(Exception error)
+        {
+            throw error;
+        }
+    }
+
+    private sealed class FakeLookupLease : IOverlayWikiLookupLease
+    {
+        private readonly CancellationTokenSource _cancellation = new();
+
+        public CancellationToken Token
+        {
+            get
+            {
+                return _cancellation.Token;
+            }
+        }
+
+        public Task Completion
+        {
+            get
+            {
+                return Task.CompletedTask;
+            }
+        }
+
+        public void Cancel()
+        {
+            _cancellation.Cancel();
+        }
+
+        public void Dispose()
+        {
+            _cancellation.Dispose();
         }
     }
 }

@@ -29,9 +29,8 @@ public sealed class LevelingHistoryRepository : ILevelingHistoryRepository
         data ??= new([], new(StringComparer.OrdinalIgnoreCase));
         Validate(data);
         string journal = JournalPath(path);
-        var changes = await PersistenceJournal.ReadAsync<LevelingHistory.Data>(journal, cancellationToken).ConfigureAwait(false);
         var minutes = data.Minutes.ToDictionary(row => (row.Source, row.Character, row.Context, row.Minute));
-        foreach (var batch in changes)
+        await foreach (var batch in PersistenceJournal.ReadAsync<LevelingHistory.Data>(journal, cancellationToken).ConfigureAwait(false))
         {
             Validate(batch);
             foreach (var row in batch.Minutes)

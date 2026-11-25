@@ -32,6 +32,7 @@ public sealed class ForageTracker
     private DateTime? _last;
     private int? _skill;
     private int _skillGains;
+    private ForageSnapshot? _snapshot;
 
     public void OnZone(ZoneEvent e)
     {
@@ -40,6 +41,7 @@ public sealed class ForageTracker
 
     public void OnForage(ForageEvent e)
     {
+        _snapshot = null;
         _attempts++;
         _first ??= e.Time;
         _last = e.Time;
@@ -72,6 +74,7 @@ public sealed class ForageTracker
 
     public void OnSkill(ForageSkillEvent e)
     {
+        _snapshot = null;
         if (_skill is null || e.Skill > _skill)
         {
             _skillGains++;
@@ -83,6 +86,7 @@ public sealed class ForageTracker
     /// <summary>Clears session counts. The current zone and last known skill are kept because they are still accurate.</summary>
     public void ResetSession()
     {
+        _snapshot = null;
         _items.Clear();
         _recent.Clear();
         _attempts = 0;
@@ -94,6 +98,10 @@ public sealed class ForageTracker
 
     public ForageSnapshot Snapshot()
     {
+        if (_snapshot is not null)
+        {
+            return _snapshot;
+        }
         var items = _items.Values
             .Select(totals => new ForageItem(totals.Item, totals.Quantity, totals.Finds, totals.LastFound,
                 totals.Zones
@@ -104,8 +112,9 @@ public sealed class ForageTracker
             .OrderByDescending(item => item.Quantity)
             .ThenBy(item => item.Item, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        return new(_attempts, _failures, _first, _last, _skill, _skillGains, items,
+        _snapshot = new(_attempts, _failures, _first, _last, _skill, _skillGains, items,
             _recent.AsEnumerable().Reverse().ToArray());
+        return _snapshot;
     }
 
     private sealed class ItemTotals(string item)

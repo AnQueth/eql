@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Runtime.CompilerServices;
 using EqLog.Application.Tracking;
 using EqLog.Core;
@@ -174,8 +175,12 @@ public sealed class MobResistanceRepository : IMobResistanceRepository
         CancellationToken cancellationToken = default)
     {
         var store = new MobResistanceStore();
-        var (journal, data) = await JsonDeltaJournal.OpenAsync(
-            path, new MobResistanceStore.Data(), ResistanceJson, Validate, cancellationToken).ConfigureAwait(false);
+        var empty = JsonSerializer.SerializeToNode(new MobResistanceStore.Data(), ResistanceJson)!.AsObject();
+        var (journal, document) = await JsonDeltaJournal.OpenAsync(
+            path, empty, ResistanceJson, ValidateIndex, cancellationToken, ValidateChanges,
+            ValidateCompleteDocument).ConfigureAwait(false);
+        var data = ReadMetadata(document);
+        var history = new LazyResistanceHistory(journal, document);
         _journals.Add(store, journal);
 
         await MoveLegacySpellCacheAsync(path, cancellationToken).ConfigureAwait(false);
@@ -184,7 +189,7 @@ public sealed class MobResistanceRepository : IMobResistanceRepository
             spell => MobResistanceStore.MobKey(spell.Spell ?? ""),
             options: ResistanceJson,
             ct: cancellationToken).ConfigureAwait(false);
-        store.ImportData(data, cached.Values);
+        store.ImportData(data, cached.Values, history);
         return store;
     }
 
@@ -196,13 +201,13 @@ public sealed class MobResistanceRepository : IMobResistanceRepository
         await _saveGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var snapshot = store.CapturePersistenceSnapshot();
+            var snapshot = store.CapturePersistenceSnapshot(onlyChangedEntries: true);
             if (snapshot is null)
             {
                 return;
             }
 
-            var journal = await GetJournalAsync(path, store, cancellationToken).ConfigureAwait(false);
+            var journal = await GetJournalAsync(path, store, cancellationToken, snapshot.HistorySource).ConfigureAwait(false);
             if (snapshot.PendingSpells.Count > 0)
             {
                 await JsonLines.AppendAsync(
@@ -213,7 +218,7 @@ public sealed class MobResistanceRepository : IMobResistanceRepository
                 store.CompleteSpellCacheAppend(snapshot.PendingSpells.Count);
             }
 
-            await journal.SaveAsync(snapshot.Data, cancellationToken).ConfigureAwait(false);
+            await SaveSnapshotAsync(journal, snapshot, cancellationToken).ConfigureAwait(false);
             store.CompletePersistence(snapshot.Version);
         }
         finally
@@ -231,16 +236,16 @@ public sealed class MobResistanceRepository : IMobResistanceRepository
         try
         {
             store.ResetWikiCaches();
-            var snapshot = store.CapturePersistenceSnapshot();
+            var snapshot = store.CapturePersistenceSnapshot(onlyChangedEntries: true);
             if (snapshot is null)
             {
                 return;
             }
 
-            var journal = await GetJournalAsync(path, store, cancellationToken).ConfigureAwait(false);
+            var journal = await GetJournalAsync(path, store, cancellationToken, snapshot.HistorySource).ConfigureAwait(false);
             File.Delete(SpellCachePath(path));
             File.Delete(LegacySpellCachePath(path));
-            await journal.SaveAsync(snapshot.Data, cancellationToken).ConfigureAwait(false);
+            await SaveSnapshotAsync(journal, snapshot, cancellationToken).ConfigureAwait(false);
             await journal.CheckpointAsync(cancellationToken).ConfigureAwait(false);
             store.CompletePersistence(snapshot.Version);
         }
@@ -256,8 +261,22 @@ public sealed class MobResistanceRepository : IMobResistanceRepository
         return Path.Combine(folder, "spell-info.jsonl");
     }
 
-    private async Task<JsonDeltaJournal> GetJournalAsync(string path, MobResistanceStore store, CancellationToken token)
+    private async Task<JsonDeltaJournal> GetJournalAsync(string path, MobResistanceStore store, CancellationToken token,
+        IMobResistanceHistorySource? historySource = null)
     {
+        if (historySource is LazyResistanceHistory history)
+        {
+            history.Protect();
+            if (!history.Journal.IsForPath(path))
+            {
+                throw new InvalidOperationException("The mob resistance store is already stored at another path.");
+            }
+            return history.Journal;
+        }
+        if (historySource is not null)
+        {
+            throw new InvalidOperationException("The resistance history source does not support persistence.");
+        }
         if (_journals.TryGetValue(store, out var journal))
         {
             if (!journal.IsForPath(path))
@@ -272,6 +291,254 @@ public sealed class MobResistanceRepository : IMobResistanceRepository
         return journal;
     }
 
+    private static Task SaveSnapshotAsync(JsonDeltaJournal journal, MobResistancePersistenceSnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
+        if (snapshot.IsDelta)
+        {
+            if (snapshot.HistorySource is LazyResistanceHistory lazy)
+            {
+                lazy.Protect();
+            }
+            string[] entryProperties = snapshot.WikiCachesReset ? ["Mobs"] : ["Mobs", "Wiki"];
+            var removals = (snapshot.RemovedMobs ?? [])
+                .Select(key => new JsonDeltaJournal.Change(["Mobs", key], true, null)).ToArray();
+            return journal.SavePartialAsync(snapshot.Data, entryProperties, removals, cancellationToken);
+        }
+        return journal.SaveAsync(snapshot.Data, cancellationToken);
+    }
+
+    private static MobResistanceStore.Data ReadMetadata(JsonObject document)
+    {
+        var metadata = new JsonObject();
+        foreach (string property in new[] { "Spells", "Watermarks", "ResistanceResetTimes" })
+        {
+            if (document.TryGetPropertyValue(property, out var value))
+            {
+                metadata[property] = value?.DeepClone();
+            }
+        }
+        var data = metadata.Deserialize<MobResistanceStore.Data>(ResistanceJson)
+            ?? throw new JsonException("Mob resistance metadata is empty.");
+        Validate(data);
+        return data;
+    }
+
+    private static void ValidateIndex(JsonObject document)
+    {
+        foreach (string property in new[] { "Mobs", "Wiki", "Spells", "Watermarks", "ResistanceResetTimes" })
+        {
+            if (document.TryGetPropertyValue(property, out var value) && value is not JsonObject)
+            {
+                throw new JsonException("Mob resistance data contains invalid or null dictionaries.");
+            }
+        }
+        if (document["Mobs"] is JsonObject mobs && mobs.Any(entry => entry.Value is not JsonObject))
+        {
+            throw new JsonException("Mob resistance data contains invalid or null mob buckets.");
+        }
+        if (document["Wiki"] is JsonObject wiki &&
+            wiki.Any(entry => entry.Value is not JsonObject fields || fields["Resistances"] is not JsonObject))
+        {
+            throw new JsonException("Mob resistance data contains invalid or null wiki entries.");
+        }
+        ReadMetadata(document);
+    }
+
+    private static void ValidateCompleteDocument(JsonObject document)
+    {
+        Validate(document.Deserialize<MobResistanceStore.Data>(ResistanceJson)
+            ?? throw new JsonException("Mob resistance data is empty."));
+    }
+
+    private static void ValidateChanges(JsonObject document, JsonDeltaJournal.Batch batch)
+    {
+        // Entries are independent: validate changed entries after every batch, not the entire history.
+        var changed = new JsonObject();
+        foreach (var group in batch.Changes.GroupBy(change => change.Path[0]))
+        {
+            if (document[group.Key] is JsonObject entries && group.All(change => change.Path.Length > 1))
+            {
+                var selected = new JsonObject();
+                foreach (string key in group.Select(change => change.Path[1]).Distinct())
+                {
+                    if (entries.TryGetPropertyValue(key, out var value))
+                    {
+                        selected[key] = value?.DeepClone();
+                    }
+                }
+                changed[group.Key] = selected;
+            }
+            else if (document.TryGetPropertyValue(group.Key, out var value))
+            {
+                changed[group.Key] = value?.DeepClone();
+            }
+        }
+        ValidateCompleteDocument(changed);
+    }
+
+    private sealed class LazyResistanceHistory(JsonDeltaJournal journal, JsonObject document) : IMobResistanceHistorySource
+    {
+        private JsonException? _error;
+        private readonly Dictionary<string, List<(string Mob, SpellOutcome Outcome)>> _spellOutcomes = [];
+        private Dictionary<string, List<(string Mob, string Key, JsonNode? Outcome)>>? _spellIndex;
+
+        internal JsonDeltaJournal Journal { get; } = journal;
+
+        public Dictionary<string, SpellOutcome>? LoadMob(string key)
+        {
+            var entry = SelectEntry("Mobs", key);
+            if (entry is null)
+            {
+                return null;
+            }
+            return entry.Mobs[key];
+        }
+
+        public MobWikiInfo? LoadWiki(string mob)
+        {
+            var entry = SelectEntry("Wiki", mob);
+            if (entry is null)
+            {
+                return null;
+            }
+            return entry.Wiki[mob];
+        }
+
+        public IEnumerable<SpellOutcome> SpellOutcomes(string spell, IReadOnlySet<string> excludedMobs)
+        {
+            Protect();
+            if (!_spellOutcomes.TryGetValue(spell, out var outcomes))
+            {
+                outcomes = ReadSpellOutcomes(spell, excludedMobs);
+                _spellOutcomes.Add(spell, outcomes);
+            }
+            foreach (var (mob, outcome) in outcomes)
+            {
+                if (!excludedMobs.Contains(mob))
+                {
+                    yield return outcome;
+                }
+            }
+        }
+
+        private List<(string Mob, SpellOutcome Outcome)> ReadSpellOutcomes(string spell, IReadOnlySet<string> excludedMobs)
+        {
+            _spellIndex ??= BuildSpellIndex(excludedMobs);
+            var outcomes = new List<(string Mob, SpellOutcome Outcome)>();
+            if (_spellIndex.TryGetValue(spell, out var entries))
+            {
+                foreach (var (mob, key, outcome) in entries)
+                {
+                    if (!excludedMobs.Contains(mob))
+                    {
+                        outcomes.Add((mob, ReadOutcome(mob, key, outcome)));
+                    }
+                }
+            }
+            return outcomes;
+        }
+
+        private Dictionary<string, List<(string Mob, string Key, JsonNode? Outcome)>> BuildSpellIndex(
+            IReadOnlySet<string> excludedMobs)
+        {
+            lock (document)
+            {
+                return BuildSpellIndexCore(excludedMobs);
+            }
+        }
+
+        private Dictionary<string, List<(string Mob, string Key, JsonNode? Outcome)>> BuildSpellIndexCore(
+            IReadOnlySet<string> excludedMobs)
+        {
+            var index = new Dictionary<string, List<(string Mob, string Key, JsonNode? Outcome)>>();
+            if (document["Mobs"] is not JsonObject mobs)
+            {
+                return index;
+            }
+            foreach (var (mob, value) in mobs)
+            {
+                if (excludedMobs.Contains(mob))
+                {
+                    continue;
+                }
+                if (value is not JsonObject entries)
+                {
+                    // A malformed bucket cannot safely be excluded from the shared damage baseline.
+                    SelectEntry("Mobs", mob);
+                    continue;
+                }
+                foreach (var (key, outcome) in entries)
+                {
+                    if (outcome is JsonObject fields && fields["Spell"] is JsonValue spellValue &&
+                        spellValue.TryGetValue<string>(out var name) && !string.IsNullOrWhiteSpace(name))
+                    {
+                        string spell = MobResistanceStore.MobKey(name);
+                        if (!index.TryGetValue(spell, out var entriesForSpell))
+                        {
+                            entriesForSpell = [];
+                            index.Add(spell, entriesForSpell);
+                        }
+                        entriesForSpell.Add((mob, key, outcome));
+                        continue;
+                    }
+                    ReadOutcome(mob, key, outcome);
+                }
+            }
+            return index;
+        }
+
+        private SpellOutcome ReadOutcome(string mob, string key, JsonNode? outcome)
+        {
+            lock (document)
+            {
+                var selected = new JsonObject { [key] = outcome?.DeepClone() };
+                var projection = new JsonObject { ["Mobs"] = new JsonObject { [mob] = selected } };
+                return ReadValidated(projection).Mobs[mob][key];
+            }
+        }
+
+        private MobResistanceStore.Data? SelectEntry(string property, string key)
+        {
+            lock (document)
+            {
+                Protect();
+                if (document[property] is not JsonObject entries || !entries.TryGetPropertyValue(key, out var value))
+                {
+                    return null;
+                }
+                return ReadValidated(new JsonObject
+                {
+                    [property] = new JsonObject { [key] = value?.DeepClone() }
+                });
+            }
+        }
+
+        private MobResistanceStore.Data ReadValidated(JsonObject selected)
+        {
+            try
+            {
+                var data = selected.Deserialize<MobResistanceStore.Data>(ResistanceJson)
+                    ?? throw new JsonException("Mob resistance entry is empty.");
+                Validate(data);
+                return data;
+            }
+            catch (JsonException error)
+            {
+                Interlocked.CompareExchange(ref _error, error, null);
+                throw;
+            }
+        }
+
+        internal void Protect()
+        {
+            if (Volatile.Read(ref _error) is JsonException error)
+            {
+                throw new JsonException("Resistance history could not be loaded; the original document is protected until repair and restart.", error);
+            }
+        }
+
+    }
     private static string LegacySpellCachePath(string path)
     {
         string folder = Path.GetDirectoryName(Path.GetFullPath(path))!;

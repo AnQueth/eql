@@ -1,4 +1,5 @@
 using EqLog.Application.Sessions;
+using EqLog.Overlay.ViewModels;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -18,11 +19,8 @@ public sealed class LevelingOverlayTests
             Source = new Uri("/EqLogOverlay;component/Styles/DatePicker.xaml", UriKind.Relative),
         };
         resources.MergedDictionaries.Add(dateStyles);
-        var dates = new LevelingDateRangePicker();
-        var grid = new LevelingHistoryGrid();
-        var panel = new OverlayPanel("leveling", "Leveling Analyzer", false);
-        panel.SetToolbar(dates);
-        panel.SetAlternateBody(grid);
+        using var vm = LevelingOverlayViewModelTests.CreateViewModel();
+        var panel = new OverlayPanel(vm);
         var host = new Window
         {
             Content = panel,
@@ -38,58 +36,29 @@ public sealed class LevelingOverlayTests
         {
             host.Show();
             host.UpdateLayout();
-            Assert.Equal((int)LevelingPeriod.AllHistory, dates.Preset.SelectedIndex);
-            Assert.Null(dates.From.SelectedDate);
-            Assert.Null(dates.To.SelectedDate);
-            var now = new DateTime(2026, 11, 18, 22, 39, 0);
-            foreach (var (period, start, end) in new[]
-            {
-                (LevelingPeriod.Today, now.Date, now.Date.AddDays(1)),
-                (LevelingPeriod.Yesterday, now.Date.AddDays(-1), now.Date),
-                (LevelingPeriod.LastSevenDays, now.Date.AddDays(-6), now.Date.AddDays(1)),
-                (LevelingPeriod.LastWeek, new DateTime(2026, 11, 9), new DateTime(2026, 11, 16)),
-            })
-            {
-                dates.Preset.SelectedIndex = (int)period;
-                Assert.True(dates.TryGetRange(now, out var range, out var error), error);
-                Assert.Equal((start, end), range);
-                Assert.Equal(start, dates.From.SelectedDate);
-                Assert.Equal(end.AddDays(-1), dates.To.SelectedDate);
-            }
-            dates.From.SelectedDate = new DateTime(2026, 11, 1);
-            dates.To.SelectedDate = new DateTime(2026, 11, 3);
-            Assert.Equal((int)LevelingPeriod.Custom, dates.Preset.SelectedIndex);
-            Assert.True(dates.TryGetRange(now, out var custom, out var customError), customError);
-            Assert.Equal((new DateTime(2026, 11, 1), new DateTime(2026, 11, 4)), custom);
-            dates.To.SelectedDate = new DateTime(2026, 10, 31);
-            Assert.False(dates.TryGetRange(now, out _, out var reversed));
-            Assert.Contains("on or after", reversed);
-            dates.From.Text = "not-a-date";
-            Assert.False(dates.TryGetRange(now, out _, out var invalid));
-            Assert.False(string.IsNullOrEmpty(invalid));
-            dates.Preset.SelectedIndex = (int)LevelingPeriod.AllHistory;
-            Assert.True(dates.TryGetRange(now, out var allHistory, out var allHistoryError), allHistoryError);
-            Assert.Equal(DateTime.MinValue, allHistory.Start);
-            Assert.Null(dates.From.SelectedDate);
-            Assert.Null(dates.To.SelectedDate);
-            dates.To.SelectedDate = new DateTime(2026, 11, 3);
-            Assert.Equal((int)LevelingPeriod.Custom, dates.Preset.SelectedIndex);
-            Assert.True(dates.TryGetRange(now, out var singleDay, out var singleDayError), singleDayError);
-            Assert.Equal((new DateTime(2026, 11, 3), new DateTime(2026, 11, 4)), singleDay);
-            dates.To.SelectedDate = null;
-            Assert.False(dates.TryGetRange(now, out _, out var missingDate));
-            Assert.False(string.IsNullOrEmpty(missingDate));
-            dates.Preset.SelectedIndex = (int)LevelingPeriod.Today;
-            Assert.True(dates.TryGetRange(now.AddDays(1), out var tomorrow, out var rolloverError), rolloverError);
-            Assert.Equal(now.Date.AddDays(1), tomorrow.Start);
-            Assert.Equal(tomorrow.Start, dates.From.SelectedDate);
-            var openButton = Assert.IsType<Button>(dates.From.Template.FindName("PART_Button", dates.From));
+            var preset = Named<ComboBox>(panel, "LevelingDatePreset");
+            var from = Named<DatePicker>(panel, "LevelingFromDate");
+            var to = Named<DatePicker>(panel, "LevelingToDate");
+            Assert.Equal((int)LevelingPeriod.AllHistory, preset.SelectedIndex);
+            Assert.Null(from.SelectedDate);
+            Assert.Equal(System.Globalization.CultureInfo.CurrentCulture.IetfLanguageTag, from.Language.IetfLanguageTag, ignoreCase: true);
+
+            preset.SelectedIndex = (int)LevelingPeriod.Today;
+            Assert.Equal(DateTime.Today, from.SelectedDate);
+            Assert.Equal(DateTime.Today, to.SelectedDate);
+            to.SelectedDate = new DateTime(2026, 11, 3);
+            Assert.Equal((int)LevelingPeriod.Custom, preset.SelectedIndex);
+            Assert.Equal(new DateTime(2026, 11, 3), vm.ToDate);
+
+            var openButton = Assert.IsType<Button>(from.Template.FindName("PART_Button", from));
             openButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             host.UpdateLayout();
-            Assert.True(dates.From.IsDropDownOpen);
-            Assert.True(OverlayPanel.IsInteractive(dates.From));
-            VerifyCalendar(dates.From);
+            Assert.True(from.IsDropDownOpen);
+            Assert.True(OverlayPanel.IsInteractive(from));
+            VerifyCalendar(from);
+            from.IsDropDownOpen = false;
 
+            var now = new DateTime(2026, 11, 18, 22, 39, 0);
             var rows = Enumerable.Range(0, 500).Select(index =>
             {
                 DateTime start = now.AddMinutes(-index);
@@ -97,18 +66,19 @@ public sealed class LevelingOverlayTests
                     index == 0 ? "" : $"{start.AddMinutes(1):d}\n{start.AddMinutes(1):T}",
                     "WIZ / ENC", index, index * 1.25, index == 0, $"XP by zone: Test zone {index}");
             }).ToArray();
-            grid.Update(rows, "");
+            vm.SetGridRows(rows);
             host.UpdateLayout();
+            var table = Named<DataGrid>(panel, "LevelingGrid");
             Assert.Equal(new[] { "Started", "Ended", "Level", "Build at the time", "Kills", "Minutes" },
-                grid.Table.Columns.Select(column => column.Header));
-            Assert.Equal(500, grid.Table.Items.Count);
-            Assert.True(grid.Table.IsReadOnly);
-            Assert.True(grid.Table.EnableRowVirtualization);
-            Assert.True(VirtualizingPanel.GetIsVirtualizing(grid.Table));
-            Assert.True(grid.Table.Columns.Sum(column => column.ActualWidth) <= grid.Table.ActualWidth + 0.1);
+                table.Columns.Select(column => column.Header));
+            Assert.Equal(500, table.Items.Count);
+            Assert.True(table.IsReadOnly);
+            Assert.True(table.EnableRowVirtualization);
+            Assert.True(VirtualizingPanel.GetIsVirtualizing(table));
+            Assert.True(table.Columns.Sum(column => column.ActualWidth) <= table.ActualWidth + 0.1);
             panel.FontSize = 13;
             host.UpdateLayout();
-            var compactRow = Assert.IsType<DataGridRow>(grid.Table.ItemContainerGenerator.ContainerFromIndex(0));
+            var compactRow = Assert.IsType<DataGridRow>(table.ItemContainerGenerator.ContainerFromIndex(0));
             Assert.InRange(compactRow.ActualHeight, 1, 44);
             panel.FontSize = 18;
             host.UpdateLayout();
@@ -118,32 +88,38 @@ public sealed class LevelingOverlayTests
             Assert.True(compactRow.ActualHeight + 1 >= measuredDate.DesiredSize.Height);
             panel.FontSize = 13;
             host.UpdateLayout();
-            grid.Table.SelectedItem = rows[2];
+            table.SelectedItem = rows[2];
             host.UpdateLayout();
-            var selected = Assert.IsType<DataGridRow>(grid.Table.ItemContainerGenerator.ContainerFromIndex(2));
+            Assert.Equal(rows[2], vm.SelectedGridRow);
+            var selected = Assert.IsType<DataGridRow>(table.ItemContainerGenerator.ContainerFromIndex(2));
             Assert.Equal(Visibility.Visible, selected.DetailsVisibility);
             Assert.Contains(Visuals(selected).OfType<TextBlock>(), text => text.Text == rows[2].Details);
             var refreshed = rows.Select((row, index) => index == 2 ? row with { Kills = row.Kills + 1 } : row).ToArray();
-            grid.Update(refreshed, "");
-            Assert.Equal(refreshed[2], grid.Table.SelectedItem);
-            grid.Table.ScrollIntoView(grid.Table.Items[^1]);
+            vm.SetGridRows(refreshed);
+            Assert.Equal(refreshed[2], table.SelectedItem);
+            table.ScrollIntoView(table.Items[^1]);
             host.UpdateLayout();
-            Assert.NotNull(grid.Table.ItemContainerGenerator.ContainerFromIndex(499));
-            Assert.True(Visuals(grid.Table).OfType<DataGridRow>().Count() < 50);
-            panel.SetAlternateBody(null);
-            Assert.DoesNotContain(Visuals(panel), element => ReferenceEquals(element, grid.Table));
-            panel.SetAlternateBody(grid);
+            Assert.NotNull(table.ItemContainerGenerator.ContainerFromIndex(499));
+            Assert.True(Visuals(table).OfType<DataGridRow>().Count() < 50);
+
+            vm.PlacesCommand.Execute(null);
             host.UpdateLayout();
-            Assert.Equal(500, grid.Table.Items.Count);
-            grid.Update([], "The selected dates are invalid.");
-            Assert.Empty(grid.Table.Items);
-            Assert.Contains(Visuals(grid).OfType<TextBlock>(), text => text.Text == "The selected dates are invalid.");
+            Assert.Equal(Visibility.Collapsed, Named<DockPanel>(panel, "LevelingGridBody").Visibility);
+            vm.LevelsCommand.Execute(null);
+            host.UpdateLayout();
+            Assert.Equal(Visibility.Visible, Named<DockPanel>(panel, "LevelingGridBody").Visibility);
+            Assert.Same(table, Named<DataGrid>(panel, "LevelingGrid"));
         }
         finally
         {
             host.Close();
             resources.MergedDictionaries.Remove(dateStyles);
         }
+    }
+
+    private static T Named<T>(DependencyObject root, string name) where T : FrameworkElement
+    {
+        return Assert.Single(Visuals(root).OfType<T>(), element => element.Name == name);
     }
 
     private static void VerifyCalendar(DatePicker picker)
@@ -248,7 +224,7 @@ public sealed class LevelingOverlayTests
                 },
             ],
         };
-        var rows = MainWindow.BuildLevelingGridRows(report, request);
+        var rows = LevelingOverlayViewModel.BuildLevelingGridRows(report, request);
         Assert.Equal(2, rows.Count);
         var current = Assert.Single(rows, row => row.Level == 43);
         Assert.True(current.IsCurrent);
@@ -265,11 +241,11 @@ public sealed class LevelingOverlayTests
         Assert.Contains("Halas: 20% XP gained", completed.Details);
         Assert.Contains("Blackburrow: 56.9% XP gained", completed.Details);
         Assert.Contains("Kedge Keep: 5.7% XP gained", current.Details);
-        Assert.Empty(MainWindow.BuildLevelingContent(report, request, false).Rows);
+        Assert.Empty(LevelingOverlayViewModel.BuildLevelingContent(report, request, false).Rows);
 
         foreach (int minutes in new[] { 5, 15, 30, 60 })
         {
-            var otherWindow = MainWindow.BuildLevelingGridRows(report, request with
+            var otherWindow = LevelingOverlayViewModel.BuildLevelingGridRows(report, request with
             {
                 WindowMinutes = minutes
             });
@@ -289,7 +265,7 @@ public sealed class LevelingOverlayTests
                 new(42, start, start.AddHours(1), false, true, true, []),
             ],
         };
-        var repeated = MainWindow.BuildLevelingGridRows(report, new("Que", start, start.AddDays(2))).ToArray();
+        var repeated = LevelingOverlayViewModel.BuildLevelingGridRows(report, new("Que", start, start.AddDays(2))).ToArray();
         Assert.Equal(2, repeated.Length);
         Assert.True(repeated[0].IsCurrent);
         Assert.Empty(repeated[0].EndText);
@@ -310,11 +286,11 @@ public sealed class LevelingOverlayTests
             }],
         };
         var request = new LevelingRequest("Que", start, start.AddDays(1), GroupByBuild: true);
-        var row = Assert.Single(MainWindow.BuildLevelingGridRows(report, request));
+        var row = Assert.Single(LevelingOverlayViewModel.BuildLevelingGridRows(report, request));
         Assert.Equal("Wizard; Unknown", row.Build);
         Assert.Contains("Halas | Wizard:", row.Details);
         Assert.Contains("Halas | Unknown build:", row.Details);
-        Assert.Equal(row.Build, Assert.Single(MainWindow.BuildLevelingGridRows(report,
+        Assert.Equal(row.Build, Assert.Single(LevelingOverlayViewModel.BuildLevelingGridRows(report,
             request with { GroupByBuild = false })).Build);
     }
 
@@ -332,7 +308,7 @@ public sealed class LevelingOverlayTests
         {
             Levels = [new(null, start, start, false, false, false, [source])],
         };
-        var result = Assert.Single(MainWindow.BuildLevelingGridRows(report, new("Que", start, start.AddDays(1))));
+        var result = Assert.Single(LevelingOverlayViewModel.BuildLevelingGridRows(report, new("Que", start, start.AddDays(1))));
         Assert.Null(result.Level);
         Assert.Equal("Unknown", result.Build);
         Assert.Contains($"Halas: {expected}", result.Details);
@@ -358,7 +334,7 @@ public sealed class LevelingOverlayTests
                 new(40, start.AddDays(-1), null, false, false, false, []),
             ],
         };
-        var rows = MainWindow.BuildLevelingGridRows(report, new("Que", start.AddDays(-1), start.AddDays(1)));
+        var rows = LevelingOverlayViewModel.BuildLevelingGridRows(report, new("Que", start.AddDays(-1), start.AddDays(1)));
         var observed = Assert.Single(rows, row => row.Level == 42);
         Assert.EndsWith(" *", observed.StartText);
         Assert.EndsWith(" *", observed.EndText);
@@ -381,7 +357,7 @@ public sealed class LevelingOverlayTests
                 new(3, november, null, true, true, false, []),
             ],
         };
-        var rows = MainWindow.BuildLevelingGridRows(report, new("Que", october.Date, november.AddDays(1)));
+        var rows = LevelingOverlayViewModel.BuildLevelingGridRows(report, new("Que", october.Date, november.AddDays(1)));
         Assert.Equal(new int?[] { 3, 2, 50 }, rows.Select(row => row.Level));
     }
 
@@ -411,7 +387,7 @@ public sealed class LevelingOverlayTests
         var report = new LevelingReport([shortVisit, qualified], [shortVisits, qualified], null, qualified.End);
         var request = new LevelingRequest("Que", start.Date, start.Date.AddDays(3));
 
-        var ranked = MainWindow.BuildLevelingContent(report, request, true);
+        var ranked = LevelingOverlayViewModel.BuildLevelingContent(report, request, true);
         Assert.DoesNotContain(ranked.Rows, row => row.Left == "Befallen | level 5");
         Assert.Equal("35% XP / 15m", Assert.Single(ranked.Rows, row => row.Left == "Other zone | level 5").Right);
         Assert.Contains(ranked.Rows, row => row.Left.Contains("1 zone/level group(s) excluded"));
@@ -431,7 +407,7 @@ public sealed class LevelingOverlayTests
         var summary = new LevelingSummary("Halas", 42, null, start, start.AddMinutes(minutes),
             minutes * 60, experience, 20, 0, 0, 20, 0, 1, 9000, experience, start);
         var request = new LevelingRequest("Que", start, start.AddDays(1), minutes);
-        var content = MainWindow.BuildLevelingContent(new([summary], [summary], summary, summary.End), request, true);
+        var content = LevelingOverlayViewModel.BuildLevelingContent(new([summary], [summary], summary, summary.End), request, true);
         Assert.Equal(expected, Assert.Single(content.Rows, row => row.Left == "Halas | level 42").Right);
         Assert.Equal(expected, Assert.Single(content.Rows, row => row.Left.StartsWith($"Latest {minutes}m:")).Right);
         Assert.DoesNotContain(content.Rows, row => row.Right.Contains("/hr"));
@@ -445,7 +421,7 @@ public sealed class LevelingOverlayTests
         var summary = new LevelingSummary("Halas", 42, null, start, start.AddMinutes(2),
             120, 10, 5, 0, 0, 5, 0, 1, 300, null, null);
         var report = new LevelingReport([summary], [summary], summary, summary.End);
-        var content = MainWindow.BuildLevelingContent(report, new("Que", start, start.AddDays(1)), true);
+        var content = LevelingOverlayViewModel.BuildLevelingContent(report, new("Que", start, start.AddDays(1)), true);
         Assert.Contains(content.Rows, row => row.Left.Contains("No continuous 15-minute runs"));
         Assert.DoesNotContain(content.Rows, row => row.Left.StartsWith("Latest 15m:"));
         Assert.DoesNotContain(content.Rows, row => row.Left.Contains("No recorded activity"));
@@ -460,7 +436,7 @@ public sealed class LevelingOverlayTests
             3600, 0, 0, 0, 0, 0, 0, 1, 0, 0, start);
         var report = new LevelingReport([idle], [idle], null, idle.End);
         var request = new LevelingRequest("Que", start, start.AddDays(1), 60);
-        var places = MainWindow.BuildLevelingContent(report, request, true);
+        var places = LevelingOverlayViewModel.BuildLevelingContent(report, request, true);
         Assert.DoesNotContain(places.Rows, row => row.Left == "Halas | level 42");
         Assert.Contains(places.Rows, row => row.Left.Contains("No continuous 60-minute runs"));
     }
@@ -469,8 +445,9 @@ public sealed class LevelingOverlayTests
     public void EmptyHistoryExplainsBackfillAndMissingLogs()
     {
         var start = new DateTime(2026, 11, 9);
-        var content = MainWindow.BuildLevelingContent(new([], [], null, null), new("Que", start, start.AddDays(7)), false);
+        var content = LevelingOverlayViewModel.BuildLevelingContent(new([], [], null, null), new("Que", start, start.AddDays(7)), false);
         Assert.Contains(content.Rows, row => row.Left.Contains("imported automatically"));
         Assert.Contains(content.Rows, row => row.Left.Contains("missing or deleted logs"));
     }
 }
+

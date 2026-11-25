@@ -20,6 +20,17 @@ public static class MotePlanningQueries
         return fragment ? MoteTiers.FragmentItemName(tier) : tier;
     }
 
+    /// <summary>
+    /// Gets the highest equipment or spell +rank the planner supports.
+    /// </summary>
+    public static int MaxRank
+    {
+        get
+        {
+            return MoteValues.MaxRank;
+        }
+    }
+
     public static IReadOnlyList<int> Ranks
     {
         get;

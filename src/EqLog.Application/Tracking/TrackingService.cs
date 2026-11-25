@@ -25,7 +25,8 @@ public sealed class TrackingService(ISpellDurationRepository durations, ISpawnRe
     private readonly TrackingPersistenceCoordinator _saves = new(durations, spawns, motes);
     private readonly Dictionary<string, Exception> _loadErrors = new();
 
-    public async Task<TrackingStartup> LoadAsync(CancellationToken cancellationToken = default)
+    public async Task<TrackingStartup> LoadAsync(CancellationToken cancellationToken = default,
+        Func<TrackingStartup, Task>? coreLoaded = null)
     {
         var durationLoad = AttemptAsync("durations", () => durations.LoadAsync(locations.Durations, cancellationToken));
         var spawnLoad = AttemptAsync("spawns", () => spawns.LoadAsync(locations.Spawns, cancellationToken));
@@ -34,14 +35,25 @@ public sealed class TrackingService(ISpellDurationRepository durations, ISpawnRe
         var npcLoad = AttemptAsync("npcs", () => npcs.LoadAsync(locations.Npcs, locations.LegacyNpcs, cancellationToken));
         var levelingLoad = AttemptAsync("leveling", () => leveling.LoadAsync(
             Path.Combine(locations.Folder, "leveling-history.json"), cancellationToken));
-        await Task.WhenAll(durationLoad, spawnLoad, moteLoad, mobLoad, npcLoad, levelingLoad).ConfigureAwait(false);
-        TrackingLoadFailure[] failures;
-        lock (_loadErrors)
+        var all = Task.WhenAll(durationLoad, spawnLoad, moteLoad, mobLoad, npcLoad, levelingLoad);
+        if (coreLoaded is not null)
         {
-            failures = _loadErrors.Select(pair => new TrackingLoadFailure(pair.Key, pair.Value)).ToArray();
+            await Task.WhenAll(durationLoad, spawnLoad, moteLoad, npcLoad, levelingLoad).ConfigureAwait(false);
+            await coreLoaded(CreateStartup(null)).ConfigureAwait(false);
         }
-        return new(durationLoad.Result ?? new(), spawnLoad.Result ?? new(), moteLoad.Result ?? new(),
-            mobLoad.Result, npcLoad.Result, failures, levelingLoad.Result);
+        await all.ConfigureAwait(false);
+        return CreateStartup(mobLoad.Result);
+
+        TrackingStartup CreateStartup(MobResistanceStore? loadedMobs)
+        {
+            TrackingLoadFailure[] failures;
+            lock (_loadErrors)
+            {
+                failures = _loadErrors.Select(pair => new TrackingLoadFailure(pair.Key, pair.Value)).ToArray();
+            }
+            return new(durationLoad.Result ?? new(), spawnLoad.Result ?? new(), moteLoad.Result ?? new(),
+                loadedMobs, npcLoad.Result, failures, levelingLoad.Result);
+        }
     }
 
     private async Task<T?> AttemptAsync<T>(string store, Func<Task<T>> load) where T : class

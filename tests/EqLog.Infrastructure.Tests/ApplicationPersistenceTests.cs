@@ -4,11 +4,62 @@ using EqLog.Application.Tracking;
 using EqLog.Application.Wiki;
 using EqLog.Application.Sessions;
 using EqLog.Infrastructure.GameFiles;
+using EqLog.Core.Tracking;
+using System.Text.Json;
 
 namespace EqLog.Infrastructure.Tests;
 
 public sealed class ApplicationPersistenceTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task IndependentTrackingAppearsBeforeResistanceHistoryFinishes(bool damagedResistanceHistory)
+    {
+        var mobs = new PendingMobRepository();
+        await using var fixture = new Fixture(blockSettings: false, mobs);
+        string path = Path.Combine(fixture.Folder, "spell-durations.json");
+        var repository = new SpellDurationRepository();
+        var durations = await repository.LoadAsync(path);
+        durations.AddSample("Fire +2", 75, DateTime.UtcNow);
+        await repository.SaveAsync(path, durations.ExportData()!);
+        var available = new TaskCompletionSource<TrackingStartup>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var loading = fixture.Tracking.LoadAsync(coreLoaded: state =>
+        {
+            available.SetResult(state);
+            return Task.CompletedTask;
+        });
+        var partial = await available.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.False(loading.IsCompleted);
+        Assert.Equal(75, Assert.Single(partial.Durations.List()).LearnedSeconds);
+        Assert.NotNull(partial.Npcs);
+        Assert.Null(partial.Mobs);
+
+        var mobHistory = new MobResistanceStore();
+        if (damagedResistanceHistory)
+        {
+            mobs.Loaded.SetException(new JsonException("Damaged resistance journal."));
+        }
+        else
+        {
+            mobs.Loaded.SetResult(mobHistory);
+        }
+        var complete = await loading.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Same(partial.Durations, complete.Durations);
+        Assert.Same(partial.Npcs, complete.Npcs);
+        if (damagedResistanceHistory)
+        {
+            Assert.Equal("mobs", Assert.Single(complete.Failures).Store);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Tracking.SaveMobsAsync(mobHistory));
+        }
+        else
+        {
+            Assert.Same(mobHistory, complete.Mobs);
+            Assert.Empty(complete.Failures);
+        }
+    }
+
     [Theory]
     [InlineData(true, false, PersistedFeature.Npcs)]
     [InlineData(false, true, PersistedFeature.Mobs)]
@@ -74,6 +125,7 @@ public sealed class ApplicationPersistenceTests
         {
             get;
         }
+        public TrackingService Tracking { get; }
         private readonly WikiService _wiki;
 
         public GameSession Session(bool mobsWritable, bool npcsWritable)
@@ -81,7 +133,7 @@ public sealed class ApplicationPersistenceTests
             return new(new(new(), new(), new(), mobsWritable ? new() : null, npcsWritable ? new() : null, []));
         }
 
-        public Fixture(bool blockSettings)
+        public Fixture(bool blockSettings, IMobResistanceRepository? mobLoader = null)
         {
             Directory.CreateDirectory(Folder);
             string settings = Path.Combine(Folder, "settings.json");
@@ -92,8 +144,8 @@ public sealed class ApplicationPersistenceTests
                 settings = Path.Combine(blocked, "settings.json");
             }
             var mobs = new MobResistanceRepository();
-            var tracking = new TrackingService(new SpellDurationRepository(), new SpawnRepository(), new MoteRepository(),
-                mobs, new NpcCompendiumRepository(), new TrackingResetRepository(),
+            Tracking = new TrackingService(new SpellDurationRepository(), new SpawnRepository(), new MoteRepository(),
+                mobLoader ?? mobs, new NpcCompendiumRepository(), new TrackingResetRepository(),
                 new(Folder, Path.Combine(Folder, "spell-durations.json"), Path.Combine(Folder, "spawn-timers.json"),
                     Path.Combine(Folder, "motes.json"), Path.Combine(Folder, "mob-resistances.json"),
                     Path.Combine(Folder, "npc-compendium"), Path.Combine(Folder, "npc-compendium.json")),
@@ -104,13 +156,33 @@ public sealed class ApplicationPersistenceTests
             inventory.ObserveLoot(new("Que", "log", 1, "Item", 1, true, DateTime.UtcNow));
             _wiki = new(new WikiTransport(new HttpClient(new NoNetwork()), TimeSpan.Zero, ownsHttp: true), new(),
                 new WikiCacheRepository(Folder, mobRepository: mobs));
-            Service = new(new SettingsService(new SettingsRepository(settings)), tracking, inventory, _wiki);
+            Service = new(new SettingsService(new SettingsRepository(settings)), Tracking, inventory, _wiki);
         }
 
         public async ValueTask DisposeAsync()
         {
             await _wiki.DisposeAsync();
             Directory.Delete(Folder, true);
+        }
+    }
+
+    private sealed class PendingMobRepository : IMobResistanceRepository
+    {
+        public TaskCompletionSource<MobResistanceStore> Loaded { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<MobResistanceStore> LoadAsync(string path, CancellationToken cancellationToken = default)
+        {
+            return Loaded.Task.WaitAsync(cancellationToken);
+        }
+
+        public Task SaveAsync(string path, MobResistanceStore store, CancellationToken cancellationToken = default)
+        {
+            throw new InvalidOperationException("No writes should occur while checking startup.");
+        }
+
+        public Task ResetWikiCachesAsync(string path, MobResistanceStore store, CancellationToken cancellationToken = default)
+        {
+            throw new InvalidOperationException("No reset should occur while checking startup.");
         }
     }
 

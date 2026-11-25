@@ -1,0 +1,96 @@
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
+
+namespace EqLog.Overlay.Mvvm;
+
+/// <summary>
+/// An <see cref="ObservableCollection{T}"/> that can be reconciled against a new projection. Unchanged leading and
+/// trailing items keep their instances (so containers, selection and expansion survive); large rewrites raise a
+/// single reset instead of one notification per item.
+/// </summary>
+public class BulkObservableCollection<T> : ObservableCollection<T>
+{
+    /// <summary>More changed items than this produce one reset notification.</summary>
+    public const int ResetThreshold = 64;
+
+    /// <summary>Replaces every item and raises one reset notification.</summary>
+    public void ReplaceAll(IEnumerable<T> items)
+    {
+        CheckReentrancy();
+        var copy = items.ToList();
+        Items.Clear();
+        foreach (var item in copy)
+        {
+            Items.Add(item);
+        }
+        OnPropertyChanged(new PropertyChangedEventArgs(nameof(Count)));
+        OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
+        OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+    }
+
+    /// <summary>
+    /// Makes this collection match <paramref name="source"/>. Items for which <paramref name="matches"/> is true are
+    /// kept; others are created with <paramref name="create"/>.
+    /// </summary>
+    /// <returns><see langword="true"/> when the collection changed.</returns>
+    public bool Reconcile<TSource>(IReadOnlyList<TSource> source, Func<T, TSource, bool> matches, Func<TSource, T> create)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(matches);
+        ArgumentNullException.ThrowIfNull(create);
+        int prefix = 0;
+        while (prefix < Count && prefix < source.Count && matches(this[prefix], source[prefix]))
+        {
+            prefix++;
+        }
+
+        int suffix = 0;
+        while (suffix < Count - prefix && suffix < source.Count - prefix &&
+            matches(this[Count - 1 - suffix], source[source.Count - 1 - suffix]))
+        {
+            suffix++;
+        }
+
+        int remove = Count - prefix - suffix;
+        int insert = source.Count - prefix - suffix;
+        if (remove == 0 && insert == 0)
+        {
+            return false;
+        }
+
+        if (Math.Max(remove, insert) > ResetThreshold)
+        {
+            var merged = new List<T>(source.Count);
+            for (int i = 0; i < prefix; i++)
+            {
+                merged.Add(this[i]);
+            }
+            for (int i = prefix; i < source.Count - suffix; i++)
+            {
+                merged.Add(create(source[i]));
+            }
+            for (int i = Count - suffix; i < Count; i++)
+            {
+                merged.Add(this[i]);
+            }
+            ReplaceAll(merged);
+            return true;
+        }
+
+        int replace = Math.Min(remove, insert);
+        for (int i = 0; i < replace; i++)
+        {
+            this[prefix + i] = create(source[prefix + i]);
+        }
+        for (int i = replace; i < remove; i++)
+        {
+            RemoveAt(prefix + replace);
+        }
+        for (int i = replace; i < insert; i++)
+        {
+            Insert(prefix + i, create(source[prefix + i]));
+        }
+        return true;
+    }
+}

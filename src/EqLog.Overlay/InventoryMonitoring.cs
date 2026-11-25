@@ -6,6 +6,7 @@ namespace EqLog.Overlay;
 
 public partial class MainWindow
 {
+    private IReadOnlyList<ExaltationLocation> _exaltationLocations = [];
     private InventoryFileStamp? _inventoryLoaded
     {
         get
@@ -26,7 +27,6 @@ public partial class MainWindow
         {
             _exaltationLocations = InventoryQueries.ExaltationLocations(_inventoryRows);
             RefreshMergeView();
-            RefreshMotePlan();
         }
     }
 

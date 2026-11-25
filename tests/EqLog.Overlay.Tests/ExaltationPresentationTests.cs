@@ -1,4 +1,5 @@
 using EqLog.Core;
+using EqLog.Overlay.ViewModels;
 using Xunit;
 
 namespace EqLog.Overlay.Tests;
@@ -13,7 +14,7 @@ public sealed class ExaltationPresentationTests
         var info = new ItemEffectInfo("Drums", "https://eqlwiki.com/Drums", DateTime.UtcNow, true,
             [new("Focus", "Percussion Resonance 14", null)], "");
 
-        var card = MainWindow.BuildExaltationCard([candidate], info);
+        var card = ExaltationsOverlayViewModel.BuildExaltationCard([candidate], info);
 
         Assert.Equal("Expected exaltation (unverified): Drums (Exaltation)", card.Left);
         var table = Assert.IsType<OverlayTable>(card.Table);
@@ -32,7 +33,7 @@ public sealed class ExaltationPresentationTests
             DateTime.UtcNow, true,
             [new("Focus", "Improved Damage III", "https://eqlwiki.com/Improved_Damage_III", "Increases spell damage.")], "");
 
-        var card = MainWindow.BuildExaltationCard([location], info);
+        var card = ExaltationsOverlayViewModel.BuildExaltationCard([location], info);
 
         Assert.Equal("Exaltation: White Dragonscale Cloak (Exaltation)", card.Left);
         Assert.Null(card.Link);
@@ -62,7 +63,7 @@ public sealed class ExaltationPresentationTests
             new("Tome (Exaltation)", "Tome", 2, false, null, "Inventory slot 5, bag slot 23", null),
         ];
 
-        var card = MainWindow.BuildExaltationCard(copies, null);
+        var card = ExaltationsOverlayViewModel.BuildExaltationCard(copies, null);
 
         var table = Assert.IsType<OverlayTable>(card.Table);
         Assert.Collection(table.Rows.Skip(2),
@@ -83,7 +84,7 @@ public sealed class ExaltationPresentationTests
         var location = new ExaltationLocation("Cap (Exaltation)", "Cap", 1, true, null, "Head-Slot8", "8");
         var info = new ItemEffectInfo("Cap", "https://eqlwiki.com/Cap", DateTime.UtcNow, found, [], "");
 
-        var card = MainWindow.BuildExaltationCard([location], info, "Lookup failed; cached data kept.");
+        var card = ExaltationsOverlayViewModel.BuildExaltationCard([location], info, "Lookup failed; cached data kept.");
 
         Assert.Equal("Exaltation: Cap (Exaltation)", card.Left);
         Assert.Equal("Lookup failed; cached data kept.", card.Details);
@@ -98,7 +99,7 @@ public sealed class ExaltationPresentationTests
         var stored = new ExaltationLocation("Drums (Exaltation)", "Drums", 1, false,
             null, "Exalt storage (Augmentation)", null, InExaltStorage: true);
 
-        var card = MainWindow.BuildExaltationCard([stored], null);
+        var card = ExaltationsOverlayViewModel.BuildExaltationCard([stored], null);
 
         var table = Assert.IsType<OverlayTable>(card.Table);
         Assert.Equal(["Installed in", "Not installed (in exalt storage)"], table.Rows[2]);

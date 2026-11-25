@@ -13,6 +13,70 @@ public class EngineTests
     }
 
     [Fact]
+    public void Snapshots_ReuseUnchangedProjectionsButAdvanceTimersAndHealingWindow()
+    {
+        var durations = new SpellDurationStore();
+        durations.SetOverride("Allure X", 60);
+        var engine = new LogEngine(durations) { CharacterName = "Quethrosar" };
+        engine.ProcessLines([
+            L(0, "Guardian Golem hits YOU for 10 points of damage."),
+            L(1, "You slash Guardian Golem for 100 points of damage."),
+            L(2, "You begin casting Allure X."),
+            L(3, "heart harpie has been charmed."),
+            L(4, "You healed Quethrosar for 20 hit points by Life Leech."),
+            L(5, "--You have looted a Gnoll Fang from a gnoll's corpse.--"),
+            L(6, "You have become better at Forage! (100)"),
+        ]);
+        var first = engine.Snapshot(T0.AddSeconds(10));
+        var next = engine.Snapshot(T0.AddSeconds(11));
+
+        Assert.Same(first.DamageTaken, next.DamageTaken);
+        Assert.Same(first.Loot, next.Loot);
+        Assert.Same(first.Forage, next.Forage);
+        Assert.Same(first.Spells, next.Spells);
+        Assert.Same(first.CurrentFight, next.CurrentFight);
+        Assert.True(Assert.Single(next.Timers).RemainingSeconds < Assert.Single(first.Timers).RemainingSeconds);
+        Assert.True(first.Heals.OutgoingRecentHps > 0);
+
+        var expired = engine.Snapshot(T0.AddSeconds(40));
+        Assert.False(Assert.IsType<FightSnapshot>(expired.CurrentFight).IsActive);
+        Assert.True(Assert.IsType<FightSnapshot>(first.CurrentFight).IsActive);
+        Assert.Equal(0, expired.Heals.OutgoingRecentHps);
+
+        engine.ProcessLines([L(41, "You begin casting Malise X."),
+            L(42, "--You have looted a Gnoll Fang from a gnoll's corpse.--"),
+            L(43, "You have become better at Forage! (101)"),
+            L(44, "Guardian Golem hits YOU for 20 points of damage.")]);
+        var changed = engine.Snapshot(T0.AddSeconds(45));
+        Assert.NotSame(first.Spells, changed.Spells);
+        Assert.NotSame(first.Loot, changed.Loot);
+        Assert.NotSame(first.Forage, changed.Forage);
+        Assert.NotSame(first.DamageTaken, changed.DamageTaken);
+        Assert.Equal(1, first.Loot.ItemsLooted);
+        Assert.Equal(2, changed.Loot.ItemsLooted);
+        Assert.Equal(101, changed.Forage.Skill);
+    }
+
+    [Fact]
+    public void Snapshots_CacheRespectsRowLimitsAndSessionReset()
+    {
+        var engine = new LogEngine();
+        engine.ProcessLines([L(0, "You begin casting Allure X."),
+            L(1, "You begin casting Malise X.")]);
+        var single = engine.Snapshot(T0.AddSeconds(2), topRows: 1);
+        var both = engine.Snapshot(T0.AddSeconds(2), topRows: 2);
+        Assert.Single(single.Spells.Spells);
+        Assert.Equal(2, both.Spells.Spells.Count);
+        engine.ResetSession();
+        var reset = engine.Snapshot(T0.AddSeconds(3), topRows: 2);
+        Assert.Empty(reset.Spells.Spells);
+        Assert.NotSame(both.Spells, reset.Spells);
+        Assert.NotSame(both.Loot, reset.Loot);
+        Assert.NotSame(both.Forage, reset.Forage);
+        Assert.NotSame(both.DamageTaken, reset.DamageTaken);
+    }
+
+    [Fact]
     public void FightSnapshotIncludesLoggedIncomingDamageForYouPetAndGroupMember()
     {
         var engine = new LogEngine { CharacterName = "Quethrosar" };

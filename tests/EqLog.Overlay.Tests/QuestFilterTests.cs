@@ -1,5 +1,6 @@
 using EqLog.Application.Inventory;
 using EqLog.Core;
+using EqLog.Overlay.ViewModels;
 using Xunit;
 
 namespace EqLog.Overlay.Tests;
@@ -20,16 +21,16 @@ public sealed class QuestFilterTests
             ["New Mask"] = new("New Mask", at, [new("Zulu quest", "url")]),
         };
 
-        var recent = MainWindow.BuildQuestOpportunities(inventory, "Que", cache, "", true, CancellationToken.None);
+        var recent = QuestsOverlayViewModel.BuildQuestOpportunities(inventory, "Que", cache, "", true, CancellationToken.None);
         Assert.Equal(["Zulu quest", "Alpha quest"], recent.Rows.Where(row => row.QuestHeading).Select(row => row.Left));
-        var filtered = MainWindow.BuildQuestOpportunities(inventory, "Que", cache, " MASK ", true, CancellationToken.None);
+        var filtered = QuestsOverlayViewModel.BuildQuestOpportunities(inventory, "Que", cache, " MASK ", true, CancellationToken.None);
         Assert.Equal("Zulu quest", filtered.Rows[0].Left);
         Assert.Equal("New Mask +1", filtered.Rows[1].LootItem);
         Assert.NotNull(filtered.Rows[1].Table);
         Assert.NotNull(filtered.Rows[0].Link);
-        var alphabetical = MainWindow.BuildQuestOpportunities(inventory, "Que", cache, "", false, CancellationToken.None);
+        var alphabetical = QuestsOverlayViewModel.BuildQuestOpportunities(inventory, "Que", cache, "", false, CancellationToken.None);
         Assert.Equal("Alpha quest", alphabetical.Rows[0].Left);
-        var missing = MainWindow.BuildQuestOpportunities(inventory, "Other", cache, "missing", true, CancellationToken.None);
+        var missing = QuestsOverlayViewModel.BuildQuestOpportunities(inventory, "Other", cache, "missing", true, CancellationToken.None);
         Assert.Equal("No quests or items match your filter.", Assert.Single(missing.Rows).Left);
     }
 
@@ -38,7 +39,7 @@ public sealed class QuestFilterTests
     {
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
-        Assert.Throws<OperationCanceledException>(() => MainWindow.BuildQuestOpportunities(
+        Assert.Throws<OperationCanceledException>(() => QuestsOverlayViewModel.BuildQuestOpportunities(
             InventoryReadModel.Empty, "Que", new Dictionary<string, QuestLookupResult>(), "", true, cancellation.Token));
     }
 }
