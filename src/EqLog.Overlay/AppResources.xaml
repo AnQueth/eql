@@ -6,6 +6,7 @@
             <ResourceDictionary Source="Styles/InlineDetails.xaml" />
             <ResourceDictionary Source="Styles/WikiLabel.xaml" />
         </ResourceDictionary.MergedDictionaries>
+        <ScaleTransform x:Key="DisplayScaleTransform" ScaleX="1" ScaleY="1" />
         <Style TargetType="Control">
             <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="Foreground" Value="{DynamicResource NightText}" />
@@ -436,7 +437,11 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
+        <Style TargetType="ToolTip">
+            <Setter Property="LayoutTransform" Value="{DynamicResource DisplayScaleTransform}" />
+        </Style>
         <Style TargetType="ContextMenu">
+            <Setter Property="LayoutTransform" Value="{DynamicResource DisplayScaleTransform}" />
             <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="Foreground" Value="{DynamicResource NightText}" />
             <Setter Property="Background" Value="{DynamicResource NightSurface}" />

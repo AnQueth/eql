@@ -6,7 +6,8 @@
     <UserControl.DataContext>
         <vm:ThemeEditorViewModel />
     </UserControl.DataContext>
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <ScrollViewer x:Name="ThemeEditorScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+        <Grid MinWidth="340" Width="{Binding ViewportWidth, ElementName=ThemeEditorScroll}">
         <StackPanel Margin="8">
             <TextBlock Text="THEME STUDIO" FontSize="20" FontWeight="Bold"
                        Foreground="{DynamicResource Pumpkin}" />
@@ -259,5 +260,6 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
         </StackPanel>
+        </Grid>
     </ScrollViewer>
 </UserControl>

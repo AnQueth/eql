@@ -473,8 +473,12 @@ public sealed partial class DockWindow : Window
 
         tile.ResizeGrip.DragDelta += (_, e) =>
         {
-            tile.Width = Math.Max(MinTileWidth, tile.Width + e.HorizontalChange);
-            tile.Height = Math.Max(MinTileHeight, tile.Height + e.VerticalChange);
+            var transform = tile.ResizeGrip.TransformToAncestor(tile);
+            var origin = transform.Transform(new Point());
+            var end = transform.Transform(new Point(e.HorizontalChange, e.VerticalChange));
+            var delta = end - origin;
+            tile.Width = Math.Max(MinTileWidth, tile.Width + delta.X);
+            tile.Height = Math.Max(MinTileHeight, tile.Height + delta.Y);
             dockPlacement.DockWidth = tile.Width;
             dockPlacement.DockHeight = tile.Height;
             _anchorKey = panel.Key;

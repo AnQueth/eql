@@ -47,48 +47,53 @@
     </Window.Resources>
 
     <DockPanel>
-        <DockPanel DockPanel.Dock="Top" Margin="8,6,8,2">
-            <ToggleButton x:Name="SideToggle" DockPanel.Dock="Left" Content="&#x2699; Settings"
-                          IsChecked="{Binding IsSidePanelOpen, Mode=OneWay}" Padding="8,2" Margin="0,0,10,0"
-                          ToolTip="Show or hide the settings panel" Focusable="False"
-                          local:UsageTracking.Action="ToggleSettings" Click="SideToggle_Click" />
-            <ContentControl x:Name="Notice" Content="{Binding Notice}" Style="{StaticResource TopBarNotice}" />
-            <!-- The source is MainWindow's progress bar, so it is the data context rather than the content. -->
-            <ContentControl x:Name="HistoryLoadingNotice" DataContext="{Binding LoadingNotice}" Margin="0,0,10,0"
-                            DockPanel.Dock="Left">
-                <ContentControl.Style>
-                    <Style TargetType="ContentControl">
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding}" Value="{x:Null}">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </ContentControl.Style>
-                <ContentControl.Template>
-                    <ControlTemplate TargetType="ContentControl">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding Tag}" Margin="0,0,8,0" MaxWidth="220"
-                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource NightText}" />
-                            <ProgressBar Value="{Binding Value, Mode=OneWay}"
-                                         IsIndeterminate="{Binding IsIndeterminate, Mode=OneWay}"
-                                         Maximum="1" Width="70" Height="6" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </ControlTemplate>
-                </ContentControl.Template>
-            </ContentControl>
-            <CheckBox x:Name="AutoArrangeBox" DockPanel.Dock="Right" Content="Auto-arrange"
-                      IsChecked="{Binding AutoArrange}" VerticalAlignment="Center" Margin="0,0,10,0"
-                      Foreground="{DynamicResource NightText}"
-                      ToolTip="Automatically rearrange docked panels to fill empty space. Untick so panels only move when you drag or resize them."
-                      local:UsageTracking.Action="ToggleAutoArrange" Click="AutoArrange_Click" />
-            <Button x:Name="WhatsNewButton" DockPanel.Dock="Right" Content="What's New" Padding="8,2" Margin="0,0,10,0"
-                    ToolTip="Read what's new and how to use this release's features" Click="WhatsNew_Click" />
-            <TextBlock Text="{Binding DragHint}" VerticalAlignment="Center" Foreground="{DynamicResource NightMuted}" />
-        </DockPanel>
+        <ScrollViewer x:Name="MainToolbarScroll" DockPanel.Dock="Top"
+                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <DockPanel x:Name="MainToolbar" Margin="8,6,8,2"
+                       LayoutTransform="{DynamicResource DisplayScaleTransform}">
+                <ToggleButton x:Name="SideToggle" DockPanel.Dock="Left" Content="&#x2699; Settings"
+                              IsChecked="{Binding IsSidePanelOpen, Mode=OneWay}" Padding="8,2" Margin="0,0,10,0"
+                              ToolTip="Show or hide the settings panel" Focusable="False"
+                              local:UsageTracking.Action="ToggleSettings" Click="SideToggle_Click" />
+                <ContentControl x:Name="Notice" Content="{Binding Notice}" Style="{StaticResource TopBarNotice}" />
+                <!-- The source is MainWindow's progress bar, so it is the data context rather than the content. -->
+                <ContentControl x:Name="HistoryLoadingNotice" DataContext="{Binding LoadingNotice}" Margin="0,0,10,0"
+                                DockPanel.Dock="Left">
+                    <ContentControl.Style>
+                        <Style TargetType="ContentControl">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding}" Value="{x:Null}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ContentControl.Style>
+                    <ContentControl.Template>
+                        <ControlTemplate TargetType="ContentControl">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Tag}" Margin="0,0,8,0" MaxWidth="220"
+                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource NightText}" />
+                                <ProgressBar Value="{Binding Value, Mode=OneWay}"
+                                             IsIndeterminate="{Binding IsIndeterminate, Mode=OneWay}"
+                                             Maximum="1" Width="70" Height="6" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </ControlTemplate>
+                    </ContentControl.Template>
+                </ContentControl>
+                <CheckBox x:Name="AutoArrangeBox" DockPanel.Dock="Right" Content="Auto-arrange"
+                          IsChecked="{Binding AutoArrange}" VerticalAlignment="Center" Margin="0,0,10,0"
+                          Foreground="{DynamicResource NightText}"
+                          ToolTip="Automatically rearrange docked panels to fill empty space. Untick so panels only move when you drag or resize them."
+                          local:UsageTracking.Action="ToggleAutoArrange" Click="AutoArrange_Click" />
+                <Button x:Name="WhatsNewButton" DockPanel.Dock="Right" Content="What's New" Padding="8,2" Margin="0,0,10,0"
+                        ToolTip="Read what's new and how to use this release's features" Click="WhatsNew_Click" />
+                <TextBlock Text="{Binding DragHint}" VerticalAlignment="Center" Foreground="{DynamicResource NightMuted}" />
+            </DockPanel>
+        </ScrollViewer>
 
-        <DockPanel DockPanel.Dock="Top" Margin="8,4,8,0">
+        <DockPanel x:Name="WorkspaceToolbar" DockPanel.Dock="Top" Margin="8,4,8,0"
+                   LayoutTransform="{DynamicResource DisplayScaleTransform}">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top" Margin="4,0,8,0">
                 <Button Content="+" Padding="10,4" Margin="4,0,0,4" ToolTip="Create a workspace"
                         Click="CreateWorkspace_Click" />
@@ -154,12 +159,14 @@
                                 BorderBrush="{DynamicResource Pumpkin}" Background="{DynamicResource NightRaised}"
                                 TextElement.Foreground="{DynamicResource Pumpkin}">
                             <TextBlock x:Name="DropPreviewText" TextWrapping="Wrap" HorizontalAlignment="Center"
-                                       VerticalAlignment="Center" Margin="10" FontWeight="SemiBold" />
+                                       VerticalAlignment="Center" Margin="10" FontWeight="SemiBold"
+                                       LayoutTransform="{DynamicResource DisplayScaleTransform}" />
                         </Border>
                     </Canvas>
                 </ScrollViewer>
                 <TextBlock Margin="12" TextWrapping="Wrap" VerticalAlignment="Top" IsHitTestVisible="False"
                            Foreground="{DynamicResource NightMuted}"
+                           LayoutTransform="{DynamicResource DisplayScaleTransform}"
                            Visibility="{Binding IsWorkspaceEmpty, Converter={StaticResource DockVisibleWhenTrue}}"
                            Text="No panels are in this workspace. Tick &quot;docked&quot; next to an overlay in Settings, or click &#x2199; Dock on a floating overlay (while unlocked)." />
             </Grid>

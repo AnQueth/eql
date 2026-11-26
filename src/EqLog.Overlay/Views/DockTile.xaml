@@ -4,7 +4,7 @@
       VerticalAlignment="Top" AllowDrop="True">
     <Border x:Name="PanelHost" />
     <Thumb x:Name="ResizeGrip" Width="12" Height="12" HorizontalAlignment="Right" VerticalAlignment="Bottom"
-           Cursor="SizeNWSE" ToolTip="Drag to resize">
+           Cursor="SizeNWSE" ToolTip="Drag to resize" LayoutTransform="{DynamicResource DisplayScaleTransform}">
         <Thumb.Template>
             <ControlTemplate TargetType="Thumb">
                 <Path Data="M 12,0 L 12,12 L 0,12 Z" Fill="#AAFFD700" />

@@ -61,8 +61,12 @@ public sealed class OverlayWindow : Window
         {
             if (!_locked && Content == Panel)
             {
-                Left += e.HorizontalChange;
-                Top += e.VerticalChange;
+                // Thumb deltas use the scaled grip's coordinates, while window positions do not.
+                var transform = panel.DragHandle.TransformToAncestor(this);
+                var origin = transform.Transform(new Point());
+                var end = transform.Transform(new Point(e.HorizontalChange, e.VerticalChange));
+                Left += end.X - origin.X;
+                Top += end.Y - origin.Y;
                 e.Handled = true;
             }
         };

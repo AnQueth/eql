@@ -59,6 +59,7 @@ public sealed class OverlayChromeTests
                 var buttonStyle = Assert.IsType<Style>(application.Resources[typeof(Button)]);
                 var menuItemStyle = Assert.IsType<Style>(application.Resources[typeof(MenuItem)]);
                 var contextMenuStyle = Assert.IsType<Style>(application.Resources[typeof(ContextMenu)]);
+                VerifyDisplayScalePopups(application);
                 application.Resources = new ResourceDictionary();
                 foreach (string key in new[] { "NightBackground", "NightBorder", "Pumpkin", "NightRaised",
                     "NightSurface", "NightText", "NightMuted", "Hover", "Selection" })
@@ -150,6 +151,170 @@ public sealed class OverlayChromeTests
         typeof(System.Windows.Application)
             .GetProperty("IsShuttingDown", BindingFlags.NonPublic | BindingFlags.Static)!
             .SetValue(null, false);
+    }
+
+    private static void VerifyDisplayScalePopups(System.Windows.Application application)
+    {
+        var originalScale = application.Resources["DisplayScaleTransform"];
+        var combo = new ComboBox { Width = 180, HorizontalAlignment = HorizontalAlignment.Left };
+        combo.Items.Add("First item");
+        var date = new DatePicker { Width = 180, HorizontalAlignment = HorizontalAlignment.Left };
+        var submenuItem = new MenuItem { Header = "Submenu item" };
+        var menuItem = new MenuItem { Header = "Menu item" };
+        menuItem.Items.Add(submenuItem);
+        var menu = new ContextMenu();
+        menu.Items.Add(menuItem);
+        var tipText = new TextBlock { Text = "Tooltip", FontSize = 14 };
+        var tip = new ToolTip { Content = tipText };
+        var button = new Button { Content = "Menu", ContextMenu = menu, ToolTip = tip };
+        var root = new StackPanel();
+        root.SetResourceReference(FrameworkElement.LayoutTransformProperty, "DisplayScaleTransform");
+        root.Children.Add(combo);
+        root.Children.Add(date);
+        root.Children.Add(button);
+        var host = new Window
+        {
+            Content = root,
+            Width = 600,
+            Height = 500,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+        };
+        try
+        {
+            host.Show();
+            var normal = MeasurePopups(1);
+            var smaller = MeasurePopups(0.5);
+            var larger = MeasurePopups(2);
+            string[] names = ["combo box", "calendar", "context menu", "submenu", "tooltip"];
+            for (int index = 0; index < names.Length; index++)
+            {
+                double smallRatio = smaller[index] / normal[index];
+                double largeRatio = larger[index] / normal[index];
+                Assert.True(smallRatio is > 0.4 and < 0.6,
+                    $"{names[index]} scaled by {smallRatio:F2}, not 0.50.");
+                Assert.True(largeRatio is > 1.9 and < 2.1,
+                    $"{names[index]} scaled by {largeRatio:F2}, not 2.00.");
+            }
+
+            var reset = new ResetTrackingDialog { ShowActivated = false };
+            try
+            {
+                reset.Show();
+                reset.UpdateLayout();
+                Assert.True(reset.ActualHeight <= SystemParameters.WorkArea.Height + 1);
+                var viewer = Assert.IsType<ScrollViewer>(reset.Content);
+                var choice = Assert.IsType<TextBlock>(reset.RebuildOption.Content);
+                choice.BringIntoView();
+                FlushLayout();
+                var choiceBounds = choice.TransformToAncestor(viewer)
+                    .TransformBounds(new Rect(choice.RenderSize));
+                Assert.True(choiceBounds.Left >= -1 && choiceBounds.Right <= viewer.ViewportWidth + 1,
+                    $"Reset choice was outside the dialog's viewport: {choiceBounds}, width {viewer.ViewportWidth}.");
+                reset.ResetButton.BringIntoView();
+                FlushLayout();
+                Assert.True(reset.ResetButton.IsVisible);
+                Assert.True(viewer.ScrollableHeight > 0 || reset.ActualHeight < SystemParameters.WorkArea.Height);
+                var buttonBounds = reset.ResetButton.TransformToAncestor(viewer)
+                    .TransformBounds(new Rect(reset.ResetButton.RenderSize));
+                Assert.True(buttonBounds.Top >= -1 && buttonBounds.Bottom <= viewer.ViewportHeight + 1,
+                    $"Reset button was outside the dialog's viewport: {buttonBounds}, height {viewer.ViewportHeight}.");
+            }
+            finally
+            {
+                reset.Close();
+            }
+
+            var breakdown = new AbilityBreakdownWindow(new AbilityBreakdown("Test", "", "DPS", []))
+            {
+                ShowActivated = false,
+            };
+            var npc = new NpcReadModel("Test", "Zone", DateTime.Now, DateTime.Now, 0, null, null,
+                [], 0, 0, 0, 0, 0, 0, false, false);
+            var history = new NpcDpsHistoryWindow(npc) { ShowActivated = false };
+            try
+            {
+                breakdown.Show();
+                history.Show();
+                breakdown.UpdateLayout();
+                history.UpdateLayout();
+                Assert.True(breakdown.Details.ActualHeight >= 30,
+                    $"Ability details have no usable height at 200%: {breakdown.Details.ActualHeight}.");
+                foreach (var grid in new[] { history.Loadouts, history.Encounters, history.Abilities })
+                {
+                    Assert.True(grid.ActualHeight >= 30,
+                        $"{grid.Name} has no usable height at 200%: {grid.ActualHeight}.");
+                }
+            }
+            finally
+            {
+                breakdown.Close();
+                history.Close();
+            }
+        }
+        finally
+        {
+            combo.IsDropDownOpen = false;
+            date.IsDropDownOpen = false;
+            menu.IsOpen = false;
+            tip.IsOpen = false;
+            host.Close();
+            application.Resources["DisplayScaleTransform"] = originalScale;
+        }
+
+        double[] MeasurePopups(double scale)
+        {
+            application.Resources["DisplayScaleTransform"] = new ScaleTransform(scale, scale);
+            host.UpdateLayout();
+
+            combo.IsDropDownOpen = true;
+            FlushLayout();
+            var comboItem = Assert.IsType<ComboBoxItem>(combo.ItemContainerGenerator.ContainerFromIndex(0));
+            double comboHeight = ScreenHeight(comboItem);
+            combo.IsDropDownOpen = false;
+
+            date.IsDropDownOpen = true;
+            FlushLayout();
+            var datePopup = Assert.IsType<Popup>(date.Template.FindName("PART_Popup", date));
+            var calendar = Assert.IsType<Calendar>(datePopup.Child);
+            var day = Descendants(calendar).OfType<CalendarDayButton>()
+                .First(element => element.IsVisible && element.ActualHeight > 0);
+            double calendarHeight = ScreenHeight(day);
+            date.IsDropDownOpen = false;
+
+            menu.PlacementTarget = button;
+            menu.IsOpen = true;
+            FlushLayout();
+            double menuHeight = ScreenHeight(menuItem);
+            menuItem.IsSubmenuOpen = true;
+            FlushLayout();
+            double submenuHeight = ScreenHeight(submenuItem);
+            menuItem.IsSubmenuOpen = false;
+            menu.IsOpen = false;
+
+            tip.PlacementTarget = button;
+            tip.IsOpen = true;
+            FlushLayout();
+            double tipHeight = ScreenHeight(tipText);
+            tip.IsOpen = false;
+
+            return [comboHeight, calendarHeight, menuHeight, submenuHeight, tipHeight];
+        }
+
+        void FlushLayout()
+        {
+            Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.Background, () =>
+            {
+            });
+            host.UpdateLayout();
+        }
+    }
+
+    private static double ScreenHeight(FrameworkElement element)
+    {
+        var top = element.PointToScreen(new Point());
+        var bottom = element.PointToScreen(new Point(0, element.ActualHeight));
+        return Math.Abs(bottom.Y - top.Y);
     }
 
     private static void VerifyStandaloneRowSelectors()

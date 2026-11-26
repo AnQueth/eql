@@ -43,6 +43,11 @@ The app reads the selected log's history, then follows new entries.
   **Move to** sends a docked panel to another workspace.
 - **Appearance** controls themes and custom palettes. Per-panel font, opacity,
   and lock settings are under **General > Overlays**.
+- **General > Display size** scales app text, images, and controls from 50% to
+  200%. It combines with each panel's text size without changing saved panel
+  positions; resize panels or widen the settings pane if contents need more room.
+  Use the scrollbars when controls do not fit. Windows-provided dialogs and
+  window borders use Windows' own display scaling.
 
 ## Choose your panels
 

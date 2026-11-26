@@ -42,6 +42,26 @@ public sealed class SettingsRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task DisplayScaleDefaultsForFreshAndExistingSettingsAndRoundTrips()
+    {
+        string path = Path.Combine(_folder, "settings.json");
+        var repository = new SettingsRepository(path);
+        Assert.Equal(1, (await repository.LoadAsync()).DisplayScale);
+
+        Directory.CreateDirectory(_folder);
+        await File.WriteAllTextAsync(path, """{"FontSize":15}""");
+        repository = new SettingsRepository(path);
+        var settings = await repository.LoadAsync();
+        Assert.Equal(1, settings.DisplayScale);
+
+        settings.DisplayScale = 1.35;
+        await repository.SaveAsync(settings.Snapshot());
+        var loaded = await repository.LoadAsync();
+        Assert.Equal(1.35, loaded.DisplayScale);
+        Assert.Equal(15, loaded.FontSize);
+    }
+
+    [Fact]
     public async Task FreshInstallIncludesRecastPresetAndPreservesItOnSave()
     {
         var repository = new SettingsRepository(Path.Combine(_folder, "settings.json"));

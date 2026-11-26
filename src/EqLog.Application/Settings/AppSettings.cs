@@ -440,6 +440,9 @@ public sealed class AppSettings
 
     public double FontSize { get; set; } = 13;
 
+    /// <summary>Scale applied to application text, images, and controls; individual panel font sizes remain separate.</summary>
+    public double DisplayScale { get; set; } = 1;
+
     public bool ResetOnLogin { get; set; } = true;
     public bool CheckForUpdatesOnStartup { get; set; } = true;
     public bool AutomaticallyDownloadUpdates { get; set; } = true;

@@ -4,6 +4,7 @@
         Title="Reset tracking data"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
         SizeToContent="Height" Width="520"
+        MaxHeight="{Binding Source={x:Static SystemParameters.WorkArea}, Path=Height}"
         Background="{DynamicResource NightBackground}" Foreground="{DynamicResource NightText}">
     <Window.Resources>
         <Style x:Key="DialogButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
@@ -27,30 +28,33 @@
             <Setter Property="Opacity" Value="0.75" />
         </Style>
     </Window.Resources>
-    <StackPanel Margin="16">
-        <TextBlock Style="{StaticResource Explanation}"
-                   Text="Reset all tracking data and close the app? On the next launch, NPC encounters and DPS history, resistance observations, learned spell durations and overrides, spawn timers and overrides, mote history, leveling history, and tracked inventory will be backed up and cleared." />
-        <TextBlock Style="{StaticResource Explanation}"
-                   Text="Settings, alert triggers, layout, themes, lookup caches, and original game logs are kept." />
-        <TextBlock Style="{StaticResource Explanation}" FontWeight="SemiBold" Margin="0,4,0,6"
-                   Text="After the reset, existing log lines should be:" />
-        <RadioButton x:Name="IgnoreOption" GroupName="LogLines" IsChecked="True"
-                     Foreground="{DynamicResource NightText}"
-                     Content="Ignored: start fresh from now" />
-        <TextBlock Style="{StaticResource ChoiceDetail}"
-                   Text="Only lines written after the reset are tracked, so old fights and history stay cleared." />
-        <RadioButton x:Name="RebuildOption" GroupName="LogLines"
-                     Foreground="{DynamicResource NightText}"
-                     Content="Reloaded: rebuild from the start of the log" />
-        <TextBlock Style="{StaticResource ChoiceDetail}"
-                   Text="The selected log is reprocessed from its first line, rebuilding whatever it still contains." />
-        <TextBlock Style="{StaticResource Explanation}" Margin="0,6,0,0"
-                   Text="Open the app again after it closes to complete the reset." />
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-            <Button x:Name="ResetButton" Content="Reset" Style="{StaticResource DialogButton}"
-                    Click="Reset_Click" />
-            <Button x:Name="CancelButton" Content="Cancel" IsCancel="True" IsDefault="True"
-                    Style="{StaticResource DialogButton}" Margin="8,0,0,0" />
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="16" LayoutTransform="{DynamicResource DisplayScaleTransform}">
+            <TextBlock Style="{StaticResource Explanation}"
+                       Text="Reset all tracking data and close the app? On the next launch, NPC encounters and DPS history, resistance observations, learned spell durations and overrides, spawn timers and overrides, mote history, leveling history, and tracked inventory will be backed up and cleared." />
+            <TextBlock Style="{StaticResource Explanation}"
+                       Text="Settings, alert triggers, layout, themes, lookup caches, and original game logs are kept." />
+            <TextBlock Style="{StaticResource Explanation}" FontWeight="SemiBold" Margin="0,4,0,6"
+                       Text="After the reset, existing log lines should be:" />
+            <RadioButton x:Name="IgnoreOption" GroupName="LogLines" IsChecked="True"
+                         Foreground="{DynamicResource NightText}">
+                <TextBlock Text="Ignored: start fresh from now" TextWrapping="Wrap" />
+            </RadioButton>
+            <TextBlock Style="{StaticResource ChoiceDetail}"
+                       Text="Only lines written after the reset are tracked, so old fights and history stay cleared." />
+            <RadioButton x:Name="RebuildOption" GroupName="LogLines" Foreground="{DynamicResource NightText}">
+                <TextBlock Text="Reloaded: rebuild from the start of the log" TextWrapping="Wrap" />
+            </RadioButton>
+            <TextBlock Style="{StaticResource ChoiceDetail}"
+                       Text="The selected log is reprocessed from its first line, rebuilding whatever it still contains." />
+            <TextBlock Style="{StaticResource Explanation}" Margin="0,6,0,0"
+                       Text="Open the app again after it closes to complete the reset." />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                <Button x:Name="ResetButton" Content="Reset" Style="{StaticResource DialogButton}"
+                        Click="Reset_Click" />
+                <Button x:Name="CancelButton" Content="Cancel" IsCancel="True" IsDefault="True"
+                        Style="{StaticResource DialogButton}" Margin="8,0,0,0" />
+            </StackPanel>
         </StackPanel>
-    </StackPanel>
+    </ScrollViewer>
 </Window>

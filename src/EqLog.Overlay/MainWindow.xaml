@@ -4,16 +4,76 @@
         xmlns:local="clr-namespace:EqLog.Overlay"
         xmlns:views="clr-namespace:EqLog.Overlay.Views"
         xmlns:vm="clr-namespace:EqLog.Overlay.ViewModels"
+        xmlns:sys="clr-namespace:System;assembly=System.Runtime"
         Title="EverQuest Log Overlay" Height="720" Width="680" MinWidth="480" MinHeight="420"
         Background="{DynamicResource NightBackground}" Foreground="{DynamicResource NightText}" FontSize="13">
     <Window.Resources>
         <local:AlertColorBrushConverter x:Key="AlertColorBrush" />
+        <views:ProductConverter x:Key="SettingsHeightProduct" />
+        <Style x:Key="LimitedSettingsScroll" TargetType="ScrollViewer">
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="Tag">
+                <Setter.Value>
+                    <sys:Double>0.1</sys:Double>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="MaxHeight">
+                <Setter.Value>
+                    <MultiBinding Converter="{StaticResource SettingsHeightProduct}">
+                        <Binding Path="ActualHeight" RelativeSource="{RelativeSource AncestorType=TabControl}" />
+                        <Binding Path="Tag" RelativeSource="{RelativeSource Self}" />
+                    </MultiBinding>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
-    <DockPanel x:Name="SettingsRoot" Margin="10">
+    <DockPanel x:Name="SettingsRoot" Margin="10" LayoutTransform="{DynamicResource DisplayScaleTransform}">
         <TabControl x:Name="Tabs" TabStripPlacement="Top">
+            <TabControl.Template>
+                <ControlTemplate TargetType="TabControl">
+                    <DockPanel KeyboardNavigation.TabNavigation="Local" SnapsToDevicePixels="True">
+                        <ScrollViewer x:Name="SettingsTabScroll" DockPanel.Dock="Top"
+                                      VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Auto">
+                            <StackPanel Orientation="Horizontal" IsItemsHost="True" Panel.ZIndex="1" KeyboardNavigation.TabIndex="1" />
+                        </ScrollViewer>
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}"
+                                KeyboardNavigation.TabNavigation="Local" KeyboardNavigation.DirectionalNavigation="Contained"
+                                KeyboardNavigation.TabIndex="2">
+                            <ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent" />
+                        </Border>
+                    </DockPanel>
+                </ControlTemplate>
+            </TabControl.Template>
             <TabItem Header="General">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="8">
+        <GroupBox Header="Display size">
+            <StackPanel>
+                <TextBlock Text="Resize text, images, and controls throughout the app." TextWrapping="Wrap" />
+                <Grid Margin="0,6,0,0" Language="{x:Static views:CultureLanguage.Current}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Slider x:Name="DisplayScaleSlider" Grid.ColumnSpan="2" Minimum="0.5" Maximum="2" TickFrequency="0.05"
+                            SmallChange="0.05" LargeChange="0.1" IsSnapToTickEnabled="True"
+                            VerticalAlignment="Center" ValueChanged="DisplayScale_Changed" AutomationProperties.Name="Display size"
+                            ToolTip="Scale app text, images, and controls from 50% to 200%. Panel text sizes are adjusted separately." />
+                    <TextBlock Grid.Row="1" Margin="0,4,0,0" VerticalAlignment="Center"
+                               Text="{Binding Value, ElementName=DisplayScaleSlider, StringFormat={}{0:P0}}" />
+                    <Button x:Name="ResetDisplayScaleButton" Grid.Row="1" Grid.Column="1" Content="Reset" Margin="0" Padding="6,2"
+                            Click="ResetDisplayScale_Click" ToolTip="Restore the display size to 100%." />
+                </Grid>
+                <local:FixedLineTextBlock x:Name="DisplayScaleStatus" Foreground="{DynamicResource NightMuted}"
+                                          Margin="0,4,0,0" />
+            </StackPanel>
+        </GroupBox>
                         <StackPanel Margin="4,2,4,16">
                             <TextBlock Text="EVERQUEST COMPANION" FontSize="21" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" />
                             <TextBlock Text="Your adventures, decoded." Foreground="{DynamicResource NightMuted}" Margin="0,3,0,0" />
@@ -37,12 +97,14 @@
         </GroupBox>
         <GroupBox Header="Log file" DockPanel.Dock="Top">
             <StackPanel>
-                <DockPanel>
-                    <Button x:Name="BrowseLogButton" Content="Browse..." DockPanel.Dock="Right" Margin="6,0,0,0" Click="Browse_Click" local:UsageTracking.Action="BrowseLog" ToolTip="Pick a single eqlog file" />
-                    <Button x:Name="ChooseFolderButton" Content="Choose folder..." DockPanel.Dock="Right" Margin="6,0,0,0" Click="ChooseFolder_Click" local:UsageTracking.Action="ChooseLogFolder"
-                            ToolTip="Pick your EverQuest Logs folder (or the EverQuest install folder); the newest eqlog file in it is used" />
-                    <TextBox x:Name="LogPathBox" IsReadOnly="True" VerticalContentAlignment="Center" />
-                </DockPanel>
+                <ScrollViewer x:Name="LogFileScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                    <DockPanel>
+                        <Button x:Name="BrowseLogButton" Content="Browse..." DockPanel.Dock="Right" Margin="6,0,0,0" Click="Browse_Click" local:UsageTracking.Action="BrowseLog" ToolTip="Pick a single eqlog file" />
+                        <Button x:Name="ChooseFolderButton" Content="Choose folder..." DockPanel.Dock="Right" Margin="6,0,0,0" Padding="6,7" Click="ChooseFolder_Click" local:UsageTracking.Action="ChooseLogFolder"
+                                ToolTip="Pick your EverQuest Logs folder (or the EverQuest install folder); the newest eqlog file in it is used" />
+                        <TextBox x:Name="LogPathBox" MinWidth="100" IsReadOnly="True" VerticalContentAlignment="Center" />
+                    </DockPanel>
+                </ScrollViewer>
                 <CheckBox x:Name="FollowNewestBox" Content="Switch automatically to the newest eqlog file in this folder (character changes)" Margin="0,6,0,0" Click="FollowNewest_Click" />
                 <ProgressBar x:Name="HistoryProgress" Height="6" Margin="0,6,0,0" Maximum="1" />
                 <local:FixedLineTextBlock x:Name="StatusText" Margin="0,4,0,0" Foreground="{DynamicResource NightText}" />
@@ -51,7 +113,9 @@
 
         <GroupBox x:Name="OverlaysGroup" Header="Overlays" DockPanel.Dock="Top">
             <StackPanel>
-                <ItemsControl x:Name="OverlayToggles" ItemsSource="{Binding Overlays}">
+                <ScrollViewer x:Name="OverlayTogglesScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <ItemsControl x:Name="OverlayToggles" ItemsSource="{Binding Overlays}" MinWidth="352"
+                              Width="{Binding ViewportWidth, ElementName=OverlayTogglesScroll}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <WrapPanel />
@@ -79,6 +143,7 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                </ScrollViewer>
                 <CheckBox x:Name="LockBox" Content="Lock all overlays (click-through)    Ctrl+Shift+L" Margin="0,6,0,0" FontWeight="Bold" Click="Lock_Click"
                           ToolTip="Checked: all locked. Dash: mixed locks. Click or use the hotkey to lock all; when all are locked, unlock all." />
                 <CheckBox x:Name="GameVisibleBox" Content="Only show floating overlays while EverQuest (eqgame.exe) is active" Margin="0,6,0,0" Click="GameVisible_Click"
@@ -86,8 +151,10 @@
                 <CheckBox x:Name="HoverChromeBox" Content="Hide floating overlay titles and borders in game unless hovered" Margin="0,6,0,0" Click="HoverChrome_Click"
                           ToolTip="Hide titles, borders and decorations until the mouse is over a floating overlay while EverQuest is active. Docked panels are unchanged. Locked overlays remain click-through." />
                 <Expander Header="Individual overlay appearance and locks" Margin="0,8,0,0">
+                    <ScrollViewer x:Name="OverlayAppearanceScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                     <ItemsControl x:Name="OverlayAppearance" Margin="0,6,0,0" ItemsSource="{Binding Overlays}"
-                                  Language="{x:Static views:CultureLanguage.Current}">
+                                  Language="{x:Static views:CultureLanguage.Current}" MinWidth="340"
+                                  Width="{Binding ViewportWidth, ElementName=OverlayAppearanceScroll}">
                         <ItemsControl.Resources>
                             <Style x:Key="AppearanceRow" TargetType="Grid">
                                 <Setter Property="Margin" Value="0,4,0,4" />
@@ -142,6 +209,7 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    </ScrollViewer>
                 </Expander>
                 <WrapPanel Margin="0,8,0,0">
                     <Button Content="Reset session stats" Click="ResetSession_Click" local:UsageTracking.Action="ResetSession" />
@@ -188,11 +256,13 @@
         <GroupBox Header="Consider / mob information">
             <StackPanel>
                 <TextBlock Text="Use /consider in game to show Mob info. Resistance observations are saved by zone and mob name." TextWrapping="Wrap" />
-                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                    <TextBlock Text="Show for (seconds):" VerticalAlignment="Center" Margin="0,0,8,0" />
-                    <TextBox x:Name="MobTimeoutBox" Width="65" Text="{Binding TimeoutText, UpdateSourceTrigger=LostFocus}" />
-                    <TextBlock Text="0 = until next consider" VerticalAlignment="Center" Margin="8,0,0,0" />
-                </StackPanel>
+                <ScrollViewer x:Name="MobOptionsScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <TextBlock Text="Show for (seconds):" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <TextBox x:Name="MobTimeoutBox" Width="65" Text="{Binding TimeoutText, UpdateSourceTrigger=LostFocus}" />
+                        <TextBlock Text="0 = until next consider" VerticalAlignment="Center" Margin="8,0,0,0" />
+                    </StackPanel>
+                </ScrollViewer>
                 <local:FixedLineTextBlock x:Name="MobInfoStatusText" Margin="0,6,0,0" Foreground="{DynamicResource NightMuted}" Text="{Binding StatusText}" />
             </StackPanel>
         </GroupBox>
@@ -201,35 +271,58 @@
             </TabItem>
             <TabItem x:Name="TriggersTab" Header="Alert triggers">
                 <DockPanel Margin="4">
-                    <Border DockPanel.Dock="Top" Background="{DynamicResource NightRaised}" CornerRadius="6" Padding="12" Margin="0,0,0,8">
-                        <TextBlock Foreground="{DynamicResource NightText}" TextWrapping="Wrap">
-                            <Run FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Text="{}{C} means your character's full name." />
-                            <LineBreak />
-                            <Run Text="The name comes from the log filename. Use {C} in either the Regex or Alert text; it changes automatically when you switch characters." />
-                            <LineBreak />
-                            <Run Text="Example regex: ^{C} has fallen to the ground\.$" />
-                            <LineBreak />
-                            <Run Text="For Quethrosar, this matches: Quethrosar has fallen to the ground." />
-                        </TextBlock>
-                    </Border>
-                    <TextBlock DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap"
-                               Text="Simple text matches anywhere in the line, ignoring case, with no special characters. Regex is matched (case-insensitive) against the text after the [timestamp]. A trigger fires when Simple text OR Regex matches; fill in either or both. {C} = your character name in both. In the alert text, $1 or ${name} insert regex captured groups. Delay waits that many seconds after a match before alerting (for example, a recast timer) and shows a countdown meanwhile. Cooldown ignores repeat matches for that many seconds after a trigger fires, so a burst of lines shows one alert. Only new lines fire alerts, not history. Use Add trigger for a new one. Click a trigger (or its left edge; Ctrl/Shift-click for several), then use Delete selected; confirmation is required." />
+                    <ScrollViewer x:Name="TriggerHelpScroll" DockPanel.Dock="Top" Style="{StaticResource LimitedSettingsScroll}">
+                        <ScrollViewer.Tag>
+                            <sys:Double>0.08</sys:Double>
+                        </ScrollViewer.Tag>
+                        <Border Background="{DynamicResource NightRaised}" CornerRadius="6" Padding="6,4" Margin="0,0,0,8">
+                            <TextBlock Foreground="{DynamicResource NightText}" TextWrapping="Wrap">
+                                <Run FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Text="{}{C} means your character's full name." />
+                                <LineBreak />
+                                <Run Text="The name comes from the log filename. Use {C} in either the Regex or Alert text; it changes automatically when you switch characters." />
+                                <LineBreak />
+                                <Run Text="Example regex: ^{C} has fallen to the ground\.$" />
+                                <LineBreak />
+                                <Run Text="For Quethrosar, this matches: Quethrosar has fallen to the ground." />
+                            </TextBlock>
+                        </Border>
+                    </ScrollViewer>
+                    <ScrollViewer x:Name="TriggerNotesScroll" DockPanel.Dock="Bottom" Style="{StaticResource LimitedSettingsScroll}">
+                        <ScrollViewer.Tag>
+                            <sys:Double>0.07</sys:Double>
+                        </ScrollViewer.Tag>
+                        <TextBlock Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap"
+                                   Text="Simple text matches anywhere in the line, ignoring case, with no special characters. Regex is matched (case-insensitive) against the text after the [timestamp]. A trigger fires when Simple text OR Regex matches; fill in either or both. {C} = your character name in both. In the alert text, $1 or ${name} insert regex captured groups. Delay waits that many seconds after a match before alerting (for example, a recast timer) and shows a countdown meanwhile. Cooldown ignores repeat matches for that many seconds after a trigger fires, so a burst of lines shows one alert. Only new lines fire alerts, not history. Use Add trigger for a new one. Click a trigger (or its left edge; Ctrl/Shift-click for several), then use Delete selected; confirmation is required." />
+                    </ScrollViewer>
                     <DockPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
                         <Button Content="Test" DockPanel.Dock="Right" Margin="6,0,0,0" Click="TestTrigger_Click" local:UsageTracking.Action="TestTrigger" />
                         <TextBlock Text="Test a line:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{DynamicResource NightText}" DockPanel.Dock="Left" />
                         <TextBox x:Name="TestLineBox" VerticalContentAlignment="Center"
                                  ToolTip="Paste a log line (without the [timestamp]) and click Test to see which triggers match and preview the alert." Text="Quethrosar has fallen to the ground." />
                     </DockPanel>
-                    <TextBlock x:Name="TriggerStatusText" DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="#FF8080" TextWrapping="Wrap" />
-                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
-                        <Button Content="Add trigger" Click="AddTrigger_Click" local:UsageTracking.Action="AddTrigger" ToolTip="Add a new, empty alert trigger" />
-                        <Button x:Name="DeleteTriggersButton" Content="Delete selected" IsEnabled="False"
-                                Click="DeleteTriggers_Click" local:UsageTracking.Action="DeleteTriggers"
-                                ToolTip="Delete the selected alert triggers after confirmation" />
-                    </StackPanel>
+                    <TextBlock x:Name="TriggerStatusText" DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="#FF8080" TextWrapping="Wrap">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <Trigger Property="Text" Value="">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <ScrollViewer x:Name="TriggerActionsScroll" DockPanel.Dock="Top"
+                                  HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <Button Content="Add trigger" Click="AddTrigger_Click" local:UsageTracking.Action="AddTrigger" ToolTip="Add a new, empty alert trigger" />
+                            <Button x:Name="DeleteTriggersButton" Content="Delete selected" IsEnabled="False"
+                                    Click="DeleteTriggers_Click" local:UsageTracking.Action="DeleteTriggers"
+                                    ToolTip="Delete the selected alert triggers after confirmation" />
+                        </StackPanel>
+                    </ScrollViewer>
                     <DataGrid x:Name="TriggersGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="True"
                               HeadersVisibility="Row" RowHeaderWidth="14" RowHeight="NaN" GridLinesVisibility="Horizontal" SelectionMode="Extended"
-                              HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.ScrollUnit="Pixel"
+                              HorizontalScrollBarVisibility="Auto" VirtualizingPanel.ScrollUnit="Pixel"
                               Binding.SourceUpdated="TriggerField_SourceUpdated"
                               PreviewGotKeyboardFocus="Triggers_PreviewGotKeyboardFocus"
                               SelectionChanged="Triggers_SelectionChanged">
@@ -238,7 +331,7 @@
                                             CanExecute="DeleteTriggers_CanExecute" Executed="DeleteTriggers_Executed" />
                         </DataGrid.CommandBindings>
                         <DataGrid.Columns>
-                            <DataGridTemplateColumn Header="Trigger" Width="*">
+                            <DataGridTemplateColumn Header="Trigger" Width="*" MinWidth="330">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <!-- No row BindingGroup: each field saves on its own instead of waiting for a DataGrid row commit. -->
@@ -328,17 +421,20 @@
             </TabItem>
             <TabItem x:Name="LogLinesTab" Header="Log lines">
                 <DockPanel Margin="4">
-                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
-                        <Button Content="Make trigger" DockPanel.Dock="Right" Margin="6,0,0,0" Click="MakeTrigger_Click" local:UsageTracking.Action="MakeTriggerFromLog"
-                                ToolTip="Create an alert trigger from the selected line (or double-click a line)" />
-                        <Button Content="Copy message" DockPanel.Dock="Right" Margin="6,0,0,0" Click="CopyLogMessage_Click"
-                                ToolTip="Copy the selected message without its timestamp. Paste it into an existing trigger and edit as needed." />
-                        <CheckBox x:Name="PauseLinesBox" Content="Pause" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" Click="RawFilter_Changed" />
-                        <CheckBox x:Name="RegexFilterBox" Content="Regex" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" Click="RawFilter_Changed"
-                                  ToolTip="Treat the filter as a trigger regex ({C} = your name) to test it against real lines" />
-                        <TextBlock Text="Filter:" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{DynamicResource NightText}" />
-                        <TextBox x:Name="RawFilterBox" VerticalContentAlignment="Center" TextChanged="RawFilter_Changed" />
-                    </DockPanel>
+                    <ScrollViewer x:Name="LogActionsScroll" DockPanel.Dock="Top"
+                                  HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <DockPanel Margin="0,0,0,6">
+                            <Button Content="Make trigger" DockPanel.Dock="Right" Margin="6,0,0,0" Click="MakeTrigger_Click" local:UsageTracking.Action="MakeTriggerFromLog"
+                                    ToolTip="Create an alert trigger from the selected line (or double-click a line)" />
+                            <Button Content="Copy message" DockPanel.Dock="Right" Margin="6,0,0,0" Click="CopyLogMessage_Click"
+                                    ToolTip="Copy the selected message without its timestamp. Paste it into an existing trigger and edit as needed." />
+                            <CheckBox x:Name="PauseLinesBox" Content="Pause" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" Click="RawFilter_Changed" />
+                            <CheckBox x:Name="RegexFilterBox" Content="Regex" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" Click="RawFilter_Changed"
+                                      ToolTip="Treat the filter as a trigger regex ({C} = your name) to test it against real lines" />
+                            <TextBlock Text="Filter:" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{DynamicResource NightText}" />
+                            <TextBox x:Name="RawFilterBox" MinWidth="100" VerticalContentAlignment="Center" TextChanged="RawFilter_Changed" />
+                        </DockPanel>
+                    </ScrollViewer>
                     <TextBlock x:Name="RawStatusText" DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap" />
                     <ListBox x:Name="RawLinesList" FontFamily="Consolas" FontSize="12"
                              VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
@@ -352,8 +448,10 @@
                                   ToolTip="Also list generic mobs (a/an ...) and names that might be players" />
                         <TextBlock x:Name="SpawnZoneText" Foreground="{DynamicResource Pumpkin}" FontWeight="Bold" VerticalAlignment="Center" Text="Zone: -" />
                     </DockPanel>
-                    <TextBlock DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap"
-                               Text="Tick Track to time mobs in the Spawn Timers overlay. Priority: Override, then Learned, then Wiki. Until a time is learned, tracked mobs are checked on EQLWiki in the background. Wiki times may differ on Legends or instance variants. Override accepts seconds or m:ss; clear it to use Learned or Wiki. Learning measures kill to next sighting without zoning; instances share learned times. Relearn forgets the learned time and measures it again from your next kill." />
+                    <ScrollViewer DockPanel.Dock="Bottom" Style="{StaticResource LimitedSettingsScroll}">
+                        <TextBlock Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap"
+                                   Text="Tick Track to time mobs in the Spawn Timers overlay. Priority: Override, then Learned, then Wiki. Until a time is learned, tracked mobs are checked on EQLWiki in the background. Wiki times may differ on Legends or instance variants. Override accepts seconds or m:ss; clear it to use Learned or Wiki. Learning measures kill to next sighting without zoning; instances share learned times. Relearn forgets the learned time and measures it again from your next kill." />
+                    </ScrollViewer>
                     <DataGrid x:Name="SpawnsGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
                               HeadersVisibility="Column" GridLinesVisibility="Horizontal"
                               CellEditEnding="Spawns_CellEditEnding">
@@ -529,17 +627,22 @@
             <TabItem x:Name="DurationsTab" Header="Spell durations">
             <DockPanel Margin="4">
                 <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                    <TextBlock Text="Add a spell and its duration in seconds" Margin="0,0,0,4" />
-                    <DockPanel>
-                        <Button DockPanel.Dock="Right" Content="Add / update" Click="AddDuration_Click" local:UsageTracking.Action="AddDuration" />
-                        <TextBox x:Name="NewDurationSecondsBox" DockPanel.Dock="Right" Width="75" Margin="4,0"
-                                 ToolTip="Duration in seconds" AutomationProperties.Name="Spell duration in seconds" />
-                        <TextBox x:Name="NewDurationSpellBox" ToolTip="Spell name, including rank if desired"
-                                 AutomationProperties.Name="Spell name" />
-                    </DockPanel>
+                    <TextBlock Text="Add a spell and its duration in seconds" TextWrapping="Wrap" Margin="0,0,0,4" />
+                    <ScrollViewer x:Name="DurationEntryScroll"
+                                  HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Content="Add / update" Click="AddDuration_Click" local:UsageTracking.Action="AddDuration" />
+                            <TextBox x:Name="NewDurationSecondsBox" DockPanel.Dock="Right" Width="75" Margin="4,0"
+                                     ToolTip="Duration in seconds" AutomationProperties.Name="Spell duration in seconds" />
+                            <TextBox x:Name="NewDurationSpellBox" MinWidth="100" ToolTip="Spell name, including rank if desired"
+                                     AutomationProperties.Name="Spell name" />
+                        </DockPanel>
+                    </ScrollViewer>
                 </StackPanel>
-                <TextBlock DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap"
-                           Text="Override takes priority, then learned duration, then the wiki estimate (ticks are 6 seconds). Wiki lookups run in the background for spells you cast. Uncheck Track to hide timers but keep learning. Relearn forgets the learned duration and measures it again from your next casts. Remove deletes this spell/rank and prevents automatic rediscovery until you add it again." />
+                <ScrollViewer DockPanel.Dock="Bottom" Style="{StaticResource LimitedSettingsScroll}">
+                    <TextBlock Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap"
+                               Text="Override takes priority, then learned duration, then the wiki estimate (ticks are 6 seconds). Wiki lookups run in the background for spells you cast. Uncheck Track to hide timers but keep learning. Relearn forgets the learned duration and measures it again from your next casts. Remove deletes this spell/rank and prevents automatic rediscovery until you add it again." />
+                </ScrollViewer>
                 <DataGrid x:Name="DurationsGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
                           HeadersVisibility="Column" GridLinesVisibility="Horizontal"
                           CellEditEnding="Durations_CellEditEnding">
@@ -574,19 +677,26 @@
                 </DataGrid>
             </DockPanel>
             </TabItem>
-            <TabItem Header="Appearance">
+            <TabItem x:Name="AppearanceTab" Header="Appearance">
                 <DockPanel Margin="8">
-                    <GroupBox Header="Theme" DockPanel.Dock="Top">
-                        <StackPanel>
-                            <CheckBox x:Name="FollowWindowsThemeBox" Content="Follow Windows light/dark mode"
-                                      Margin="0,0,0,8" Checked="FollowWindowsTheme_Changed" Unchecked="FollowWindowsTheme_Changed" />
-                            <DockPanel>
-                                <Button Content="Import JSON..." DockPanel.Dock="Right" Margin="8,0,0,0" Click="ImportTheme_Click" local:UsageTracking.Action="ImportTheme" />
-                                <ComboBox x:Name="ThemePicker" DisplayMemberPath="Name" SelectionChanged="Theme_Changed" />
-                            </DockPanel>
-                            <local:FixedLineTextBlock x:Name="ThemeStatus" Foreground="{DynamicResource NightMuted}" Margin="0,6,0,0" />
-                        </StackPanel>
-                    </GroupBox>
+                    <ScrollViewer x:Name="ThemeSettingsScroll" DockPanel.Dock="Top"
+                                  Style="{StaticResource LimitedSettingsScroll}" HorizontalScrollBarVisibility="Auto">
+                        <ScrollViewer.Tag>
+                            <sys:Double>0.4</sys:Double>
+                        </ScrollViewer.Tag>
+                        <GroupBox Header="Theme" MinWidth="240"
+                                  Width="{Binding ViewportWidth, ElementName=ThemeSettingsScroll}">
+                            <StackPanel>
+                                <CheckBox x:Name="FollowWindowsThemeBox" Content="Follow Windows light/dark mode"
+                                          Margin="0,0,0,8" Checked="FollowWindowsTheme_Changed" Unchecked="FollowWindowsTheme_Changed" />
+                                <DockPanel>
+                                    <Button Content="Import JSON..." DockPanel.Dock="Right" Margin="8,0,0,0" Click="ImportTheme_Click" local:UsageTracking.Action="ImportTheme" />
+                                    <ComboBox x:Name="ThemePicker" DisplayMemberPath="Name" SelectionChanged="Theme_Changed" />
+                                </DockPanel>
+                                <local:FixedLineTextBlock x:Name="ThemeStatus" Foreground="{DynamicResource NightMuted}" Margin="0,6,0,0" />
+                            </StackPanel>
+                        </GroupBox>
+                    </ScrollViewer>
                     <ContentControl x:Name="ThemeEditorHost" />
                 </DockPanel>
             </TabItem>

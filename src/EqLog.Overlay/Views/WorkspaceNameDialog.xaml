@@ -18,7 +18,7 @@
             <Setter Property="Foreground" Value="{DynamicResource NightText}" />
         </Style>
     </Window.Resources>
-    <StackPanel Margin="16">
+    <StackPanel Margin="16" LayoutTransform="{DynamicResource DisplayScaleTransform}">
         <TextBlock Text="Workspace name" />
         <TextBox x:Name="NameBox" MinWidth="300" Margin="0,6,0,0" Padding="4,3" />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">

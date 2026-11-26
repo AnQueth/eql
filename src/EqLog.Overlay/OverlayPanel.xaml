@@ -145,7 +145,8 @@
     </UserControl.Resources>
 
     <!-- Frame shading is drawn only while docked: the borders are zero-width and the backgrounds transparent when floating. -->
-    <Border x:Name="Frame" CornerRadius="12" Style="{StaticResource PanelFrame}">
+    <Border x:Name="Frame" CornerRadius="12" Style="{StaticResource PanelFrame}"
+            LayoutTransform="{DynamicResource DisplayScaleTransform}">
         <Border.Background>
             <SolidColorBrush Color="{DynamicResource NightBackgroundColor}" Opacity="{Binding EffectiveBackgroundOpacity}" />
         </Border.Background>

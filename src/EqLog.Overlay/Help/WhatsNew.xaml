@@ -1,7 +1,27 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.50" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.51" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.51
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released November 25, 2026 at 11:34 PM CT.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Adjust app display size
+        </Paragraph>
+        <Paragraph>
+            In Settings &gt; General &gt; Display size, use the slider to scale app text,
+            images, and controls from 50% to 200%, or choose Reset to return to 100%.
+            Changes apply immediately and are saved automatically. The setting combines
+            with each panel's separate text-size option and does not change saved panel
+            positions. If contents do not fit, resize a panel or widen Settings; use
+            scrollbars to reach controls in narrow areas. Windows-provided dialogs and
+            window borders continue to use Windows display scaling.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.50
     </Paragraph>

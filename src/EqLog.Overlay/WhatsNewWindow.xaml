@@ -10,7 +10,7 @@
     <Window.InputBindings>
         <KeyBinding Command="ApplicationCommands.Close" Key="Escape" />
     </Window.InputBindings>
-    <DockPanel>
+    <DockPanel LayoutTransform="{DynamicResource DisplayScaleTransform}">
         <Button DockPanel.Dock="Bottom" Content="Close" Command="ApplicationCommands.Close"
                 HorizontalAlignment="Right" Margin="12" />
         <FlowDocumentScrollViewer x:Name="WhatsNewViewer" IsToolBarVisible="False"

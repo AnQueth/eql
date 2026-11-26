@@ -125,6 +125,8 @@ public partial class MainWindow : Window
     private Task _housekeepingTask = Task.CompletedTask;
     private bool _housekeepingFailureReported;
     private readonly DispatcherTimer _gameTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    private readonly DispatcherTimer _displayScaleSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
+    private bool _displayScaleReady;
     private bool _gameVisible = true;
     private readonly ObservableCollection<AlertTrigger> _triggers;
 
@@ -158,6 +160,7 @@ public partial class MainWindow : Window
         _tracking = state.Tracking ?? TrackingComposition.CreateService();
         _session = state.Session;
         InitializeComponent();
+        InitializeDisplayScale();
         InitializeThemes(state);
         InitializeStartupData(state);
         _chatChannels = [.. _settings.ChatChannels];
@@ -224,6 +227,50 @@ public partial class MainWindow : Window
     }
 
     internal Task StartupCompletion { get; }
+
+    private void InitializeDisplayScale()
+    {
+        double saved = _settings.DisplayScale;
+        double scale = double.IsFinite(saved)
+            ? Math.Clamp(saved, DisplayScaleSlider.Minimum, DisplayScaleSlider.Maximum)
+            : 1;
+        _settings.DisplayScale = scale;
+        DisplayScaleSlider.Value = scale;
+        ApplyDisplayScale(scale);
+        if (saved != scale)
+        {
+            DisplayScaleStatus.Text = $"Saved display size was outside the supported range; using {scale:P0}.";
+        }
+        _displayScaleSaveTimer.Tick += (_, _) =>
+        {
+            _displayScaleSaveTimer.Stop();
+            SaveSettingsInBackground(error => DisplayScaleStatus.Text = $"Could not save display size: {error}");
+        };
+        _displayScaleReady = true;
+    }
+
+    private static void ApplyDisplayScale(double scale)
+    {
+        System.Windows.Application.Current.Resources["DisplayScaleTransform"] = new ScaleTransform(scale, scale);
+    }
+
+    private void DisplayScale_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (!_displayScaleReady)
+        {
+            return;
+        }
+        _settings.DisplayScale = e.NewValue;
+        ApplyDisplayScale(e.NewValue);
+        DisplayScaleStatus.Text = "";
+        _displayScaleSaveTimer.Stop();
+        _displayScaleSaveTimer.Start();
+    }
+
+    private void ResetDisplayScale_Click(object sender, RoutedEventArgs e)
+    {
+        DisplayScaleSlider.Value = 1;
+    }
 
     private void StartRuntime()
     {
@@ -1315,6 +1362,7 @@ public partial class MainWindow : Window
 
     private async Task ShutdownAsync()
     {
+        _displayScaleSaveTimer.Stop();
         _rawFilterWork?.Dispose();
         CancelInventoryFilters();
         _updateCheckTimer.Stop();
