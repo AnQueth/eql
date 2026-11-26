@@ -42,6 +42,41 @@ public sealed class SettingsRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task FreshInstallIncludesRecastPresetAndPreservesItOnSave()
+    {
+        var repository = new SettingsRepository(Path.Combine(_folder, "settings.json"));
+        var fresh = await repository.LoadAsync();
+        var dirge = Assert.Single(fresh.Triggers, trigger => trigger.Name == "DDD");
+        Assert.Equal(15, dirge.DelaySeconds);
+        Assert.Contains(fresh.Triggers, trigger => trigger.Name == "Feign Death failed");
+        Assert.Contains(fresh.Triggers, trigger => trigger.Name == "Feign Death broken");
+
+        await repository.SaveAsync(fresh.Snapshot());
+        var loaded = await repository.LoadAsync();
+
+        Assert.Equal(15, Assert.Single(loaded.Triggers, trigger => trigger.Name == "DDD").DelaySeconds);
+    }
+
+    [Theory]
+    [InlineData("""{"Triggers":[]}""")]
+    [InlineData("""{"Triggers":[{"Name":"Custom","Simple":"my message"}]}""")]
+    public async Task ExistingTriggerListsAreNotReplacedOrGivenAdditionalPresets(string json)
+    {
+        Directory.CreateDirectory(_folder);
+        string path = Path.Combine(_folder, "settings.json");
+        await File.WriteAllTextAsync(path, json);
+        var repository = new SettingsRepository(path);
+
+        var settings = await repository.LoadAsync();
+        await repository.SaveAsync(settings.Snapshot());
+        var loaded = await repository.LoadAsync();
+
+        Assert.DoesNotContain(loaded.Triggers, trigger => trigger.Name == "DDD");
+        Assert.DoesNotContain(loaded.Triggers, trigger => trigger.Name == "Feign Death failed");
+        Assert.Equal(json.Contains("Custom") ? 1 : 0, loaded.Triggers.Count);
+    }
+
+    [Fact]
     public async Task SpellTimersKnownSpellsVisibility_DefaultsVisibleAndRoundTrips()
     {
         Directory.CreateDirectory(_folder);

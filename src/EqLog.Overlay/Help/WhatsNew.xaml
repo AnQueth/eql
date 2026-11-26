@@ -1,7 +1,58 @@
 <FlowDocument xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              Tag="1.0.49" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
+              Tag="1.0.50" FontFamily="Segoe UI" FontSize="14" PagePadding="24"
               TextAlignment="Left" Foreground="{DynamicResource NightText}"
               Background="{DynamicResource NightBackground}">
+    <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
+        What's New in 1.0.50
+    </Paragraph>
+    <Paragraph Foreground="{DynamicResource NightMuted}" Margin="0,0,0,6">
+        Released November 25, 2026 at 9:27 PM CT.
+    </Paragraph>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Ready-to-use alert triggers
+        </Paragraph>
+        <Paragraph>
+            Fresh installs include Feign Death failed and broken alerts, plus DDD: a
+            15-second recast reminder after your Denon's Desperate Dirge hits a mob,
+            including critical hits. During the countdown, the Alerts overlay ignores
+            repeated matches. These defaults are only for new settings files; your
+            existing Alert triggers list is kept unchanged.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Delayed alerts and fewer repeats
+        </Paragraph>
+        <Paragraph>
+            In Settings &gt; Alert triggers, set Delay to show an alert after a match; the
+            Alerts overlay displays a countdown while it waits. Cooldown (2 seconds by
+            default) suppresses bursts of matching lines after an alert fires. Set it to
+            0 to alert for every match. Restart on repeat is available for delayed triggers
+            when you want a later match to restart the countdown.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Reuse lines and get field help
+        </Paragraph>
+        <Paragraph>
+            In Settings &gt; Log lines, select a line and click Copy message to copy its
+            text without the timestamp. Paste it into an existing alert trigger and edit
+            it without creating a new trigger. Alert trigger fields now have hover help
+            covering matching, alert text, delay, cooldown, and other settings.
+        </Paragraph>
+    </Section>
+    <Section>
+        <Paragraph FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}">
+            Color picker reliability
+        </Paragraph>
+        <Paragraph>
+            Choosing an alert color no longer refreshes the whole trigger grid while a
+            row is being edited, avoiding a WPF exception. The selected color still
+            updates and saves normally.
+        </Paragraph>
+    </Section>
     <Paragraph FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Pumpkin}" Margin="0,0,0,6">
         What's New in 1.0.49
     </Paragraph>

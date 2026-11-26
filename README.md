@@ -78,7 +78,17 @@ eligibility. Leveling history measures logged XP gains, not guaranteed net XP.
 
 **Alerts:** add simple text or regex rules in **Alert triggers**. Use `{C}` for
 your character and `$1` for captured text. **Test** previews an alert.
-Startup history never fires triggers. **Log lines** helps find matching text.
+Fresh installs include Feign Death failed/broken alerts and **DDD**, a 15-second
+recast reminder after your Denon's Desperate Dirge hits a mob (including critical
+hits). DDD ignores repeated hits during its countdown. Existing saved alert lists
+are not changed.
+Set **Delay** to alert some seconds after the match, such as a recast timer; the
+Alerts overlay counts down until then. **Restart on repeat** restarts the countdown
+when the line appears again. **Cooldown** (2 seconds by default) ignores repeat
+matches right after a trigger fires, so a burst of lines shows one alert.
+Startup history never fires triggers. In **Log lines**, select a line and use
+**Copy message** to paste its text (without the timestamp) into an existing trigger.
+Edit variable details such as damage numbers or mob names as needed.
 
 ## Updates, privacy, and saved data
 

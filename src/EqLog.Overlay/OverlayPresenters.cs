@@ -16,8 +16,10 @@ public sealed record OverlayContent(string Title, string? Subtitle, IReadOnlyLis
 
 public sealed record OverlayDefinition(string Key, string Caption, double Width, double Height, bool AutoScroll, Func<EngineSnapshot, EngineQuerySnapshot, OverlayView, OverlayContent> Render);
 
-/// <summary>An alert currently on screen.</summary>
-public sealed record ActiveAlert(string Text, Brush Color, DateTime Expires, AlertEffect Effect = AlertEffect.None);
+/// <summary>An alert currently on screen. A non-null <paramref name="Countdown"/> marks a delayed alert that is still waiting;
+/// <paramref name="Progress"/> is how much of its wait has passed (0-1).</summary>
+public sealed record ActiveAlert(string Text, Brush Color, DateTime Expires, AlertEffect Effect = AlertEffect.None,
+    string? Countdown = null, double Progress = 0);
 
 /// <summary>Per-render options the presenters need from the app.</summary>
 public sealed record OverlayView(ISet<ChatChannel> ChatChannels, IReadOnlyList<ActiveAlert> Alerts, int LootGrouping = 0,
@@ -407,7 +409,9 @@ public static class OverlayPresenters
     private static OverlayContent Alerts(EngineSnapshot _, EngineQuerySnapshot __, OverlayView view)
     {
         var rows = view.Alerts.Reverse()
-            .Select(a => new OverlayRow(a.Text, Foreground: a.Color, Wrap: true, Bold: true, Scale: 1.6, Effect: a.Effect))
+            .Select(a => a.Countdown is null
+                ? new OverlayRow(a.Text, Foreground: a.Color, Wrap: true, Bold: true, Scale: 1.6, Effect: a.Effect)
+                : new OverlayRow(a.Text, a.Countdown, a.Progress, TimerBar, Foreground: a.Color))
             .ToList();
         return new("Alerts", null, rows);
     }

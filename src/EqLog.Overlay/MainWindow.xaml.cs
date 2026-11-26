@@ -1429,7 +1429,7 @@ public partial class MainWindow : Window
         if (result.Color is { } selected)
         {
             trigger.Color = ColorPickerDialog.ToHex(selected);
-            TriggersGrid.Items.Refresh();
+            RefreshColorBindings(button);
             RebuildTriggers();
         }
         if (result.Message is not null)
@@ -1437,6 +1437,23 @@ public partial class MainWindow : Window
             TriggerStatusText.Text = string.IsNullOrEmpty(TriggerStatusText.Text)
                 ? result.Message
                 : TriggerStatusText.Text + " " + result.Message;
+        }
+    }
+
+    /// <summary>
+    /// Updates the color swatch and text beside the pick button. Refreshing the whole grid throws while a row is being edited.
+    /// </summary>
+    private static void RefreshColorBindings(FrameworkElement button)
+    {
+        if (button.Parent is not Panel panel)
+        {
+            return;
+        }
+
+        foreach (UIElement child in panel.Children)
+        {
+            System.Windows.Data.BindingOperations.GetBindingExpression(child, Border.BackgroundProperty)?.UpdateTarget();
+            System.Windows.Data.BindingOperations.GetBindingExpression(child, TextBox.TextProperty)?.UpdateTarget();
         }
     }
 
@@ -1760,6 +1777,35 @@ public partial class MainWindow : Window
     private void MakeTrigger_Click(object sender, RoutedEventArgs e)
     {
         MakeTriggerFromSelection();
+    }
+
+    private void CopyLogMessage_Click(object sender, RoutedEventArgs e)
+    {
+        RawStatusText.Text = CopyLogMessage(RawLinesList.SelectedItem, Clipboard.SetText);
+    }
+
+    internal static string CopyLogMessage(object? selectedItem, Action<string> copy)
+    {
+        if (selectedItem is not string raw)
+        {
+            return "Select a line first.";
+        }
+
+        string message = RawLogQueries.Message(raw);
+        if (string.IsNullOrEmpty(message))
+        {
+            return "The selected line has no message to copy.";
+        }
+
+        try
+        {
+            copy(message);
+            return "Message copied. Paste it into an existing trigger and edit it as needed.";
+        }
+        catch (System.Runtime.InteropServices.ExternalException error)
+        {
+            return $"Could not copy the message to the clipboard: {error.Message}";
+        }
     }
 
     private void MakeTriggerFromSelection()

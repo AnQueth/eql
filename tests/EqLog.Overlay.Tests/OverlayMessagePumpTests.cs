@@ -154,6 +154,75 @@ public sealed class OverlayMessagePumpTests
         });
     }
 
+    [Fact]
+    public void AlertsOverlay_DelayedAlertCountsDownThenShows()
+    {
+        RunOnDispatcher(() =>
+        {
+            var definition = Assert.Single(OverlayPresenters.All, item => item.Key == "alerts");
+            var now = new DateTime(2026, 11, 1, 20, 0, 0);
+            int sounds = 0;
+            var vm = new AlertsOverlayViewModel(definition, NullOverlayActions.Instance, EmptyOverlayViewSource.Instance,
+                () => sounds++, _ =>
+                {
+                }, () => now);
+            var dirge = Alert("Recast Dirge", sound: true, seconds: 5);
+            dirge.Trigger.DelaySeconds = 15;
+
+            vm.Receive(new TriggerAlertsMessage([dirge]));
+            Assert.Empty(vm.ActiveAlerts);
+            Assert.Equal(0, sounds);
+            Assert.Equal("15s", Assert.Single(vm.WaitingAlerts).Countdown);
+
+            // A repeat while waiting is ignored unless the trigger restarts its countdown.
+            now = now.AddSeconds(6);
+            vm.Receive(new TriggerAlertsMessage([dirge]));
+            Assert.Equal("9s", Assert.Single(vm.WaitingAlerts).Countdown);
+
+            dirge.Trigger.RestartDelay = true;
+            now = now.AddSeconds(3);
+            vm.Receive(new TriggerAlertsMessage([dirge]));
+            Assert.Equal("15s", Assert.Single(vm.WaitingAlerts).Countdown);
+
+            now = now.AddSeconds(15);
+            vm.Receive(new TriggerAlertsMessage([]));
+            Assert.Empty(vm.WaitingAlerts);
+            Assert.Equal("Recast Dirge", Assert.Single(vm.ActiveAlerts).Text);
+            Assert.Equal(1, sounds);
+            Assert.Equal(20, AlertsOverlayViewModel.DisplaySeconds([dirge]));
+            return Task.CompletedTask;
+        });
+    }
+
+    [Fact]
+    public void AlertsOverlay_CooldownShowsOneAlertForABurstOfLines()
+    {
+        RunOnDispatcher(() =>
+        {
+            var definition = Assert.Single(OverlayPresenters.All, item => item.Key == "alerts");
+            var now = new DateTime(2026, 11, 1, 20, 0, 0);
+            int sounds = 0;
+            var vm = new AlertsOverlayViewModel(definition, NullOverlayActions.Instance, EmptyOverlayViewSource.Instance,
+                () => sounds++, _ =>
+                {
+                }, () => now);
+            var hit = Alert("Hit", sound: true, seconds: 30);
+
+            vm.Receive(new TriggerAlertsMessage([hit, hit, hit]));
+            now = now.AddSeconds(1);
+            vm.Receive(new TriggerAlertsMessage([hit]));
+            now = now.AddSeconds(0.9);
+            vm.Receive(new TriggerAlertsMessage([hit]));
+            Assert.Single(vm.ActiveAlerts);
+            Assert.Equal(1, sounds);
+
+            now = now.AddSeconds(0.2);
+            vm.Receive(new TriggerAlertsMessage([hit]));
+            Assert.Equal(2, vm.ActiveAlerts.Count);
+            return Task.CompletedTask;
+        });
+    }
+
     private static TriggerAlert Alert(string text, bool sound, double seconds = 8)
     {
         var trigger = new AlertTrigger { Name = text, Simple = text, Text = text, Sound = sound, Seconds = seconds };

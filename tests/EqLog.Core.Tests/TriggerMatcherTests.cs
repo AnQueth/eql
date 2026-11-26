@@ -17,6 +17,35 @@ public class TriggerMatcherTests
         Assert.True(alert.Trigger.Sound);
     }
 
+    [Theory]
+    [InlineData("You hit a goblin for 361 points of magic damage by Denon's Desperate Dirge.")]
+    [InlineData("You hit a goblin for 361 points of magic damage by Denon's Desperate Dirge X.")]
+    [InlineData("You hit a goblin for 722 points of magic damage by Denon's Desperate Dirge X. (Critical)")]
+    public void DefaultDirgeTriggerStartsAFifteenSecondRecastTimerOnYourHit(string message)
+    {
+        var matcher = new TriggerMatcher(AlertTrigger.Defaults(), "Quethrosar");
+
+        var alert = Assert.Single(matcher.Match([message]));
+
+        Assert.Empty(matcher.Errors);
+        Assert.Equal("DDD", alert.Trigger.Name);
+        Assert.Equal(15, alert.Trigger.DelaySeconds);
+        Assert.False(alert.Trigger.RestartDelay);
+        Assert.Equal(2, alert.Trigger.CooldownSeconds);
+    }
+
+    [Theory]
+    [InlineData("You begin singing Denon's Desperate Dirge X.")]
+    [InlineData("Coercer T`vala resisted your Denon's Desperate Dirge X!")]
+    [InlineData("Anotherbard hit a goblin for 361 points of magic damage by Denon's Desperate Dirge X.")]
+    [InlineData("You hit a goblin for 361 points of magic damage by Rend X.")]
+    public void DefaultDirgeTriggerDoesNotStartOnUnrelatedLines(string message)
+    {
+        var matcher = new TriggerMatcher(AlertTrigger.Defaults(), "Quethrosar");
+
+        Assert.Empty(matcher.Match([message]));
+    }
+
     [Fact]
     public void CapturedGroupsAndCharacterAreReturnedWithoutFormattingText()
     {

@@ -213,11 +213,12 @@
                         </TextBlock>
                     </Border>
                     <TextBlock DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="{DynamicResource NightMuted}" TextWrapping="Wrap"
-                               Text="Simple text matches anywhere in the line, ignoring case, with no special characters. Regex is matched (case-insensitive) against the text after the [timestamp]. A trigger fires when Simple text OR Regex matches; fill in either or both. {C} = your character name in both. In the alert text, $1 or ${name} insert regex captured groups. Only new lines fire alerts, not history. Use Add trigger for a new one. Click a trigger (or its left edge; Ctrl/Shift-click for several), then use Delete selected; confirmation is required." />
+                               Text="Simple text matches anywhere in the line, ignoring case, with no special characters. Regex is matched (case-insensitive) against the text after the [timestamp]. A trigger fires when Simple text OR Regex matches; fill in either or both. {C} = your character name in both. In the alert text, $1 or ${name} insert regex captured groups. Delay waits that many seconds after a match before alerting (for example, a recast timer) and shows a countdown meanwhile. Cooldown ignores repeat matches for that many seconds after a trigger fires, so a burst of lines shows one alert. Only new lines fire alerts, not history. Use Add trigger for a new one. Click a trigger (or its left edge; Ctrl/Shift-click for several), then use Delete selected; confirmation is required." />
                     <DockPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
                         <Button Content="Test" DockPanel.Dock="Right" Margin="6,0,0,0" Click="TestTrigger_Click" local:UsageTracking.Action="TestTrigger" />
                         <TextBlock Text="Test a line:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{DynamicResource NightText}" DockPanel.Dock="Left" />
-                        <TextBox x:Name="TestLineBox" VerticalContentAlignment="Center" Text="Quethrosar has fallen to the ground." />
+                        <TextBox x:Name="TestLineBox" VerticalContentAlignment="Center"
+                                 ToolTip="Paste a log line (without the [timestamp]) and click Test to see which triggers match and preview the alert." Text="Quethrosar has fallen to the ground." />
                     </DockPanel>
                     <TextBlock x:Name="TriggerStatusText" DockPanel.Dock="Bottom" Margin="0,4,0,0" Foreground="#FF8080" TextWrapping="Wrap" />
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
@@ -266,44 +267,54 @@
                                                 <RowDefinition Height="Auto" />
                                             </Grid.RowDefinitions>
 
-                                            <TextBlock Text="Name" />
+                                            <TextBlock Text="Name" ToolTip="A label for this trigger. It names the countdown while a Delay is running.&#10;Example: Recast Dirge" />
                                             <TextBox Grid.Column="1" Tag="Name" FontWeight="SemiBold"
-                                                     Text="{Binding Name, NotifyOnSourceUpdated=True}" />
-                                            <TextBlock Grid.Column="2" Text="Alert text" />
+                                                     Text="{Binding Name, NotifyOnSourceUpdated=True}"
+                                                     ToolTip="A label for this trigger. It names the countdown while a Delay is running.&#10;Example: Recast Dirge" />
+                                            <TextBlock Grid.Column="2" Text="Alert text" ToolTip="What the alert says. Leave empty to show the matched log line.&#10;$1 or ${name} insert regex captured groups; {C} is your character name.&#10;Example: Recast Denon's!" />
                                             <TextBox Grid.Column="3" Tag="AlertText" Margin="0,3,0,3"
                                                      Text="{Binding Text, NotifyOnSourceUpdated=True}"
-                                                     ToolTip="Text to show. $1 or ${name} insert regex captured groups, {C} your name. Empty shows the log line." />
+                                                     ToolTip="What the alert says. Leave empty to show the matched log line.&#10;$1 or ${name} insert regex captured groups; {C} is your character name.&#10;Example: Recast Denon's!" />
 
-                                            <TextBlock Grid.Row="1" Text="Simple text" />
+                                            <TextBlock Grid.Row="1" Text="Simple text" ToolTip="Plain text found anywhere in the line, ignoring case. No special characters.&#10;{C} is your character name.&#10;Example: your Denon's Desperate Dirge" />
                                             <TextBox Grid.Row="1" Grid.Column="1"
                                                      Text="{Binding Simple, NotifyOnSourceUpdated=True}"
-                                                     ToolTip="Plain text found anywhere in the line, ignoring case. {C} = your name." />
-                                            <TextBlock Grid.Row="1" Grid.Column="2" Text="or Regex" />
+                                                     ToolTip="Plain text found anywhere in the line, ignoring case. No special characters.&#10;{C} is your character name.&#10;Example: your Denon's Desperate Dirge" />
+                                            <TextBlock Grid.Row="1" Grid.Column="2" Text="or Regex" ToolTip="A regular expression matched (ignoring case) against the text after [timestamp].&#10;Use this or Simple text; either one firing triggers the alert. {C} is your character name.&#10;Example: ^{C} has fallen to the ground\.$" />
                                             <TextBox Grid.Row="1" Grid.Column="3" Margin="0,3,0,3" FontFamily="Consolas"
                                                      Text="{Binding Pattern, NotifyOnSourceUpdated=True}"
-                                                     ToolTip="Matched case-insensitively against the text after [timestamp]. {C} = your name." />
+                                                     ToolTip="A regular expression matched (ignoring case) against the text after [timestamp].&#10;Use this or Simple text; either one firing triggers the alert. {C} is your character name.&#10;Example: ^{C} has fallen to the ground\.$" />
 
                                             <WrapPanel Grid.Row="2" Grid.ColumnSpan="4" Margin="0,3,0,0">
-                                                <CheckBox Content="Enabled" VerticalAlignment="Center"
+                                                <CheckBox Content="Enabled" VerticalAlignment="Center" ToolTip="Uncheck to turn this trigger off without deleting it."
                                                           IsChecked="{Binding Enabled, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}" />
-                                                <TextBlock Text="Secs" />
+                                                <TextBlock Text="Secs" ToolTip="How many seconds the alert stays on screen. Default 8." />
                                                 <TextBox Width="52" Text="{Binding Seconds, NotifyOnSourceUpdated=True}"
-                                                         ToolTip="How long the alert stays on screen" />
+                                                         ToolTip="How many seconds the alert stays on screen. Default 8." />
+                                                <TextBlock Text="Delay" ToolTip="Seconds to wait after a match before alerting, such as a recast timer.&#10;A countdown shows in the Alerts overlay while waiting. 0 = alert right away." />
+                                                <TextBox Width="52" Text="{Binding DelaySeconds, NotifyOnSourceUpdated=True}"
+                                                         ToolTip="Seconds to wait after a match before alerting, such as a recast timer.&#10;A countdown shows in the Alerts overlay while waiting. 0 = alert right away." />
+                                                <CheckBox Content="Restart on repeat" VerticalAlignment="Center" Margin="0,0,14,0"
+                                                          IsChecked="{Binding RestartDelay, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}"
+                                                          ToolTip="With a delay: if the line shows up again during the countdown, start it over. Unchecked ignores repeats until the alert shows." />
+                                                <TextBlock Text="Cooldown" ToolTip="After this trigger fires, ignore more matching lines for this many seconds,&#10;so a burst of lines shows one alert. 0 = alert on every line. Default 2." />
+                                                <TextBox Width="52" Text="{Binding CooldownSeconds, NotifyOnSourceUpdated=True}"
+                                                         ToolTip="After this trigger fires, ignore more matching lines for this many seconds,&#10;so a burst of lines shows one alert. 0 = alert on every line. Default 2." />
                                                 <CheckBox Content="Sound" VerticalAlignment="Center"
                                                           IsChecked="{Binding Sound, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}"
                                                           ToolTip="Play the Windows exclamation sound" />
-                                                <TextBlock Text="Effect" />
+                                                <TextBlock Text="Effect" ToolTip="How the alert text moves in the Alerts overlay." />
                                                 <ComboBox Width="160" Margin="0,2,14,2" VerticalAlignment="Center"
                                                           ItemsSource="{x:Static local:AlertEffects.Options}" DisplayMemberPath="Label" SelectedValuePath="Value"
                                                           SelectedValue="{Binding Effect, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}"
                                                           ToolTip="How the alert text moves in the Alerts overlay" />
-                                                <TextBlock Text="Color" />
+                                                <TextBlock Text="Color" ToolTip="The alert text color: a color name (Orange) or #RRGGBB. Use Pick... to choose one." />
                                                 <Border Width="18" Height="18" Margin="0,0,6,0" VerticalAlignment="Center" CornerRadius="3"
                                                         BorderBrush="{DynamicResource NightMuted}" BorderThickness="1"
                                                         Background="{Binding Color, Converter={StaticResource AlertColorBrush}}" />
                                                 <TextBox Width="90" Tag="Color" Margin="0,3,6,3"
                                                          Text="{Binding Color, NotifyOnSourceUpdated=True}"
-                                                         ToolTip="A color name (Orange) or #RRGGBB" />
+                                                         ToolTip="The alert text color: a color name (Orange) or #RRGGBB. Use Pick... to choose one." />
                                                 <Button Content="Pick..." Padding="8,3" Margin="0,2,0,2" VerticalAlignment="Center"
                                                         Click="TriggerColorPick_Click" ToolTip="Choose the alert color" />
                                             </WrapPanel>
@@ -320,6 +331,8 @@
                     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
                         <Button Content="Make trigger" DockPanel.Dock="Right" Margin="6,0,0,0" Click="MakeTrigger_Click" local:UsageTracking.Action="MakeTriggerFromLog"
                                 ToolTip="Create an alert trigger from the selected line (or double-click a line)" />
+                        <Button Content="Copy message" DockPanel.Dock="Right" Margin="6,0,0,0" Click="CopyLogMessage_Click"
+                                ToolTip="Copy the selected message without its timestamp. Paste it into an existing trigger and edit as needed." />
                         <CheckBox x:Name="PauseLinesBox" Content="Pause" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" Click="RawFilter_Changed" />
                         <CheckBox x:Name="RegexFilterBox" Content="Regex" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" Click="RawFilter_Changed"
                                   ToolTip="Treat the filter as a trigger regex ({C} = your name) to test it against real lines" />

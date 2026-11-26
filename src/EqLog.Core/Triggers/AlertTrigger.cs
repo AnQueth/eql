@@ -29,6 +29,29 @@ public sealed class AlertTrigger
 
     public double Seconds { get; set; } = 8;
 
+    /// <summary>
+    /// Seconds to wait after a match before showing the alert, such as a recast timer. 0 shows it right away.
+    /// </summary>
+    public double DelaySeconds
+    {
+        get; set;
+    }
+
+    /// <summary>
+    /// When a delayed trigger matches again while it is still counting down, start the countdown over.
+    /// Otherwise repeats are ignored until the alert shows.
+    /// </summary>
+    public bool RestartDelay
+    {
+        get; set;
+    }
+
+    /// <summary>
+    /// Seconds after a match during which further matches of this trigger are ignored, so a burst of lines
+    /// shows one alert. 0 alerts on every match.
+    /// </summary>
+    public double CooldownSeconds { get; set; } = 2;
+
     public bool Sound
     {
         get; set;
@@ -64,7 +87,9 @@ public sealed class AlertTrigger
             Name = "Feign Death failed",
             Pattern = @"^{C} has fallen to the ground\.$",
             Text = "FEIGN DEATH FAILED!",
+            Seconds = 10,
             Sound = true,
+            Effect = AlertEffect.Bounce,
         },
         new()
         {
@@ -72,6 +97,16 @@ public sealed class AlertTrigger
             Pattern = @"^You are no longer feigning death, because (.+)\.$",
             Text = "Feign broken: $1",
             Color = "Orange",
+        },
+        new()
+        {
+            Name = "DDD",
+            Pattern = @"^You hit .+ for \d+ points of magic damage by Denon's Desperate Dirge.*\.(?: \(Critical\))?$",
+            Text = "DDD!",
+            Seconds = 5,
+            DelaySeconds = 15,
+            Color = "#915CFC",
+            Effect = AlertEffect.Wobble,
         },
     ];
     }
